@@ -51,8 +51,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install golang-migrate
         run: |
-          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz \
-            | tar xz -C /tmp
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.19.1/migrate.linux-amd64.tar.gz \
+            -o /tmp/migrate.tar.gz
+          echo "2ac648fbd1b127b69ab5a7b33cf96212178f71e22379fc50573630c6f4c7ce18  /tmp/migrate.tar.gz" | sha256sum -c -
+          tar xz -C /tmp -f /tmp/migrate.tar.gz
           sudo mv /tmp/migrate /usr/local/bin/migrate
       - name: Migrate up
         env:
@@ -60,18 +62,27 @@ jobs:
         run: make migrate-up
       - name: Verify indexes
         run: |
-          psql postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
-            -c "SELECT indexname FROM pg_indexes WHERE tablename='documents' ORDER BY indexname;" \
-            | grep -E 'documents_(pending_gc|anon_expiry|owner)_idx'
+          psql -t -A postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
+            -c "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='documents_pending_gc_idx');" \
+            | grep -qx 't'
+          psql -t -A postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
+            -c "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='documents_anon_expiry_idx');" \
+            | grep -qx 't'
+          psql -t -A postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
+            -c "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname='documents_owner_idx');" \
+            | grep -qx 't'
       - name: Migrate down
         env:
           DATABASE_URL: postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable
         run: echo y | migrate -path migrations -database "$DATABASE_URL" down
       - name: Verify rollback
         run: |
-          psql postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
-            -c "SELECT to_regclass('public.documents');" \
-            | grep -v 'documents'
+          result=$(psql -t -A postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
+            -c "SELECT to_regclass('public.documents');")
+          if [ "$result" = "public.documents" ]; then
+            echo "ERROR: documents table still exists after rollback" >&2
+            exit 1
+          fi
 
   build:
     name: Build
