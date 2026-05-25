@@ -1,7 +1,8 @@
 .PHONY: build test lint migrate-up migrate-down dev-seed
 
 BIN_DIR := bin
-DATABASE_URL ?= postgres://localhost:5432/mdfly?sslmode=disable
+DEV_DB_URL := postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable
+DATABASE_URL ?= $(DEV_DB_URL)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -23,4 +24,13 @@ migrate-down:
 	migrate -path migrations -database "$(DATABASE_URL)" down
 
 dev-seed:
-	@echo "No migrations yet — run S01 first."
+	@docker inspect mdfly-dev-postgres >/dev/null 2>&1 || \
+		docker run -d --name mdfly-dev-postgres \
+			-e POSTGRES_DB=mdfly \
+			-e POSTGRES_USER=mdfly \
+			-e POSTGRES_PASSWORD=secret \
+			-p 5432:5432 \
+			postgres:16-alpine
+	@echo "Waiting for Postgres..."
+	@until docker exec mdfly-dev-postgres pg_isready -U mdfly -d mdfly -q; do sleep 0.5; done
+	@DATABASE_URL=$(DEV_DB_URL) $(MAKE) migrate-up

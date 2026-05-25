@@ -27,7 +27,50 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-      - run: go test ./...
+      - run: go test -short ./...
+
+  migrate:
+    name: Migrate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: mdfly
+          POSTGRES_USER: mdfly
+          POSTGRES_PASSWORD: secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install golang-migrate
+        run: |
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz \
+            | tar xz -C /tmp
+          sudo mv /tmp/migrate /usr/local/bin/migrate
+      - name: Migrate up
+        env:
+          DATABASE_URL: postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable
+        run: make migrate-up
+      - name: Verify indexes
+        run: |
+          psql postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
+            -c "SELECT indexname FROM pg_indexes WHERE tablename='documents' ORDER BY indexname;" \
+            | grep -E 'documents_(pending_gc|anon_expiry|owner)_idx'
+      - name: Migrate down
+        env:
+          DATABASE_URL: postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable
+        run: make migrate-down
+      - name: Verify rollback
+        run: |
+          psql postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable \
+            -c "SELECT to_regclass('public.documents');" \
+            | grep -v 'documents'
 
   build:
     name: Build
