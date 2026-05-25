@@ -1,0 +1,47 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Vendor
+vendor/
+
+# goreleaser
+dist/
+
+# Air live reload
+tmp/
+
+# Env / secrets
+.env
+.env.local
+*.env
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local dev output
+ralph/
+
+# Issue drafts (tracked externally)
+docs/issues/
