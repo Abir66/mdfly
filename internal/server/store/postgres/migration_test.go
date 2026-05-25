@@ -49,8 +49,14 @@ func startPostgres(t *testing.T) (dsn string, cleanup func()) {
 		t.Fatalf("start postgres container: %v", err)
 	}
 
-	host, _ := container.Host(ctx)
-	port, _ := container.MappedPort(ctx, "5432/tcp")
+	host, err := container.Host(ctx)
+	if err != nil {
+		t.Fatalf("get container host: %v", err)
+	}
+	port, err := container.MappedPort(ctx, "5432/tcp")
+	if err != nil {
+		t.Fatalf("get container port: %v", err)
+	}
 	dsn = fmt.Sprintf("postgres://mdfly:secret@%s:%s/mdfly?sslmode=disable", host, port.Port())
 	return dsn, func() { container.Terminate(ctx) }
 }
