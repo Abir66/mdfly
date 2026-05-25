@@ -19,7 +19,10 @@ import (
 )
 
 func migrationsDir() string {
-	_, filename, _, _ := runtime.Caller(0)
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("runtime.Caller failed")
+	}
 	return filepath.Join(filepath.Dir(filename), "../../../../migrations")
 }
 
