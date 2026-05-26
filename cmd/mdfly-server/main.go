@@ -3,7 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -28,11 +28,13 @@ func main() {
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		slog.Error("open db", "err", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 	if err := db.Ping(); err != nil {
-		log.Fatalf("ping db: %v", err)
+		slog.Error("ping db", "err", err)
+		os.Exit(1)
 	}
 
 	r2 := r2store.New(r2store.Config{
@@ -65,16 +67,18 @@ func main() {
 		WriteTimeout:      serverWriteTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}
-	log.Printf("mdfly-server listening on %s", addr)
+	slog.Info("mdfly-server listening", "addr", addr)
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("listen: %v", err)
+		slog.Error("listen", "err", err)
+		os.Exit(1)
 	}
 }
 
 func requireEnv(key string) string {
 	v, ok := os.LookupEnv(key)
 	if !ok || v == "" {
-		log.Fatalf("required env var %s is not set", key)
+		slog.Error("required env var not set", "key", key)
+		os.Exit(1)
 	}
 	return v
 }
