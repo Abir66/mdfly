@@ -18,7 +18,10 @@ func TestGenerate_length(t *testing.T) {
 
 func TestGenerate_alphabet(t *testing.T) {
 	const allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	s, _ := slug.Generate()
+	s, err := slug.Generate()
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
 	for _, c := range s {
 		found := false
 		for _, a := range allowed {

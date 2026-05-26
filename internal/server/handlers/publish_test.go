@@ -66,8 +66,14 @@ func startPostgres(t *testing.T) string {
 	}
 	t.Cleanup(func() { c.Terminate(ctx) }) //nolint:errcheck
 
-	host, _ := c.Host(ctx)
-	port, _ := c.MappedPort(ctx, "5432/tcp")
+	host, err := c.Host(ctx)
+	if err != nil {
+		t.Fatalf("postgres host: %v", err)
+	}
+	port, err := c.MappedPort(ctx, "5432/tcp")
+	if err != nil {
+		t.Fatalf("postgres port: %v", err)
+	}
 	dsn := fmt.Sprintf("postgres://mdfly:secret@%s:%s/mdfly?sslmode=disable", host, port.Port())
 
 	m, err := migrate.New("file://"+migrationsDir(), dsn)
@@ -116,8 +122,14 @@ func startMinio(t *testing.T) minioEnv {
 	}
 	t.Cleanup(func() { c.Terminate(ctx) }) //nolint:errcheck
 
-	host, _ := c.Host(ctx)
-	port, _ := c.MappedPort(ctx, "9000/tcp")
+	host, err := c.Host(ctx)
+	if err != nil {
+		t.Fatalf("minio host: %v", err)
+	}
+	port, err := c.MappedPort(ctx, "9000/tcp")
+	if err != nil {
+		t.Fatalf("minio port: %v", err)
+	}
 	endpoint := fmt.Sprintf("http://%s:%s", host, port.Port())
 
 	// Create bucket.

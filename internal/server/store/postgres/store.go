@@ -56,6 +56,7 @@ func NewFromDSN(dsn string) (*Store, error) {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
 	return New(db), nil

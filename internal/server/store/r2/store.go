@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // ErrBlobMissing is returned when HeadBlob cannot find the object.
@@ -101,8 +102,11 @@ func (s *Store) HeadBlob(ctx context.Context, key string, expectedSize int64) er
 		if errors.As(err, &nf) {
 			return ErrBlobMissing
 		}
-		// AWS SDK wraps 404 differently depending on version — check http status too.
-		return fmt.Errorf("head object %s: %w", key, ErrBlobMissing)
+		var re *smithyhttp.ResponseError
+		if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
+			return ErrBlobMissing
+		}
+		return fmt.Errorf("head object %s: %w", key, err)
 	}
 	if out.ContentLength != nil && *out.ContentLength != expectedSize {
 		return fmt.Errorf("blob %s: size mismatch (got %d, want %d): %w",

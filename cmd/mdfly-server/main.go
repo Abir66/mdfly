@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -14,9 +15,16 @@ import (
 	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
 )
 
+const (
+	serverReadHeaderTimeout = 5 * time.Second
+	serverReadTimeout       = 30 * time.Second
+	serverWriteTimeout      = 60 * time.Second
+	serverIdleTimeout       = 120 * time.Second
+)
+
 func main() {
-	dsn := envOrDefault("DATABASE_URL", "postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable")
-	baseURL := envOrDefault("BASE_URL", "http://localhost:8080")
+	dsn := requireEnv("DATABASE_URL")
+	baseURL := requireEnv("BASE_URL")
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -28,11 +36,11 @@ func main() {
 	}
 
 	r2 := r2store.New(r2store.Config{
-		Endpoint:        envOrDefault("R2_ENDPOINT", "http://localhost:9000"),
-		AccessKeyID:     envOrDefault("R2_ACCESS_KEY_ID", "minioadmin"),
-		SecretAccessKey: envOrDefault("R2_SECRET_ACCESS_KEY", "minioadmin"),
-		Bucket:          envOrDefault("R2_BUCKET", "mdfly"),
-		PublicBaseURL:   envOrDefault("CDN_BASE_URL", "http://localhost:9000/mdfly"),
+		Endpoint:        requireEnv("R2_ENDPOINT"),
+		AccessKeyID:     requireEnv("R2_ACCESS_KEY_ID"),
+		SecretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
+		Bucket:          requireEnv("R2_BUCKET"),
+		PublicBaseURL:   requireEnv("CDN_BASE_URL"),
 	})
 
 	deps := handlers.PublishDeps{
@@ -49,14 +57,30 @@ func main() {
 	})
 
 	addr := envOrDefault("ADDR", ":8080")
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		ReadTimeout:       serverReadTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
+	}
 	log.Printf("mdfly-server listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("listen: %v", err)
 	}
 }
 
+func requireEnv(key string) string {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		log.Fatalf("required env var %s is not set", key)
+	}
+	return v
+}
+
 func envOrDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v
 	}
 	return def

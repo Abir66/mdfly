@@ -42,6 +42,20 @@ func Init(deps PublishDeps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "bad_request", "manifest.root and manifest.files required")
 			return
 		}
+		for _, f := range req.Manifest.Files {
+			if f.Path == "" {
+				writeError(w, http.StatusBadRequest, "bad_request", "manifest file path required")
+				return
+			}
+			if f.Hash == "" {
+				writeError(w, http.StatusBadRequest, "bad_request", "manifest file hash required")
+				return
+			}
+			if f.Size < 0 {
+				writeError(w, http.StatusBadRequest, "bad_request", "manifest file size must be non-negative")
+				return
+			}
+		}
 
 		sl, err := generateSlug()
 		if err != nil {
@@ -117,8 +131,12 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 		for _, f := range manifest.Files {
 			key := r2store.BlobKey(f.Hash, r2store.ExtFromPath(f.Path))
 			if err := deps.R2.HeadBlob(r.Context(), key, f.Size); err != nil {
-				writeError(w, http.StatusConflict, "blob_missing",
-					fmt.Sprintf("blob %s not found or size mismatch", f.Hash))
+				if errors.Is(err, r2store.ErrBlobMissing) {
+					writeError(w, http.StatusConflict, "blob_missing",
+						fmt.Sprintf("blob %s not found or size mismatch", f.Hash))
+					return
+				}
+				writeError(w, http.StatusInternalServerError, "internal_error", "blob verification failed")
 				return
 			}
 		}
@@ -150,8 +168,11 @@ func buildPresignedURLs(ctx context.Context, r2 *r2store.Store, manifest api.Man
 
 	for _, f := range manifest.Files {
 		key := r2store.BlobKey(f.Hash, r2store.ExtFromPath(f.Path))
-		if err := r2.HeadBlob(ctx, key, f.Size); err != nil {
-			// Blob missing — generate presigned PUT URL.
+		err := r2.HeadBlob(ctx, key, f.Size)
+		if err != nil {
+			if !errors.Is(err, r2store.ErrBlobMissing) {
+				return nil, nil, fmt.Errorf("head blob %s: %w", f.Hash, err)
+			}
 			url, err := r2.PresignPUT(ctx, key, f.Size, f.Hash, presignTTL)
 			if err != nil {
 				return nil, nil, fmt.Errorf("presign %s: %w", f.Hash, err)
