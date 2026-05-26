@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -22,9 +21,9 @@ import (
 	awscredentials "github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
@@ -76,7 +75,8 @@ func startPostgres(t *testing.T) string {
 	}
 	dsn := fmt.Sprintf("postgres://mdfly:secret@%s:%s/mdfly?sslmode=disable", host, port.Port())
 
-	m, err := migrate.New("file://"+migrationsDir(), dsn)
+	migrateDSN := strings.Replace(dsn, "postgres://", "pgx5://", 1)
+	m, err := migrate.New("file://"+migrationsDir(), migrateDSN)
 	if err != nil {
 		t.Fatalf("create migrator: %v", err)
 	}
@@ -132,7 +132,6 @@ func startMinio(t *testing.T) minioEnv {
 	}
 	endpoint := fmt.Sprintf("http://%s:%s", host, port.Port())
 
-	// Create bucket.
 	s3Client := s3.New(s3.Options{
 		BaseEndpoint: aws.String(endpoint),
 		Credentials:  awscredentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
@@ -153,13 +152,13 @@ func startMinio(t *testing.T) minioEnv {
 func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *httptest.Server {
 	t.Helper()
 
-	db, err := sql.Open("postgres", dsn)
+	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
-		t.Fatalf("open db: %v", err)
+		t.Fatalf("open pool: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(pool.Close)
 
-	pg := pgstore.New(db)
+	pg := pgstore.New(pool)
 	r2 := r2store.New(r2store.Config{
 		Endpoint:        env.endpoint,
 		AccessKeyID:     env.accessKey,
@@ -282,7 +281,6 @@ func TestPublishInitAndCommit(t *testing.T) {
 	}
 	idempotencyKey := "550e8400-e29b-41d4-a716-446655440000"
 
-	// Phase 1: init.
 	initResp := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
 		IdempotencyKey: idempotencyKey,
 		Manifest:       manifest,
@@ -309,10 +307,8 @@ func TestPublishInitAndCommit(t *testing.T) {
 		t.Fatalf("init response: no presigned URL for hash %s", hash)
 	}
 
-	// Phase 2: upload.
 	putBlob(t, presignedURL, content, hash)
 
-	// Phase 3: commit.
 	commitResp := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{
 		IdempotencyKey: idempotencyKey,
 	})
@@ -390,7 +386,6 @@ func TestPublishCommit_missingBlob(t *testing.T) {
 		t.Fatalf("init status %d", r.StatusCode)
 	}
 
-	// Commit without uploading — expect 409.
 	commitResp := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{
 		IdempotencyKey: idempotencyKey,
 	})
@@ -424,14 +419,12 @@ func TestPublishCommit_alreadyPublished(t *testing.T) {
 	initBody := decodeInitResponse(t, initR)
 	putBlob(t, initBody.PresignedURLs[hash], content, hash)
 
-	// First commit.
 	r1 := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempotencyKey})
 	b1 := decodeCommitResponse(t, r1)
 	if r1.StatusCode != http.StatusOK {
 		t.Fatalf("first commit status %d", r1.StatusCode)
 	}
 
-	// Second commit (idempotent).
 	r2 := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempotencyKey})
 	b2 := decodeCommitResponse(t, r2)
 	if r2.StatusCode != http.StatusOK {
@@ -509,7 +502,6 @@ func TestPresignPUT_checksumEnforcement(t *testing.T) {
 		t.Fatalf("PresignPUT: %v", err)
 	}
 
-	// PUT with wrong checksum → must be rejected.
 	wrongHash := contentHash([]byte("wrong content"))
 	req, _ := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(content))
 	req.ContentLength = int64(len(content))

@@ -1,14 +1,14 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Abir66/mdfly/internal/server/handlers"
 	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
@@ -20,19 +20,26 @@ const (
 	serverReadTimeout       = 30 * time.Second
 	serverWriteTimeout      = 60 * time.Second
 	serverIdleTimeout       = 120 * time.Second
+
+	dbConnectTimeout = 5 * time.Second
+	dbPingTimeout    = 5 * time.Second
 )
 
 func main() {
 	dsn := requireEnv("DATABASE_URL")
 	baseURL := requireEnv("BASE_URL")
 
-	db, err := sql.Open("postgres", dsn)
+	connCtx, connCancel := context.WithTimeout(context.Background(), dbConnectTimeout)
+	defer connCancel()
+	pool, err := pgxpool.New(connCtx, dsn)
 	if err != nil {
 		slog.Error("open db", "err", err)
 		os.Exit(1)
 	}
-	defer db.Close()
-	if err := db.Ping(); err != nil {
+	defer pool.Close()
+	pingCtx, cancel := context.WithTimeout(context.Background(), dbPingTimeout)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
 		slog.Error("ping db", "err", err)
 		os.Exit(1)
 	}
@@ -46,7 +53,7 @@ func main() {
 	})
 
 	deps := handlers.PublishDeps{
-		PG:      pgstore.New(db),
+		PG:      pgstore.New(pool),
 		R2:      r2,
 		BaseURL: baseURL,
 	}
