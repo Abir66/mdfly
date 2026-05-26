@@ -1,7 +1,87 @@
 package main
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	_ "github.com/lib/pq"
+
+	"github.com/Abir66/mdfly/internal/server/handlers"
+	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
+	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
+)
+
+const (
+	serverReadHeaderTimeout = 5 * time.Second
+	serverReadTimeout       = 30 * time.Second
+	serverWriteTimeout      = 60 * time.Second
+	serverIdleTimeout       = 120 * time.Second
+)
 
 func main() {
-	_, _ = fmt.Println("mdfly-server v0.0.0")
+	dsn := requireEnv("DATABASE_URL")
+	baseURL := requireEnv("BASE_URL")
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if err := db.Ping(); err != nil {
+		log.Fatalf("ping db: %v", err)
+	}
+
+	r2 := r2store.New(r2store.Config{
+		Endpoint:        requireEnv("R2_ENDPOINT"),
+		AccessKeyID:     requireEnv("R2_ACCESS_KEY_ID"),
+		SecretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
+		Bucket:          requireEnv("R2_BUCKET"),
+		PublicBaseURL:   requireEnv("CDN_BASE_URL"),
+	})
+
+	deps := handlers.PublishDeps{
+		PG:      pgstore.New(db),
+		R2:      r2,
+		BaseURL: baseURL,
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/publish/init", handlers.Init(deps))
+	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(deps))
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "ok")
+	})
+
+	addr := envOrDefault("ADDR", ":8080")
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		ReadTimeout:       serverReadTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
+	}
+	log.Printf("mdfly-server listening on %s", addr)
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("listen: %v", err)
+	}
+}
+
+func requireEnv(key string) string {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		log.Fatalf("required env var %s is not set", key)
+	}
+	return v
+}
+
+func envOrDefault(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	return def
 }

@@ -28,6 +28,6 @@ CONTEXT.md is the spec; ADRs are the why.
 
 The project is pre-implementation. Do not start writing Go, SQL migrations, Dockerfiles, IaC, etc., until the user explicitly asks.
 
-## Commiting
+## Committing
 
 docs/issues folder are added in gitignore. They are only for local issue tracking. Don't add them in git
