@@ -32,7 +32,9 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
-	if err := pool.Ping(context.Background()); err != nil {
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
 		slog.Error("ping db", "err", err)
 		os.Exit(1)
 	}
