@@ -2,7 +2,6 @@ package postgres_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -11,9 +10,9 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -71,7 +70,8 @@ func TestDocumentsMigrationRoundTrip(t *testing.T) {
 	dsn, cleanup := startPostgres(t)
 	t.Cleanup(cleanup)
 
-	m, err := migrate.New("file://"+migrationsDir(), dsn)
+	migrateDSN := strings.Replace(dsn, "postgres://", "pgx5://", 1)
+	m, err := migrate.New("file://"+migrationsDir(), migrateDSN)
 	if err != nil {
 		t.Fatalf("create migrator: %v", err)
 	}
@@ -81,20 +81,20 @@ func TestDocumentsMigrationRoundTrip(t *testing.T) {
 		t.Fatalf("migrate up: %v", err)
 	}
 
-	db, err := sql.Open("postgres", dsn)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		t.Fatalf("open db: %v", err)
+		t.Fatalf("open pool: %v", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
-	// All three partial indexes must exist after migrate-up.
 	for _, idx := range []string{
 		"documents_pending_gc_idx",
 		"documents_anon_expiry_idx",
 		"documents_owner_idx",
 	} {
 		var found bool
-		if err := db.QueryRowContext(context.Background(),
+		if err := pool.QueryRow(ctx,
 			`SELECT EXISTS(
 				SELECT 1 FROM pg_indexes
 				WHERE tablename = 'documents' AND indexname = $1
@@ -106,14 +106,12 @@ func TestDocumentsMigrationRoundTrip(t *testing.T) {
 		}
 	}
 
-	// pending-GC query must use documents_pending_gc_idx.
-	checkExplainUsesIndex(t, db,
+	checkExplainUsesIndex(t, pool,
 		"documents_pending_gc_idx",
 		"SELECT id FROM documents WHERE status = 'pending' AND created_at < $1",
 		"2099-01-01")
 
-	// anon-expiry query must use documents_anon_expiry_idx.
-	checkExplainUsesIndex(t, db,
+	checkExplainUsesIndex(t, pool,
 		"documents_anon_expiry_idx",
 		"SELECT id FROM documents WHERE expires_at < $1 AND deleted_at IS NULL",
 		"2099-01-01")
@@ -123,7 +121,7 @@ func TestDocumentsMigrationRoundTrip(t *testing.T) {
 	}
 
 	var tableExists bool
-	if err := db.QueryRowContext(context.Background(),
+	if err := pool.QueryRow(ctx,
 		`SELECT EXISTS(
 			SELECT 1 FROM information_schema.tables
 			WHERE table_schema = 'public' AND table_name = 'documents'
@@ -135,16 +133,23 @@ func TestDocumentsMigrationRoundTrip(t *testing.T) {
 	}
 }
 
-func checkExplainUsesIndex(t *testing.T, db *sql.DB, indexName, query string, args ...any) {
+func checkExplainUsesIndex(t *testing.T, pool *pgxpool.Pool, indexName, query string, args ...any) {
 	t.Helper()
 	ctx := context.Background()
 
-	if _, err := db.ExecContext(ctx, "SET enable_seqscan = off"); err != nil {
+	// Acquire a single connection so SET affects the subsequent EXPLAIN.
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire conn: %v", err)
+	}
+	defer conn.Release()
+
+	if _, err := conn.Exec(ctx, "SET enable_seqscan = off"); err != nil {
 		t.Fatalf("disable seqscan: %v", err)
 	}
-	defer db.ExecContext(ctx, "SET enable_seqscan = on") //nolint:errcheck
+	defer conn.Exec(ctx, "SET enable_seqscan = on") //nolint:errcheck
 
-	rows, err := db.QueryContext(ctx, "EXPLAIN "+query, args...)
+	rows, err := conn.Query(ctx, "EXPLAIN "+query, args...)
 	if err != nil {
 		t.Fatalf("EXPLAIN %s: %v", indexName, err)
 	}

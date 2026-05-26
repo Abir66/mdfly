@@ -1,14 +1,14 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Abir66/mdfly/internal/server/handlers"
 	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
@@ -26,13 +26,13 @@ func main() {
 	dsn := requireEnv("DATABASE_URL")
 	baseURL := requireEnv("BASE_URL")
 
-	db, err := sql.Open("postgres", dsn)
+	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
 		slog.Error("open db", "err", err)
 		os.Exit(1)
 	}
-	defer db.Close()
-	if err := db.Ping(); err != nil {
+	defer pool.Close()
+	if err := pool.Ping(context.Background()); err != nil {
 		slog.Error("ping db", "err", err)
 		os.Exit(1)
 	}
@@ -46,7 +46,7 @@ func main() {
 	})
 
 	deps := handlers.PublishDeps{
-		PG:      pgstore.New(db),
+		PG:      pgstore.New(pool),
 		R2:      r2,
 		BaseURL: baseURL,
 	}
