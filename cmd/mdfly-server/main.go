@@ -20,19 +20,24 @@ const (
 	serverReadTimeout       = 30 * time.Second
 	serverWriteTimeout      = 60 * time.Second
 	serverIdleTimeout       = 120 * time.Second
+
+	dbConnectTimeout = 5 * time.Second
+	dbPingTimeout    = 5 * time.Second
 )
 
 func main() {
 	dsn := requireEnv("DATABASE_URL")
 	baseURL := requireEnv("BASE_URL")
 
-	pool, err := pgxpool.New(context.Background(), dsn)
+	connCtx, connCancel := context.WithTimeout(context.Background(), dbConnectTimeout)
+	defer connCancel()
+	pool, err := pgxpool.New(connCtx, dsn)
 	if err != nil {
 		slog.Error("open db", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
-	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(context.Background(), dbPingTimeout)
 	defer cancel()
 	if err := pool.Ping(pingCtx); err != nil {
 		slog.Error("ping db", "err", err)
