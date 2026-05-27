@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Abir66/mdfly/internal/api"
-	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
+	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
 func TestPublishInitAndCommit(t *testing.T) {
@@ -229,7 +229,7 @@ func TestPresignPUT_checksumEnforcement(t *testing.T) {
 	content := []byte("correct content")
 	hash := contentHash(content)
 
-	r2 := r2store.New(r2store.Config{
+	r2 := storage.New(storage.Config{
 		Endpoint:        env.endpoint,
 		AccessKeyID:     env.accessKey,
 		SecretAccessKey: env.secretKey,
@@ -238,7 +238,7 @@ func TestPresignPUT_checksumEnforcement(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	key := r2store.BlobKey(hash, ".md")
+	key := storage.BlobKey(hash, ".md")
 	presignedURL, err := r2.PresignPUT(ctx, key, int64(len(content)), hash, 10*time.Minute)
 	if err != nil {
 		t.Fatalf("PresignPUT: %v", err)

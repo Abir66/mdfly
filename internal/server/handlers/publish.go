@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/Abir66/mdfly/internal/api"
-	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
-	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
+	"github.com/Abir66/mdfly/internal/server/db"
+	"github.com/Abir66/mdfly/internal/server/storage"
 	"github.com/Abir66/mdfly/internal/slug"
 )
 
@@ -21,8 +21,8 @@ const (
 
 // PublishDeps holds the dependencies injected into publish handlers.
 type PublishDeps struct {
-	PG      *pgstore.Store
-	R2      *r2store.Store
+	PG      *db.Client
+	R2      *storage.Client
 	BaseURL string // e.g. "https://mdfly.dev" — used to construct the returned URL
 }
 
@@ -63,7 +63,7 @@ func Init(deps PublishDeps) http.HandlerFunc {
 			return
 		}
 
-		doc, err := deps.PG.InsertPending(r.Context(), pgstore.InsertPendingParams{
+		doc, err := deps.PG.InsertPending(r.Context(), db.InsertPendingParams{
 			Slug:           sl,
 			IdempotencyKey: req.IdempotencyKey,
 			Manifest:       req.Manifest,
@@ -104,7 +104,7 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 
 		doc, err := deps.PG.GetByIdempotencyKey(r.Context(), req.IdempotencyKey)
 		if err != nil {
-			if errors.Is(err, pgstore.ErrNotFound) {
+			if errors.Is(err, db.ErrNotFound) {
 				writeError(w, http.StatusNotFound, "not_found", "no document for idempotency_key")
 				return
 			}
@@ -113,7 +113,7 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 		}
 
 		// Terminal-state idempotency: already published → return success.
-		if doc.Status == pgstore.StatusPublished {
+		if doc.Status == db.StatusPublished {
 			writeJSON(w, http.StatusOK, api.CommitResponse{
 				URL:          documentURL(deps.BaseURL, doc.Slug),
 				Slug:         doc.Slug,
@@ -129,9 +129,9 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 			return
 		}
 		for _, f := range manifest.Files {
-			key := r2store.BlobKey(f.Hash, r2store.ExtFromPath(f.Path))
+			key := storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path))
 			if err := deps.R2.HeadBlob(r.Context(), key, f.Size); err != nil {
-				if errors.Is(err, r2store.ErrBlobMissing) {
+				if errors.Is(err, storage.ErrBlobMissing) {
 					writeError(w, http.StatusConflict, "blob_missing",
 						fmt.Sprintf("blob %s not found or size mismatch", f.Hash))
 					return
@@ -144,7 +144,7 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 		expiresAt := time.Now().Add(anonExpiresIn)
 		published, err := deps.PG.Publish(r.Context(), req.IdempotencyKey, expiresAt)
 		if err != nil {
-			if errors.Is(err, pgstore.ErrNotFound) {
+			if errors.Is(err, db.ErrNotFound) {
 				writeError(w, http.StatusNotFound, "not_found", "no pending document for idempotency_key")
 				return
 			}
@@ -162,15 +162,15 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 
 // buildPresignedURLs HEAD-checks each manifest file against R2 and returns
 // the list of missing hashes plus a presigned URL for each missing blob.
-func buildPresignedURLs(ctx context.Context, r2 *r2store.Store, manifest api.Manifest) ([]string, map[string]string, error) {
+func buildPresignedURLs(ctx context.Context, r2 *storage.Client, manifest api.Manifest) ([]string, map[string]string, error) {
 	var missingHashes []string
 	presignedURLs := make(map[string]string)
 
 	for _, f := range manifest.Files {
-		key := r2store.BlobKey(f.Hash, r2store.ExtFromPath(f.Path))
+		key := storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path))
 		err := r2.HeadBlob(ctx, key, f.Size)
 		if err != nil {
-			if !errors.Is(err, r2store.ErrBlobMissing) {
+			if !errors.Is(err, storage.ErrBlobMissing) {
 				return nil, nil, fmt.Errorf("head blob %s: %w", f.Hash, err)
 			}
 			url, err := r2.PresignPUT(ctx, key, f.Size, f.Hash, presignTTL)

@@ -10,9 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
-	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
-	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
+	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
 const (
@@ -44,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	r2 := r2store.New(r2store.Config{
+	r2 := storage.New(storage.Config{
 		Endpoint:        requireEnv("R2_ENDPOINT"),
 		AccessKeyID:     requireEnv("R2_ACCESS_KEY_ID"),
 		SecretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
@@ -52,7 +52,7 @@ func main() {
 		PublicBaseURL:   requireEnv("CDN_BASE_URL"),
 	})
 
-	pg := pgstore.New(pool)
+	pg := db.New(pool)
 	publishDeps := handlers.PublishDeps{
 		PG:      pg,
 		R2:      r2,

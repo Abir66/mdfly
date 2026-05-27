@@ -1,4 +1,4 @@
-package postgres_test
+package db_test
 
 import (
 	"context"
@@ -22,7 +22,7 @@ func migrationsDir() string {
 	if !ok {
 		panic("runtime.Caller failed")
 	}
-	return filepath.Join(filepath.Dir(filename), "../../../../migrations")
+	return filepath.Join(filepath.Dir(filename), "../../../migrations")
 }
 
 func startPostgres(t *testing.T) (dsn string, cleanup func()) {

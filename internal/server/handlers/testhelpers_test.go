@@ -28,9 +28,9 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
-	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
-	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
+	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
 // ── container helpers ─────────────────────────────────────────────────────────
@@ -159,8 +159,8 @@ func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *http
 	}
 	t.Cleanup(pool.Close)
 
-	pg := pgstore.New(pool)
-	r2 := r2store.New(r2store.Config{
+	pg := db.New(pool)
+	r2 := storage.New(storage.Config{
 		Endpoint:        env.endpoint,
 		AccessKeyID:     env.accessKey,
 		SecretAccessKey: env.secretKey,

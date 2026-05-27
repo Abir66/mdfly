@@ -1,4 +1,4 @@
-package postgres
+package db
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Abir66/mdfly/internal/api"
 )
@@ -47,32 +46,6 @@ func (d *Document) ManifestHashHex() string {
 	return hex.EncodeToString(d.ManifestHash)
 }
 
-// Store wraps a *pgxpool.Pool for documents-table operations.
-type Store struct {
-	pool *pgxpool.Pool
-}
-
-// New returns a Store backed by pool.
-func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
-}
-
-// NewFromDSN opens a pgxpool from dsn and returns a Store.
-func NewFromDSN(ctx context.Context, dsn string) (*Store, error) {
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		return nil, err
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("ping postgres: %w", err)
-	}
-	return New(pool), nil
-}
-
-// Close closes the underlying pool.
-func (s *Store) Close() { s.pool.Close() }
-
 // InsertPendingParams holds the values for InsertPending.
 type InsertPendingParams struct {
 	Slug           string
@@ -83,7 +56,7 @@ type InsertPendingParams struct {
 
 // InsertPending inserts a documents row with status='pending'.
 // On idempotency_key conflict (DO NOTHING) it fetches and returns the existing row.
-func (s *Store) InsertPending(ctx context.Context, p InsertPendingParams) (*Document, error) {
+func (c *Client) InsertPending(ctx context.Context, p InsertPendingParams) (*Document, error) {
 	manifestJSON, err := json.Marshal(p.Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("marshal manifest: %w", err)
@@ -116,14 +89,14 @@ RETURNING id, slug, idempotency_key, status,
           bytes_total, file_count,
           expires_at, created_at, updated_at`
 
-	row := s.pool.QueryRow(ctx, q,
+	row := c.pool.QueryRow(ctx, q,
 		p.Slug, p.IdempotencyKey, manifestJSON, manifestHash,
 		editTokenHash, bytesTotal, fileCount,
 	)
 	doc, err := scanDocument(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return s.GetByIdempotencyKey(ctx, p.IdempotencyKey)
+			return c.GetByIdempotencyKey(ctx, p.IdempotencyKey)
 		}
 		return nil, fmt.Errorf("insert pending: %w", err)
 	}
@@ -131,7 +104,7 @@ RETURNING id, slug, idempotency_key, status,
 }
 
 // GetByIdempotencyKey returns the document row matching key, or ErrNotFound.
-func (s *Store) GetByIdempotencyKey(ctx context.Context, key string) (*Document, error) {
+func (c *Client) GetByIdempotencyKey(ctx context.Context, key string) (*Document, error) {
 	const q = `
 SELECT id, slug, idempotency_key, status,
        manifest, manifest_hash, edit_token_hash,
@@ -140,7 +113,7 @@ SELECT id, slug, idempotency_key, status,
 FROM documents
 WHERE idempotency_key = $1`
 
-	row := s.pool.QueryRow(ctx, q, key)
+	row := c.pool.QueryRow(ctx, q, key)
 	doc, err := scanDocument(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -154,7 +127,7 @@ WHERE idempotency_key = $1`
 // Publish atomically flips status to 'published' and sets expires_at.
 // If the row is already published, returns it as-is (terminal-state idempotency).
 // Returns ErrNotFound if no pending row matches key.
-func (s *Store) Publish(ctx context.Context, idempotencyKey string, expiresAt time.Time) (*Document, error) {
+func (c *Client) Publish(ctx context.Context, idempotencyKey string, expiresAt time.Time) (*Document, error) {
 	const q = `
 UPDATE documents
 SET status = 'published',
@@ -167,7 +140,7 @@ RETURNING id, slug, idempotency_key, status,
           bytes_total, file_count,
           expires_at, created_at, updated_at`
 
-	row := s.pool.QueryRow(ctx, q, idempotencyKey, expiresAt)
+	row := c.pool.QueryRow(ctx, q, idempotencyKey, expiresAt)
 	doc, err := scanDocument(row)
 	if err == nil {
 		return doc, nil
@@ -175,7 +148,7 @@ RETURNING id, slug, idempotency_key, status,
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("publish: %w", err)
 	}
-	doc, err = s.GetByIdempotencyKey(ctx, idempotencyKey)
+	doc, err = c.GetByIdempotencyKey(ctx, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +159,7 @@ RETURNING id, slug, idempotency_key, status,
 }
 
 // GetBySlug returns the published document row for slug, or ErrNotFound.
-func (s *Store) GetBySlug(ctx context.Context, sl string) (*Document, error) {
+func (c *Client) GetBySlug(ctx context.Context, sl string) (*Document, error) {
 	const q = `
 SELECT id, slug, idempotency_key, status,
        manifest, manifest_hash, edit_token_hash,
@@ -195,7 +168,7 @@ SELECT id, slug, idempotency_key, status,
 FROM documents
 WHERE slug = $1 AND status = 'published'`
 
-	row := s.pool.QueryRow(ctx, q, sl)
+	row := c.pool.QueryRow(ctx, q, sl)
 	doc, err := scanDocument(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

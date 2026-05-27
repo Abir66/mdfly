@@ -8,14 +8,14 @@ import (
 	"net/http"
 
 	"github.com/Abir66/mdfly/internal/api"
-	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
-	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
+	"github.com/Abir66/mdfly/internal/server/db"
+	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
 // ViewDeps holds dependencies for the view handler.
 type ViewDeps struct {
-	PG *pgstore.Store
-	R2 *r2store.Store
+	PG *db.Client
+	R2 *storage.Client
 }
 
 // View handles GET /{slug}.
@@ -29,7 +29,7 @@ func View(deps ViewDeps) http.HandlerFunc {
 
 		doc, err := deps.PG.GetBySlug(r.Context(), sl)
 		if err != nil {
-			if errors.Is(err, pgstore.ErrNotFound) {
+			if errors.Is(err, db.ErrNotFound) {
 				http.NotFound(w, r)
 				return
 			}
@@ -51,7 +51,7 @@ func View(deps ViewDeps) http.HandlerFunc {
 
 		content, err := deps.R2.GetBlob(r.Context(), rootKey)
 		if err != nil {
-			if errors.Is(err, r2store.ErrBlobMissing) {
+			if errors.Is(err, storage.ErrBlobMissing) {
 				http.Error(w, "blob not found", http.StatusInternalServerError)
 				return
 			}
@@ -68,7 +68,7 @@ func View(deps ViewDeps) http.HandlerFunc {
 func rootBlobKey(manifest api.Manifest) (string, error) {
 	for _, f := range manifest.Files {
 		if f.Path == manifest.Root {
-			return r2store.BlobKey(f.Hash, r2store.ExtFromPath(f.Path)), nil
+			return storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path)), nil
 		}
 	}
 	return "", fmt.Errorf("root file %q not found in manifest", manifest.Root)
