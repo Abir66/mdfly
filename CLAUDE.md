@@ -28,6 +28,11 @@ CONTEXT.md is the spec; ADRs are the why.
 
 The project is pre-implementation. Do not start writing Go, SQL migrations, Dockerfiles, IaC, etc., until the user explicitly asks.
 
+
+## Coding Guidelines
+
+Never hardcode values / strings. Declare and/or use constants
+
 ## Logging
 
 Use `log/slog` (stdlib, Go 1.21+) for all logging. Never use `log` or third-party loggers.
@@ -38,6 +43,11 @@ Level guide:
 - `slog.Error` — failures requiring attention; pair with `os.Exit(1)` when fatal
 
 Use structured key-value args: `slog.Error("open db", "err", err)` not `slog.Errorf("open db: %v", err)`.
+
+## Building and running
+
+While building the binary place it in bin directory
+
 
 ## Git
 

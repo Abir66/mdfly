@@ -215,7 +215,9 @@ func TestCLIPublish(t *testing.T) {
 	}
 
 	// Verify the document is accessible.
-	resp, err := http.Get(url)
+	const verifyTimeout = 10 * time.Second
+	verifyClient := &http.Client{Timeout: verifyTimeout}
+	resp, err := verifyClient.Get(url)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}

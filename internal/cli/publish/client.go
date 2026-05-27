@@ -2,6 +2,7 @@ package publish
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -12,18 +13,26 @@ import (
 	"github.com/Abir66/mdfly/internal/api"
 )
 
-func postJSON[T any](url string, body any) (T, error) {
+func postJSON[T any](ctx context.Context, client *http.Client, url string, body any) (T, error) {
 	var zero T
 	b, err := json.Marshal(body)
 	if err != nil {
 		return zero, err
 	}
-	resp, err := http.Post(url, "application/json", bytes.NewReader(b)) //nolint:noctx
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		return zero, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
 	if err != nil {
 		return zero, err
 	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return zero, fmt.Errorf("reading response body: %w", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		var apiErr api.ErrorResponse
 		if jerr := json.Unmarshal(data, &apiErr); jerr == nil && apiErr.Error.Code != "" {
@@ -38,14 +47,14 @@ func postJSON[T any](url string, body any) (T, error) {
 	return result, nil
 }
 
-func putBlob(presignedURL string, content []byte, hexHash string) error {
+func putBlob(ctx context.Context, client *http.Client, presignedURL string, content []byte, hexHash string) error {
 	raw, err := hex.DecodeString(hexHash)
 	if err != nil {
 		return fmt.Errorf("decode hash: %w", err)
 	}
 	b64Hash := base64.StdEncoding.EncodeToString(raw)
 
-	req, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(content))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, presignedURL, bytes.NewReader(content))
 	if err != nil {
 		return err
 	}
@@ -53,13 +62,16 @@ func putBlob(presignedURL string, content []byte, hexHash string) error {
 	req.Header.Set("x-amz-checksum-sha256", b64Hash)
 	req.Header.Set("x-amz-sdk-checksum-algorithm", "SHA256")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("reading response body: %w", err)
+		}
 		return fmt.Errorf("PUT status %d: %s", resp.StatusCode, body)
 	}
 	return nil

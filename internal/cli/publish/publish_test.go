@@ -166,7 +166,9 @@ func TestRun_sendsEditToken(t *testing.T) {
 	srv = httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	publish.Run(srv.URL, mdFile) //nolint:errcheck
+	if _, err := publish.Run(srv.URL, mdFile); err != nil {
+		t.Fatalf("publish.Run failed: %v", err)
+	}
 
 	if !strings.HasPrefix(gotToken, "mftk_") {
 		t.Errorf("edit_token=%q, want mftk_ prefix", gotToken)

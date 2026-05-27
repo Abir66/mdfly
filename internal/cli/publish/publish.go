@@ -1,7 +1,11 @@
 package publish
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/manifest"
@@ -11,6 +15,8 @@ import (
 const (
 	pathInit   = "/v1/publish/init"
 	pathCommit = "/v1/publish/commit"
+
+	httpClientTimeout = 30 * time.Second
 )
 
 // Run orchestrates the 3-phase publish wire for a single file and returns the public URL.
@@ -30,7 +36,14 @@ func Run(apiBase, filePath string) (string, error) {
 		return "", fmt.Errorf("generate edit token: %w", err)
 	}
 
-	initResp, err := postJSON[api.InitResponse](apiBase+pathInit, api.InitRequest{
+	ctx := context.Background()
+	client := &http.Client{Timeout: httpClientTimeout}
+
+	initURL, err := url.JoinPath(apiBase, pathInit)
+	if err != nil {
+		return "", fmt.Errorf("build init URL: %w", err)
+	}
+	initResp, err := postJSON[api.InitResponse](ctx, client, initURL, api.InitRequest{
 		IdempotencyKey: idempotencyKey.String(),
 		Manifest:       mfst,
 		EditToken:      editToken,
@@ -40,12 +53,20 @@ func Run(apiBase, filePath string) (string, error) {
 	}
 
 	for _, h := range initResp.MissingHashes {
-		if err := putBlob(initResp.PresignedURLs[h], content, h); err != nil {
+		presignedURL, ok := initResp.PresignedURLs[h]
+		if !ok {
+			return "", fmt.Errorf("missing presigned URL for hash %s", h)
+		}
+		if err := putBlob(ctx, client, presignedURL, content, h); err != nil {
 			return "", fmt.Errorf("upload blob: %w", err)
 		}
 	}
 
-	commitResp, err := postJSON[api.CommitResponse](apiBase+pathCommit, api.CommitRequest{
+	commitURL, err := url.JoinPath(apiBase, pathCommit)
+	if err != nil {
+		return "", fmt.Errorf("build commit URL: %w", err)
+	}
+	commitResp, err := postJSON[api.CommitResponse](ctx, client, commitURL, api.CommitRequest{
 		IdempotencyKey: idempotencyKey.String(),
 	})
 	if err != nil {
