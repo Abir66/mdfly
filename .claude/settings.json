@@ -2,5 +2,19 @@
   "enabledPlugins": {
     "andrej-karpathy-skills@karpathy-skills": true,
     "superpowers@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /Users/shipday/Personal/mdfly && go fmt ./... 2>/dev/null || true",
+            "statusMessage": "go fmt..."
+          }
+        ]
+      }
+    ]
   }
 }

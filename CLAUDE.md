@@ -39,6 +39,7 @@ Level guide:
 
 Use structured key-value args: `slog.Error("open db", "err", err)` not `slog.Errorf("open db: %v", err)`.
 
-## Committing
+## Git
 
-docs/issues folder are added in gitignore. They are only for local issue tracking. Don't add them in git
+Do not add the files that are excluded by .gitignore. docs/issues folder is in .gitignore. it is only for local issue tracking. don't add its files to git
+Do not push or create PR without me explicitly mentioning

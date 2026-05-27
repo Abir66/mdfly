@@ -1,10 +1,10 @@
 package handlers
 
 import (
-	"html"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 
 	"github.com/Abir66/mdfly/internal/api"
