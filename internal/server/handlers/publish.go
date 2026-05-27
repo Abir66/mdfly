@@ -74,10 +74,16 @@ func Init(deps PublishDeps) http.HandlerFunc {
 			return
 		}
 
-		missingHashes, presignedURLs, err := buildPresignedURLs(r.Context(), deps.R2, req.Manifest)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate presigned URLs")
-			return
+		missingHashes := make([]string, 0, len(req.Manifest.Files))
+		presignedURLs := make(map[string]string, len(req.Manifest.Files))
+		for _, f := range req.Manifest.Files {
+			url, err := buildPresignedURL(r.Context(), deps.R2, f)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate presigned URLs")
+				return
+			}
+			missingHashes = append(missingHashes, f.Hash)
+			presignedURLs[f.Hash] = url
 		}
 
 		writeJSON(w, http.StatusOK, api.InitResponse{
@@ -160,33 +166,14 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 	}
 }
 
-// buildPresignedURLs HEAD-checks each manifest file against R2 and returns
-// the list of missing hashes plus a presigned URL for each missing blob.
-func buildPresignedURLs(ctx context.Context, r2 *storage.Client, manifest api.Manifest) ([]string, map[string]string, error) {
-	var missingHashes []string
-	presignedURLs := make(map[string]string)
-
-	for _, f := range manifest.Files {
-		key := storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path))
-		err := r2.HeadBlob(ctx, key, f.Size)
-		if err != nil {
-			if !errors.Is(err, storage.ErrBlobMissing) {
-				return nil, nil, fmt.Errorf("head blob %s: %w", f.Hash, err)
-			}
-			url, err := r2.PresignPUT(ctx, key, f.Size, f.Hash, presignTTL)
-			if err != nil {
-				return nil, nil, fmt.Errorf("presign %s: %w", f.Hash, err)
-			}
-			missingHashes = append(missingHashes, f.Hash)
-			presignedURLs[f.Hash] = url
-		}
+// buildPresignedURL returns a presigned PUT URL for a single manifest file.
+func buildPresignedURL(ctx context.Context, r2 *storage.Client, f api.ManifestFile) (string, error) {
+	key := storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path))
+	url, err := r2.PresignPUT(ctx, key, f.Size, presignTTL)
+	if err != nil {
+		return "", fmt.Errorf("presign %s: %w", f.Hash, err)
 	}
-
-	if missingHashes == nil {
-		missingHashes = []string{}
-	}
-
-	return missingHashes, presignedURLs, nil
+	return url, nil
 }
 
 func generateSlug() (string, error) {

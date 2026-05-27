@@ -57,7 +57,7 @@ func Run(apiBase, filePath string) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("missing presigned URL for hash %s", h)
 		}
-		if err := putBlob(ctx, client, presignedURL, content, h); err != nil {
+		if err := putBlob(ctx, client, presignedURL, content); err != nil {
 			return "", fmt.Errorf("upload blob: %w", err)
 		}
 	}

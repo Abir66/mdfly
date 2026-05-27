@@ -30,7 +30,7 @@ func TestView_returnsMarkdownInPre(t *testing.T) {
 		IdempotencyKey: idempKey, Manifest: manifest,
 	})
 	initBody := decodeInitResponse(t, initR)
-	putBlob(t, initBody.PresignedURLs[hash], content, hash)
+	putBlob(t, initBody.PresignedURLs[hash], content)
 
 	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
 	commitBody := decodeCommitResponse(t, commitR)
@@ -104,7 +104,7 @@ func TestView_htmlEscaping(t *testing.T) {
 		IdempotencyKey: idempKey, Manifest: manifest,
 	})
 	initBody := decodeInitResponse(t, initR)
-	putBlob(t, initBody.PresignedURLs[hash], content, hash)
+	putBlob(t, initBody.PresignedURLs[hash], content)
 
 	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
 	commitBody := decodeCommitResponse(t, commitR)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -235,20 +234,16 @@ func contentHash(b []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-func hashBase64(hexHash string) string {
-	raw, _ := hex.DecodeString(hexHash)
-	return base64.StdEncoding.EncodeToString(raw)
-}
-
-func putBlob(t *testing.T, presignedURL string, content []byte, hexHash string) {
+// putBlob uploads via a presigned URL the way the real CLI does: body and
+// Content-Length only. The SHA256 checksum lives in the signed query of the URL,
+// so no checksum header is sent.
+func putBlob(t *testing.T, presignedURL string, content []byte) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(content))
 	if err != nil {
 		t.Fatalf("build PUT request: %v", err)
 	}
 	req.ContentLength = int64(len(content))
-	req.Header.Set("x-amz-checksum-sha256", hashBase64(hexHash))
-	req.Header.Set("x-amz-sdk-checksum-algorithm", "SHA256")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)

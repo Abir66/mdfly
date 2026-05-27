@@ -3,8 +3,6 @@ package publish
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,20 +45,12 @@ func postJSON[T any](ctx context.Context, client *http.Client, url string, body 
 	return result, nil
 }
 
-func putBlob(ctx context.Context, client *http.Client, presignedURL string, content []byte, hexHash string) error {
-	raw, err := hex.DecodeString(hexHash)
-	if err != nil {
-		return fmt.Errorf("decode hash: %w", err)
-	}
-	b64Hash := base64.StdEncoding.EncodeToString(raw)
-
+func putBlob(ctx context.Context, client *http.Client, presignedURL string, content []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, presignedURL, bytes.NewReader(content))
 	if err != nil {
 		return err
 	}
 	req.ContentLength = int64(len(content))
-	req.Header.Set("x-amz-checksum-sha256", b64Hash)
-	req.Header.Set("x-amz-sdk-checksum-algorithm", "SHA256")
 
 	resp, err := client.Do(req)
 	if err != nil {

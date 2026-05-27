@@ -2,7 +2,6 @@ package publish_test
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -48,21 +47,15 @@ func mockServer(t *testing.T, content []byte) *httptest.Server {
 	})
 
 	mux.HandleFunc("PUT /blob/", func(w http.ResponseWriter, r *http.Request) {
-		// Verify Content-Length and checksum headers are present
+		// The CLI uploads body + Content-Length. The SHA256 checksum is carried in
+		// the presigned URL's signed query (enforced by R2), not a request header.
 		if r.ContentLength <= 0 {
 			http.Error(w, "missing Content-Length", http.StatusBadRequest)
 			return
 		}
-		if r.Header.Get("x-amz-checksum-sha256") == "" {
-			http.Error(w, "missing checksum header", http.StatusBadRequest)
-			return
-		}
-		// Verify checksum matches content
 		body, _ := io.ReadAll(r.Body)
-		sum := sha256.Sum256(body)
-		gotB64 := base64.StdEncoding.EncodeToString(sum[:])
-		if r.Header.Get("x-amz-checksum-sha256") != gotB64 {
-			http.Error(w, "checksum mismatch", http.StatusBadRequest)
+		if sha256Hex(body) != hash {
+			http.Error(w, "body does not match expected hash", http.StatusBadRequest)
 			return
 		}
 		blobUploaded = true
