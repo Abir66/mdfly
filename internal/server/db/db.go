@@ -12,8 +12,11 @@ type Client struct {
 	pool *pgxpool.Pool
 }
 
-// New returns a Client backed by pool.
+// New returns a Client backed by pool. It panics if pool is nil.
 func New(pool *pgxpool.Pool) *Client {
+	if pool == nil {
+		panic("db.New: pool must not be nil")
+	}
 	return &Client{pool: pool}
 }
 
@@ -30,5 +33,10 @@ func NewFromDSN(ctx context.Context, dsn string) (*Client, error) {
 	return New(pool), nil
 }
 
-// Close closes the underlying pool.
-func (c *Client) Close() { c.pool.Close() }
+// Close closes the underlying pool. It is safe to call on a nil Client.
+func (c *Client) Close() {
+	if c == nil || c.pool == nil {
+		return
+	}
+	c.pool.Close()
+}
