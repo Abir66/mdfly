@@ -127,6 +127,10 @@ func (s *Store) GetBlob(ctx context.Context, key string) ([]byte, error) {
 		if errors.As(err, &nf) {
 			return nil, ErrBlobMissing
 		}
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return nil, ErrBlobMissing
+		}
 		var re *smithyhttp.ResponseError
 		if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
 			return nil, ErrBlobMissing

@@ -115,6 +115,10 @@ func TestView_htmlEscaping(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /%s: status=%d, want 200", commitBody.Slug, resp.StatusCode)
+	}
+
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
 

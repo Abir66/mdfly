@@ -104,7 +104,7 @@ func startMinio(t *testing.T) minioEnv {
 	)
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
-		Image:        "minio/minio:latest",
+		Image:        "minio/minio:RELEASE.2025-09-07T16-13-09Z",
 		ExposedPorts: []string{"9000/tcp"},
 		Env: map[string]string{
 			"MINIO_ROOT_USER":     accessKey,
@@ -250,7 +250,8 @@ func putBlob(t *testing.T, presignedURL string, content []byte, hexHash string) 
 	req.Header.Set("x-amz-checksum-sha256", hashBase64(hexHash))
 	req.Header.Set("x-amz-sdk-checksum-algorithm", "SHA256")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("PUT blob: %v", err)
 	}
