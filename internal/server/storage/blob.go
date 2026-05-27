@@ -1,4 +1,4 @@
-package r2
+package storage
 
 import (
 	"context"
@@ -30,16 +30,16 @@ type Config struct {
 	PublicBaseURL   string // e.g. "https://cdn.mdfly.dev" — prepended to BlobKey in responses
 }
 
-// Store wraps an AWS S3 client configured for R2/minio.
-type Store struct {
+// Client wraps an AWS S3 client configured for R2/minio.
+type Client struct {
 	client        *s3.Client
 	presignClient *s3.PresignClient
 	bucket        string
 	publicBase    string
 }
 
-// New returns a Store configured from cfg.
-func New(cfg Config) *Store {
+// New returns a Client configured from cfg.
+func New(cfg Config) *Client {
 	creds := credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")
 	client := s3.New(s3.Options{
 		BaseEndpoint:       aws.String(cfg.Endpoint),
@@ -48,7 +48,7 @@ func New(cfg Config) *Store {
 		UsePathStyle:       true, // required for minio and R2 custom domains
 		EndpointResolverV2: nil,
 	})
-	return &Store{
+	return &Client{
 		client:        client,
 		presignClient: s3.NewPresignClient(client),
 		bucket:        cfg.Bucket,
@@ -66,21 +66,21 @@ func BlobKey(hashHex, ext string) string {
 }
 
 // BlobPublicURL returns the public CDN URL for a blob.
-func (s *Store) BlobPublicURL(key string) string {
-	return s.publicBase + "/" + key
+func (c *Client) BlobPublicURL(key string) string {
+	return c.publicBase + "/" + key
 }
 
 // PresignPUT returns a presigned PUT URL for a blob that pins Content-Length and
 // x-amz-checksum-sha256 into the V4 signature.
 // sha256hex is the hex-encoded SHA256 of the blob content.
-func (s *Store) PresignPUT(ctx context.Context, key string, size int64, sha256hex string, ttl time.Duration) (string, error) {
+func (c *Client) PresignPUT(ctx context.Context, key string, size int64, sha256hex string, ttl time.Duration) (string, error) {
 	checksumB64, err := hexToBase64(sha256hex)
 	if err != nil {
 		return "", fmt.Errorf("invalid sha256hex: %w", err)
 	}
 
-	req, err := s.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
-		Bucket:            aws.String(s.bucket),
+	req, err := c.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
+		Bucket:            aws.String(c.bucket),
 		Key:               aws.String(key),
 		ContentLength:     aws.Int64(size),
 		ChecksumSHA256:    aws.String(checksumB64),
@@ -93,9 +93,9 @@ func (s *Store) PresignPUT(ctx context.Context, key string, size int64, sha256he
 }
 
 // HeadBlob checks that an object exists in R2 and that its size matches expectedSize.
-func (s *Store) HeadBlob(ctx context.Context, key string, expectedSize int64) error {
-	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(s.bucket),
+func (c *Client) HeadBlob(ctx context.Context, key string, expectedSize int64) error {
+	out, err := c.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
@@ -117,9 +117,9 @@ func (s *Store) HeadBlob(ctx context.Context, key string, expectedSize int64) er
 }
 
 // GetBlob fetches the full content of an object from R2.
-func (s *Store) GetBlob(ctx context.Context, key string) ([]byte, error) {
-	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
+func (c *Client) GetBlob(ctx context.Context, key string) ([]byte, error) {
+	out, err := c.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(c.bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
