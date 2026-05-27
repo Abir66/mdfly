@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/server/manifest"
 )
 
 // ErrNotFound is returned when a document row does not exist.
@@ -50,7 +50,7 @@ func (d *Document) ManifestHashHex() string {
 type InsertPendingParams struct {
 	Slug           string
 	IdempotencyKey string
-	Manifest       api.Manifest
+	Manifest       manifest.Manifest
 	EditToken      string // plaintext; stored as SHA256(token)
 }
 
@@ -65,10 +65,10 @@ func (c *Client) InsertPending(ctx context.Context, p InsertPendingParams) (*Doc
 	manifestHash := mhRaw[:]
 
 	var bytesTotal int64
-	for _, f := range p.Manifest.Files {
+	for _, f := range p.Manifest.FilesByPath {
 		bytesTotal += f.Size
 	}
-	fileCount := len(p.Manifest.Files)
+	fileCount := len(p.Manifest.FilesByPath)
 
 	var editTokenHash []byte
 	if p.EditToken != "" {

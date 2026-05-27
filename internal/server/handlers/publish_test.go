@@ -20,15 +20,12 @@ func TestPublishInitAndCommit(t *testing.T) {
 	content := []byte("# Hello mdfly\n\nThis is a test document.\n")
 	hash := contentHash(content)
 
-	manifest := api.Manifest{
-		Root:  "hello.md",
-		Files: []api.ManifestFile{{Path: "hello.md", Hash: hash, Size: int64(len(content))}},
-	}
+	bundle := singleFileBundle("hello.md", content)
 	idempotencyKey := "550e8400-e29b-41d4-a716-446655440000"
 
 	initResp := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
 		IdempotencyKey: idempotencyKey,
-		Manifest:       manifest,
+		Bundle:         bundle,
 		EditToken:      "mftk_testtoken",
 	})
 	if initResp.StatusCode != http.StatusOK {
@@ -44,8 +41,8 @@ func TestPublishInitAndCommit(t *testing.T) {
 	if initBody.InlineAccept {
 		t.Error("init response: inline_accept should be false")
 	}
-	if len(initBody.MissingHashes) != 1 || initBody.MissingHashes[0] != hash {
-		t.Errorf("init response: missing_hashes=%v, want [%s]", initBody.MissingHashes, hash)
+	if len(initBody.PresignedURLs) != 1 {
+		t.Errorf("init response: presigned_urls len=%d, want 1", len(initBody.PresignedURLs))
 	}
 	presignedURL, ok := initBody.PresignedURLs[hash]
 	if !ok {
@@ -84,11 +81,8 @@ func TestPublishInit_idempotent(t *testing.T) {
 	env := startMinio(t)
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
-	manifest := api.Manifest{
-		Root:  "doc.md",
-		Files: []api.ManifestFile{{Path: "doc.md", Hash: contentHash([]byte("hello")), Size: 5}},
-	}
-	req := api.InitRequest{IdempotencyKey: "6ba7b810-9dad-11d1-80b4-00c04fd430c8", Manifest: manifest}
+	bundle := singleFileBundle("doc.md", []byte("hello"))
+	req := api.InitRequest{IdempotencyKey: "6ba7b810-9dad-11d1-80b4-00c04fd430c8", Bundle: bundle}
 
 	r1 := postJSON(t, srv.URL+"/v1/publish/init", req)
 	b1 := decodeInitResponse(t, r1)
@@ -114,15 +108,11 @@ func TestPublishCommit_missingBlob(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	content := []byte("missing blob content")
-	hash := contentHash(content)
-	manifest := api.Manifest{
-		Root:  "m.md",
-		Files: []api.ManifestFile{{Path: "m.md", Hash: hash, Size: int64(len(content))}},
-	}
+	bundle := singleFileBundle("m.md", content)
 	idempotencyKey := "6ba7b811-9dad-11d1-80b4-00c04fd430c8"
 
 	r := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempotencyKey, Manifest: manifest,
+		IdempotencyKey: idempotencyKey, Bundle: bundle,
 	})
 	r.Body.Close()
 	if r.StatusCode != http.StatusOK {
@@ -149,14 +139,11 @@ func TestPublishCommit_alreadyPublished(t *testing.T) {
 
 	content := []byte("published again")
 	hash := contentHash(content)
-	manifest := api.Manifest{
-		Root:  "pub.md",
-		Files: []api.ManifestFile{{Path: "pub.md", Hash: hash, Size: int64(len(content))}},
-	}
+	bundle := singleFileBundle("pub.md", content)
 	idempotencyKey := "6ba7b812-9dad-11d1-80b4-00c04fd430c8"
 
 	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempotencyKey, Manifest: manifest,
+		IdempotencyKey: idempotencyKey, Bundle: bundle,
 	})
 	initBody := decodeInitResponse(t, initR)
 	putBlob(t, initBody.PresignedURLs[hash], content)
@@ -191,22 +178,16 @@ func TestPublishInit_differentManifestSameKey(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	idempotencyKey := "6ba7b813-9dad-11d1-80b4-00c04fd430c8"
-	m1 := api.Manifest{
-		Root:  "a.md",
-		Files: []api.ManifestFile{{Path: "a.md", Hash: contentHash([]byte("content a")), Size: 9}},
-	}
-	m2 := api.Manifest{
-		Root:  "b.md",
-		Files: []api.ManifestFile{{Path: "b.md", Hash: contentHash([]byte("content b")), Size: 9}},
-	}
+	m1 := singleFileBundle("a.md", []byte("content a"))
+	m2 := singleFileBundle("b.md", []byte("content b"))
 
 	r1 := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempotencyKey, Manifest: m1,
+		IdempotencyKey: idempotencyKey, Bundle: m1,
 	})
 	b1 := decodeInitResponse(t, r1)
 
 	r2 := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempotencyKey, Manifest: m2,
+		IdempotencyKey: idempotencyKey, Bundle: m2,
 	})
 	b2 := decodeInitResponse(t, r2)
 

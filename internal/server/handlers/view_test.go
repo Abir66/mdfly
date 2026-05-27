@@ -20,14 +20,11 @@ func TestView_returnsMarkdownInPre(t *testing.T) {
 
 	content := []byte("# Hello\n\nThis is mdfly.\n")
 	hash := contentHash(content)
-	manifest := api.Manifest{
-		Root:  "hello.md",
-		Files: []api.ManifestFile{{Path: "hello.md", Hash: hash, Size: int64(len(content))}},
-	}
+	bundle := singleFileBundle("hello.md", content)
 	idempKey := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01"
 
 	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempKey, Manifest: manifest,
+		IdempotencyKey: idempKey, Bundle: bundle,
 	})
 	initBody := decodeInitResponse(t, initR)
 	putBlob(t, initBody.PresignedURLs[hash], content)
@@ -94,14 +91,11 @@ func TestView_htmlEscaping(t *testing.T) {
 
 	content := []byte("<script>alert('xss')</script>\n")
 	hash := contentHash(content)
-	manifest := api.Manifest{
-		Root:  "xss.md",
-		Files: []api.ManifestFile{{Path: "xss.md", Hash: hash, Size: int64(len(content))}},
-	}
+	bundle := singleFileBundle("xss.md", content)
 	idempKey := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee02"
 
 	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempKey, Manifest: manifest,
+		IdempotencyKey: idempKey, Bundle: bundle,
 	})
 	initBody := decodeInitResponse(t, initR)
 	putBlob(t, initBody.PresignedURLs[hash], content)

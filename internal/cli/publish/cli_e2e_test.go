@@ -1,4 +1,4 @@
-package main_test
+package publish_test
 
 import (
 	"bytes"
@@ -32,10 +32,10 @@ import (
 
 func projectRoot() string {
 	_, filename, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(filename), "../..")
+	return filepath.Join(filepath.Dir(filename), "../../..")
 }
 
-func migrationsDir() string {
+func e2eMigrationsDir() string {
 	return filepath.Join(projectRoot(), "migrations")
 }
 
@@ -84,7 +84,7 @@ func startPostgres(t *testing.T) string {
 	dsn := fmt.Sprintf("postgres://mdfly:secret@%s:%s/mdfly?sslmode=disable", host, port.Port())
 
 	migrateDSN := strings.Replace(dsn, "postgres://", "pgx5://", 1)
-	m, err := migrate.New("file://"+migrationsDir(), migrateDSN)
+	m, err := migrate.New("file://"+e2eMigrationsDir(), migrateDSN)
 	if err != nil {
 		t.Fatalf("create migrator: %v", err)
 	}

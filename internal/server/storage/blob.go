@@ -58,13 +58,13 @@ func New(cfg Config) *Client {
 	}
 }
 
-// BlobKey returns the R2 object key for a hash+ext pair.
-// Format: documents/<hash>.<ext>
-func BlobKey(hashHex, ext string) string {
+// BlobKey returns the R2 object key for a slug+hash+ext triple.
+// Format: documents/<slug>/<hash>.<ext>
+func BlobKey(slug, hashHex, ext string) string {
 	if ext != "" && !strings.HasPrefix(ext, ".") {
 		ext = "." + ext
 	}
-	return "documents/" + hashHex + ext
+	return "documents/" + slug + "/" + hashHex + ext
 }
 
 // BlobPublicURL returns the public CDN URL for a blob.
