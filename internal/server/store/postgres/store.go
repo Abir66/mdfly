@@ -18,12 +18,20 @@ import (
 // ErrNotFound is returned when a document row does not exist.
 var ErrNotFound = errors.New("document not found")
 
+// DocumentStatus is the lifecycle state of a document row.
+type DocumentStatus string
+
+const (
+	StatusPending   DocumentStatus = "pending"
+	StatusPublished DocumentStatus = "published"
+)
+
 // Document is a row from the documents table.
 type Document struct {
 	ID             int64
 	Slug           string
 	IdempotencyKey string
-	Status         string
+	Status         DocumentStatus
 	ManifestJSON   []byte
 	ManifestHash   []byte
 	EditTokenHash  []byte
@@ -171,10 +179,31 @@ RETURNING id, slug, idempotency_key, status,
 	if err != nil {
 		return nil, err
 	}
-	if doc.Status == "published" {
+	if doc.Status == StatusPublished {
 		return doc, nil
 	}
 	return nil, ErrNotFound
+}
+
+// GetBySlug returns the published document row for slug, or ErrNotFound.
+func (s *Store) GetBySlug(ctx context.Context, sl string) (*Document, error) {
+	const q = `
+SELECT id, slug, idempotency_key, status,
+       manifest, manifest_hash, edit_token_hash,
+       bytes_total, file_count,
+       expires_at, created_at, updated_at
+FROM documents
+WHERE slug = $1 AND status = 'published'`
+
+	row := s.pool.QueryRow(ctx, q, sl)
+	doc, err := scanDocument(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get by slug: %w", err)
+	}
+	return doc, nil
 }
 
 func scanDocument(row pgx.Row) (*Document, error) {

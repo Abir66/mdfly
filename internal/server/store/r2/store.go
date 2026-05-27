@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 	"time"
@@ -113,6 +114,35 @@ func (s *Store) HeadBlob(ctx context.Context, key string, expectedSize int64) er
 			key, *out.ContentLength, expectedSize, ErrBlobMissing)
 	}
 	return nil
+}
+
+// GetBlob fetches the full content of an object from R2.
+func (s *Store) GetBlob(ctx context.Context, key string) ([]byte, error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var nf *types.NotFound
+		if errors.As(err, &nf) {
+			return nil, ErrBlobMissing
+		}
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return nil, ErrBlobMissing
+		}
+		var re *smithyhttp.ResponseError
+		if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
+			return nil, ErrBlobMissing
+		}
+		return nil, fmt.Errorf("get object %s: %w", key, err)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read object %s: %w", key, err)
+	}
+	return data, nil
 }
 
 // ExtFromPath returns the file extension for a logical path (e.g. ".md", ".png").
