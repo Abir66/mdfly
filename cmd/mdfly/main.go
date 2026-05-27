@@ -1,7 +1,29 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/Abir66/mdfly/internal/cli/publish"
+)
+
+const defaultAPIBase = "http://localhost:8080"
 
 func main() {
-	_, _ = fmt.Println("mdfly v0.0.0")
+	if len(os.Args) < 3 || os.Args[1] != "publish" {
+		fmt.Fprintln(os.Stderr, "usage: mdfly publish <file>")
+		os.Exit(1)
+	}
+
+	apiBase := os.Getenv("MDFLY_API")
+	if apiBase == "" {
+		apiBase = defaultAPIBase
+	}
+
+	url, err := publish.Run(apiBase, os.Args[2])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println(url)
 }

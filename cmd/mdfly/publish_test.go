@@ -1,15 +1,13 @@
-package handlers_test
+package main_test
 
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -32,14 +30,25 @@ import (
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
-// ── container helpers ─────────────────────────────────────────────────────────
+func projectRoot() string {
+	_, filename, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(filename), "../..")
+}
 
 func migrationsDir() string {
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		panic("runtime.Caller failed")
+	return filepath.Join(projectRoot(), "migrations")
+}
+
+func buildCLI(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "mdfly")
+	cmd := exec.Command("go", "build", "-o", bin, "./cmd/mdfly")
+	cmd.Dir = projectRoot()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build CLI: %v\n%s", err, out)
 	}
-	return filepath.Join(filepath.Dir(filename), "../../../migrations")
+	return bin
 }
 
 func startPostgres(t *testing.T) string {
@@ -83,7 +92,6 @@ func startPostgres(t *testing.T) string {
 		t.Fatalf("migrate up: %v", err)
 	}
 	m.Close()
-
 	return dsn
 }
 
@@ -142,15 +150,16 @@ func startMinio(t *testing.T) minioEnv {
 	}); err != nil {
 		t.Fatalf("create bucket: %v", err)
 	}
-
 	return minioEnv{endpoint: endpoint, accessKey: accessKey, secretKey: secretKey, bucket: bucket}
 }
 
-// ── test server ───────────────────────────────────────────────────────────────
+func TestCLIPublish(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
 
-// newTestServer builds a full httptest.Server with all handlers registered.
-func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *httptest.Server {
-	t.Helper()
+	dsn := startPostgres(t)
+	env := startMinio(t)
 
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
@@ -167,92 +176,70 @@ func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *http
 		PublicBaseURL:   env.endpoint + "/" + env.bucket,
 	})
 
-	publishDeps := handlers.PublishDeps{PG: pg, R2: r2, BaseURL: baseURL}
-	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
-
+	// Use httptest.NewUnstartedServer so we know the address before starting.
 	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	publishDeps := handlers.PublishDeps{PG: pg, R2: r2, BaseURL: srv.URL}
+	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(publishDeps))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(publishDeps))
 	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
 
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
+	bin := buildCLI(t)
 
-// ── request helpers ───────────────────────────────────────────────────────────
-
-func postJSON(t *testing.T, url string, body any) *http.Response {
-	t.Helper()
-	b, _ := json.Marshal(body)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
-	if err != nil {
-		t.Fatalf("POST %s: %v", url, err)
+	dir := t.TempDir()
+	mdFile := filepath.Join(dir, "hello.md")
+	content := []byte("# Hello mdfly\n\nThis is a test document.\n")
+	if err := os.WriteFile(mdFile, content, 0644); err != nil {
+		t.Fatal(err)
 	}
-	return resp
-}
 
-func readAll(t *testing.T, r io.Reader) []byte {
-	t.Helper()
-	b, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
+	cmd := exec.Command(bin, "publish", mdFile)
+	cmd.Env = append(os.Environ(), "MDFLY_API="+srv.URL)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("mdfly publish failed: %v\nstderr: %s", err, stderr.String())
 	}
-	return b
-}
 
-func decodeInitResponse(t *testing.T, resp *http.Response) api.InitResponse {
-	t.Helper()
+	url := strings.TrimSpace(stdout.String())
+	if !strings.HasPrefix(url, srv.URL+"/") {
+		t.Errorf("stdout URL=%q, want prefix %s/", url, srv.URL)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("unexpected stderr: %s", stderr.String())
+	}
+
+	// Verify the document is accessible.
+	const verifyTimeout = 10 * time.Second
+	verifyClient := &http.Client{Timeout: verifyTimeout}
+	resp, err := verifyClient.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("init: status=%d body=%s", resp.StatusCode, body)
-	}
-	var v api.InitResponse
-	if err := json.Unmarshal(body, &v); err != nil {
-		t.Fatalf("decode InitResponse: %v", err)
-	}
-	return v
-}
-
-func decodeCommitResponse(t *testing.T, resp *http.Response) api.CommitResponse {
-	t.Helper()
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("commit: status=%d body=%s", resp.StatusCode, body)
-	}
-	var v api.CommitResponse
-	if err := json.Unmarshal(body, &v); err != nil {
-		t.Fatalf("decode CommitResponse: %v", err)
-	}
-	return v
-}
-
-func contentHash(b []byte) string {
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
-}
-
-// putBlob uploads via a presigned URL the way the real CLI does: body and
-// Content-Length only. The SHA256 checksum lives in the signed query of the URL,
-// so no checksum header is sent.
-func putBlob(t *testing.T, presignedURL string, content []byte) {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(content))
-	if err != nil {
-		t.Fatalf("build PUT request: %v", err)
-	}
-	req.ContentLength = int64(len(content))
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("PUT blob: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("PUT blob status %d: %s", resp.StatusCode, body)
+		t.Errorf("GET %s: status=%d, want 200", url, resp.StatusCode)
 	}
 }
+
+func TestCLIPublish_noArgs(t *testing.T) {
+	bin := buildCLI(t)
+	cmd := exec.Command(bin)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		t.Error("want non-zero exit when no args, got success")
+	}
+	if stderr.Len() == 0 {
+		t.Error("want usage on stderr when no args")
+	}
+}
+
+// Ensure api.CommitResponse has a URL field — compile-time type check.
+var _ = api.CommitResponse{URL: ""}

@@ -2,8 +2,6 @@ package storage
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -47,6 +45,10 @@ func New(cfg Config) *Client {
 		Region:             "auto",
 		UsePathStyle:       true, // required for minio and R2 custom domains
 		EndpointResolverV2: nil,
+		// Compat, not integrity: the SDK default (when_supported) auto-adds an unsigned
+		// x-amz-sdk-checksum-algorithm header that R2 rejects with SignatureDoesNotMatch.
+		// when_required keeps presigned PUTs plain. Do not remove.
+		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
 	})
 	return &Client{
 		client:        client,
@@ -70,21 +72,13 @@ func (c *Client) BlobPublicURL(key string) string {
 	return c.publicBase + "/" + key
 }
 
-// PresignPUT returns a presigned PUT URL for a blob that pins Content-Length and
-// x-amz-checksum-sha256 into the V4 signature.
-// sha256hex is the hex-encoded SHA256 of the blob content.
-func (c *Client) PresignPUT(ctx context.Context, key string, size int64, sha256hex string, ttl time.Duration) (string, error) {
-	checksumB64, err := hexToBase64(sha256hex)
-	if err != nil {
-		return "", fmt.Errorf("invalid sha256hex: %w", err)
-	}
-
+// PresignPUT returns a presigned PUT URL for a blob. ContentLength is a signed
+// header, so the upload size is pinned (wrong size → broken signature → 403).
+func (c *Client) PresignPUT(ctx context.Context, key string, size int64, ttl time.Duration) (string, error) {
 	req, err := c.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
-		Bucket:            aws.String(c.bucket),
-		Key:               aws.String(key),
-		ContentLength:     aws.Int64(size),
-		ChecksumSHA256:    aws.String(checksumB64),
-		ChecksumAlgorithm: types.ChecksumAlgorithmSha256,
+		Bucket:        aws.String(c.bucket),
+		Key:           aws.String(key),
+		ContentLength: aws.Int64(size),
 	}, s3.WithPresignExpires(ttl))
 	if err != nil {
 		return "", fmt.Errorf("presign put: %w", err)
@@ -148,12 +142,4 @@ func (c *Client) GetBlob(ctx context.Context, key string) ([]byte, error) {
 // ExtFromPath returns the file extension for a logical path (e.g. ".md", ".png").
 func ExtFromPath(path string) string {
 	return strings.ToLower(filepath.Ext(path))
-}
-
-func hexToBase64(h string) (string, error) {
-	b, err := hex.DecodeString(h)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(b), nil
 }

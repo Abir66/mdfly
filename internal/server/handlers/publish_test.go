@@ -1,15 +1,11 @@
 package handlers_test
 
 import (
-	"bytes"
-	"context"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Abir66/mdfly/internal/api"
-	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
 func TestPublishInitAndCommit(t *testing.T) {
@@ -56,7 +52,7 @@ func TestPublishInitAndCommit(t *testing.T) {
 		t.Fatalf("init response: no presigned URL for hash %s", hash)
 	}
 
-	putBlob(t, presignedURL, content, hash)
+	putBlob(t, presignedURL, content)
 
 	commitResp := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{
 		IdempotencyKey: idempotencyKey,
@@ -163,7 +159,7 @@ func TestPublishCommit_alreadyPublished(t *testing.T) {
 		IdempotencyKey: idempotencyKey, Manifest: manifest,
 	})
 	initBody := decodeInitResponse(t, initR)
-	putBlob(t, initBody.PresignedURLs[hash], content, hash)
+	putBlob(t, initBody.PresignedURLs[hash], content)
 
 	r1 := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempotencyKey})
 	b1 := decodeCommitResponse(t, r1)
@@ -216,45 +212,5 @@ func TestPublishInit_differentManifestSameKey(t *testing.T) {
 
 	if b1.Slug != b2.Slug {
 		t.Errorf("different manifest, same key: slug changed from %q to %q (must be same)", b1.Slug, b2.Slug)
-	}
-}
-
-func TestPresignPUT_checksumEnforcement(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: requires docker")
-	}
-
-	env := startMinio(t)
-
-	content := []byte("correct content")
-	hash := contentHash(content)
-
-	r2 := storage.New(storage.Config{
-		Endpoint:        env.endpoint,
-		AccessKeyID:     env.accessKey,
-		SecretAccessKey: env.secretKey,
-		Bucket:          env.bucket,
-		PublicBaseURL:   env.endpoint + "/" + env.bucket,
-	})
-
-	ctx := context.Background()
-	key := storage.BlobKey(hash, ".md")
-	presignedURL, err := r2.PresignPUT(ctx, key, int64(len(content)), hash, 10*time.Minute)
-	if err != nil {
-		t.Fatalf("PresignPUT: %v", err)
-	}
-
-	wrongHash := contentHash([]byte("wrong content"))
-	req, _ := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(content))
-	req.ContentLength = int64(len(content))
-	req.Header.Set("x-amz-checksum-sha256", hashBase64(wrongHash))
-	req.Header.Set("x-amz-sdk-checksum-algorithm", "SHA256")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("PUT with wrong checksum: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode < 400 {
-		t.Errorf("PUT with wrong checksum: expected 4xx, got %d", resp.StatusCode)
 	}
 }
