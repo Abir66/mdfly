@@ -7,8 +7,8 @@ import (
 	"html"
 	"net/http"
 
-	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/db"
+	"github.com/Abir66/mdfly/internal/server/manifest"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -37,13 +37,13 @@ func View(deps ViewDeps) http.HandlerFunc {
 			return
 		}
 
-		var manifest api.Manifest
-		if err := json.Unmarshal(doc.ManifestJSON, &manifest); err != nil {
+		var mfst manifest.Manifest
+		if err := json.Unmarshal(doc.ManifestJSON, &mfst); err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 
-		rootKey, err := rootBlobKey(manifest)
+		rootKey, err := rootBlobKey(doc.Slug, mfst)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -65,11 +65,10 @@ func View(deps ViewDeps) http.HandlerFunc {
 	}
 }
 
-func rootBlobKey(manifest api.Manifest) (string, error) {
-	for _, f := range manifest.Files {
-		if f.Path == manifest.Root {
-			return storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path)), nil
-		}
+func rootBlobKey(slug string, mfst manifest.Manifest) (string, error) {
+	f, ok := mfst.RootFile()
+	if !ok {
+		return "", fmt.Errorf("root path %q not found in manifest", mfst.RootPath)
 	}
-	return "", fmt.Errorf("root file %q not found in manifest", manifest.Root)
+	return storage.BlobKey(slug, f.Hash, storage.ExtFromPath(mfst.RootPath)), nil
 }

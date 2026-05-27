@@ -41,7 +41,6 @@ func mockServer(t *testing.T, content []byte) *httptest.Server {
 		presignedURL := srv.URL + "/blob/" + hash
 		writeJSON(w, api.InitResponse{
 			Slug:          "testslug1",
-			MissingHashes: []string{hash},
 			PresignedURLs: map[string]string{hash: presignedURL},
 		})
 	})
@@ -144,7 +143,6 @@ func TestRun_sendsEditToken(t *testing.T) {
 		gotToken = req.EditToken
 		writeJSON(w, api.InitResponse{
 			Slug:          "tok1",
-			MissingHashes: []string{hash},
 			PresignedURLs: map[string]string{hash: srv.URL + "/blob/" + hash},
 		})
 	})

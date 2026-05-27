@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/Abir66/mdfly/internal/api"
-	"github.com/Abir66/mdfly/internal/manifest"
 	"github.com/google/uuid"
 )
 
@@ -21,7 +21,7 @@ const (
 
 // Run orchestrates the 3-phase publish wire for a single file and returns the public URL.
 func Run(apiBase, filePath string) (string, error) {
-	mfst, content, err := manifest.ForSingleFile(filePath)
+	bundle, err := ForSingleFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
 	}
@@ -45,17 +45,24 @@ func Run(apiBase, filePath string) (string, error) {
 	}
 	initResp, err := postJSON[api.InitResponse](ctx, client, initURL, api.InitRequest{
 		IdempotencyKey: idempotencyKey.String(),
-		Manifest:       mfst,
+		Bundle:         bundle.ToDTO(),
 		EditToken:      editToken,
 	})
 	if err != nil {
 		return "", fmt.Errorf("publish/init: %w", err)
 	}
 
-	for _, h := range initResp.MissingHashes {
-		presignedURL, ok := initResp.PresignedURLs[h]
+	for hash, presignedURL := range initResp.PresignedURLs {
+		f, ok := bundle.FilesByHash[hash]
 		if !ok {
-			return "", fmt.Errorf("missing presigned URL for hash %s", h)
+			return "", fmt.Errorf("presigned URL for unknown hash %s", hash)
+		}
+		content := f.Content
+		if content == nil {
+			content, err = os.ReadFile(f.DiskPath)
+			if err != nil {
+				return "", fmt.Errorf("read file %s: %w", f.Path, err)
+			}
 		}
 		if err := putBlob(ctx, client, presignedURL, content); err != nil {
 			return "", fmt.Errorf("upload blob: %w", err)

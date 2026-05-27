@@ -10,6 +10,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/db"
+	"github.com/Abir66/mdfly/internal/server/manifest"
 	"github.com/Abir66/mdfly/internal/server/storage"
 	"github.com/Abir66/mdfly/internal/slug"
 )
@@ -38,23 +39,28 @@ func Init(deps PublishDeps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "bad_request", "idempotency_key required")
 			return
 		}
-		if req.Manifest.Root == "" || len(req.Manifest.Files) == 0 {
-			writeError(w, http.StatusBadRequest, "bad_request", "manifest.root and manifest.files required")
+		if req.Bundle.RootHash == "" || len(req.Bundle.Files) == 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "bundle.root_hash and bundle.files required")
 			return
 		}
-		for _, f := range req.Manifest.Files {
-			if f.Path == "" {
-				writeError(w, http.StatusBadRequest, "bad_request", "manifest file path required")
+		for _, f := range req.Bundle.Files {
+			if f.Hash == "" {
+				writeError(w, http.StatusBadRequest, "bad_request", "bundle file hash required")
 				return
 			}
-			if f.Hash == "" {
-				writeError(w, http.StatusBadRequest, "bad_request", "manifest file hash required")
+			if f.Path == "" {
+				writeError(w, http.StatusBadRequest, "bad_request", "bundle file path required")
 				return
 			}
 			if f.Size < 0 {
-				writeError(w, http.StatusBadRequest, "bad_request", "manifest file size must be non-negative")
+				writeError(w, http.StatusBadRequest, "bad_request", "bundle file size must be non-negative")
 				return
 			}
+		}
+		mfst, err := manifest.FromDTO(req.Bundle)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "bundle.root_hash not present in bundle.files")
+			return
 		}
 
 		sl, err := generateSlug()
@@ -66,7 +72,7 @@ func Init(deps PublishDeps) http.HandlerFunc {
 		doc, err := deps.PG.InsertPending(r.Context(), db.InsertPendingParams{
 			Slug:           sl,
 			IdempotencyKey: req.IdempotencyKey,
-			Manifest:       req.Manifest,
+			Manifest:       mfst,
 			EditToken:      req.EditToken,
 		})
 		if err != nil {
@@ -74,21 +80,18 @@ func Init(deps PublishDeps) http.HandlerFunc {
 			return
 		}
 
-		missingHashes := make([]string, 0, len(req.Manifest.Files))
-		presignedURLs := make(map[string]string, len(req.Manifest.Files))
-		for _, f := range req.Manifest.Files {
-			url, err := buildPresignedURL(r.Context(), deps.R2, f)
+		presignedURLs := make(map[string]string, len(mfst.FilesByPath))
+		for path, f := range mfst.FilesByPath {
+			url, err := buildPresignedURL(r.Context(), deps.R2, doc.Slug, path, f)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate presigned URLs")
 				return
 			}
-			missingHashes = append(missingHashes, f.Hash)
 			presignedURLs[f.Hash] = url
 		}
 
 		writeJSON(w, http.StatusOK, api.InitResponse{
 			Slug:          doc.Slug,
-			MissingHashes: missingHashes,
 			PresignedURLs: presignedURLs,
 			InlineAccept:  false,
 		})
@@ -129,13 +132,13 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 		}
 
 		// HEAD-verify every blob exists in R2.
-		var manifest api.Manifest
-		if err := json.Unmarshal(doc.ManifestJSON, &manifest); err != nil {
+		var mfst manifest.Manifest
+		if err := json.Unmarshal(doc.ManifestJSON, &mfst); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "corrupt manifest")
 			return
 		}
-		for _, f := range manifest.Files {
-			key := storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path))
+		for path, f := range mfst.FilesByPath {
+			key := storage.BlobKey(doc.Slug, f.Hash, storage.ExtFromPath(path))
 			if err := deps.R2.HeadBlob(r.Context(), key, f.Size); err != nil {
 				if errors.Is(err, storage.ErrBlobMissing) {
 					writeError(w, http.StatusConflict, "blob_missing",
@@ -166,9 +169,9 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 	}
 }
 
-// buildPresignedURL returns a presigned PUT URL for a single manifest file.
-func buildPresignedURL(ctx context.Context, r2 *storage.Client, f api.ManifestFile) (string, error) {
-	key := storage.BlobKey(f.Hash, storage.ExtFromPath(f.Path))
+// buildPresignedURL returns a presigned PUT URL for a single manifest file at path.
+func buildPresignedURL(ctx context.Context, r2 *storage.Client, slug, path string, f manifest.ManifestFile) (string, error) {
+	key := storage.BlobKey(slug, f.Hash, storage.ExtFromPath(path))
 	url, err := r2.PresignPUT(ctx, key, f.Size, presignTTL)
 	if err != nil {
 		return "", fmt.Errorf("presign %s: %w", f.Hash, err)

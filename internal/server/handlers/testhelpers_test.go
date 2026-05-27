@@ -234,6 +234,17 @@ func contentHash(b []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
+// singleFileBundle builds a one-file wire BundleDTO whose root is that file.
+func singleFileBundle(path string, content []byte) api.BundleDTO {
+	hash := contentHash(content)
+	return api.BundleDTO{
+		RootHash: hash,
+		Files: []api.BundleFileDTO{
+			{Path: path, Hash: hash, Size: int64(len(content))},
+		},
+	}
+}
+
 // putBlob uploads via a presigned URL the way the real CLI does: body and
 // Content-Length only. The SHA256 checksum lives in the signed query of the URL,
 // so no checksum header is sent.
