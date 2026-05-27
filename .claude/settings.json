@@ -10,7 +10,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /Users/shipday/Personal/mdfly && go fmt ./... 2>/dev/null || true",
+            "command": "go fmt ./...",
             "statusMessage": "go fmt..."
           }
         ]
