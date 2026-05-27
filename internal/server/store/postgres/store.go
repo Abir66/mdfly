@@ -177,6 +177,27 @@ RETURNING id, slug, idempotency_key, status,
 	return nil, ErrNotFound
 }
 
+// GetBySlug returns the published document row for slug, or ErrNotFound.
+func (s *Store) GetBySlug(ctx context.Context, sl string) (*Document, error) {
+	const q = `
+SELECT id, slug, idempotency_key, status,
+       manifest, manifest_hash, edit_token_hash,
+       bytes_total, file_count,
+       expires_at, created_at, updated_at
+FROM documents
+WHERE slug = $1 AND status = 'published'`
+
+	row := s.pool.QueryRow(ctx, q, sl)
+	doc, err := scanDocument(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get by slug: %w", err)
+	}
+	return doc, nil
+}
+
 func scanDocument(row pgx.Row) (*Document, error) {
 	var d Document
 	err := row.Scan(
