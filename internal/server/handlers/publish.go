@@ -113,7 +113,7 @@ func Commit(deps PublishDeps) http.HandlerFunc {
 		}
 
 		// Terminal-state idempotency: already published → return success.
-		if doc.Status == "published" {
+		if doc.Status == pgstore.StatusPublished {
 			writeJSON(w, http.StatusOK, api.CommitResponse{
 				URL:          documentURL(deps.BaseURL, doc.Slug),
 				Slug:         doc.Slug,

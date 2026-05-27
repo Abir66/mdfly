@@ -1,51 +1,13 @@
 package handlers_test
 
 import (
-	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/Abir66/mdfly/internal/api"
-	"github.com/Abir66/mdfly/internal/server/handlers"
-	pgstore "github.com/Abir66/mdfly/internal/server/store/postgres"
-	r2store "github.com/Abir66/mdfly/internal/server/store/r2"
 )
-
-func newFullTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *httptest.Server {
-	t.Helper()
-
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	pg := pgstore.New(pool)
-	r2 := r2store.New(r2store.Config{
-		Endpoint:        env.endpoint,
-		AccessKeyID:     env.accessKey,
-		SecretAccessKey: env.secretKey,
-		Bucket:          env.bucket,
-		PublicBaseURL:   env.endpoint + "/" + env.bucket,
-	})
-
-	publishDeps := handlers.PublishDeps{PG: pg, R2: r2, BaseURL: baseURL}
-	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/publish/init", handlers.Init(publishDeps))
-	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(publishDeps))
-	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
-
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
 
 func TestView_returnsMarkdownInPre(t *testing.T) {
 	if testing.Short() {
@@ -54,7 +16,7 @@ func TestView_returnsMarkdownInPre(t *testing.T) {
 
 	dsn := startPostgres(t)
 	env := startMinio(t)
-	srv := newFullTestServer(t, dsn, env, "https://mdfly.dev")
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	content := []byte("# Hello\n\nThis is mdfly.\n")
 	hash := contentHash(content)
@@ -108,7 +70,7 @@ func TestView_missingSlugReturns404(t *testing.T) {
 
 	dsn := startPostgres(t)
 	env := startMinio(t)
-	srv := newFullTestServer(t, dsn, env, "https://mdfly.dev")
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	resp, err := http.Get(srv.URL + "/doesnotexist99")
 	if err != nil {
@@ -128,7 +90,7 @@ func TestView_htmlEscaping(t *testing.T) {
 
 	dsn := startPostgres(t)
 	env := startMinio(t)
-	srv := newFullTestServer(t, dsn, env, "https://mdfly.dev")
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	content := []byte("<script>alert('xss')</script>\n")
 	hash := contentHash(content)
@@ -163,4 +125,3 @@ func TestView_htmlEscaping(t *testing.T) {
 		t.Errorf("body missing escaped script tag, got: %s", bodyStr)
 	}
 }
-

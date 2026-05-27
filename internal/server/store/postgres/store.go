@@ -18,12 +18,20 @@ import (
 // ErrNotFound is returned when a document row does not exist.
 var ErrNotFound = errors.New("document not found")
 
+// DocumentStatus is the lifecycle state of a document row.
+type DocumentStatus string
+
+const (
+	StatusPending   DocumentStatus = "pending"
+	StatusPublished DocumentStatus = "published"
+)
+
 // Document is a row from the documents table.
 type Document struct {
 	ID             int64
 	Slug           string
 	IdempotencyKey string
-	Status         string
+	Status         DocumentStatus
 	ManifestJSON   []byte
 	ManifestHash   []byte
 	EditTokenHash  []byte
@@ -171,7 +179,7 @@ RETURNING id, slug, idempotency_key, status,
 	if err != nil {
 		return nil, err
 	}
-	if doc.Status == "published" {
+	if doc.Status == StatusPublished {
 		return doc, nil
 	}
 	return nil, ErrNotFound
