@@ -12,7 +12,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
-	"github.com/Abir66/mdfly/internal/server/publish"
+	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
