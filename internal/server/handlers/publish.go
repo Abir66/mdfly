@@ -39,8 +39,8 @@ func Init(deps PublishDeps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "bad_request", "idempotency_key required")
 			return
 		}
-		if req.Bundle.RootHash == "" || len(req.Bundle.Files) == 0 {
-			writeError(w, http.StatusBadRequest, "bad_request", "bundle.root_hash and bundle.files required")
+		if req.Bundle.RootPath == "" || len(req.Bundle.Files) == 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "bundle.root_path and bundle.files required")
 			return
 		}
 		for _, f := range req.Bundle.Files {
@@ -59,7 +59,7 @@ func Init(deps PublishDeps) http.HandlerFunc {
 		}
 		mfst, err := manifest.FromDTO(req.Bundle)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "bundle.root_hash not present in bundle.files")
+			writeError(w, http.StatusBadRequest, "bad_request", "bundle.root_path not present in bundle.files")
 			return
 		}
 

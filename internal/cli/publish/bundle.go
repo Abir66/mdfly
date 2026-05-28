@@ -28,7 +28,7 @@ type BundleFile struct {
 // Path keying preserves every file even when two files share content (same hash)
 // or share both content and extension at different paths.
 type Bundle struct {
-	RootHash    string
+	RootPath    string
 	FilesByPath map[string]BundleFile
 }
 
@@ -54,7 +54,7 @@ func ForSingleFile(filePath string) (Bundle, error) {
 	}
 
 	return Bundle{
-		RootHash:    hash,
+		RootPath:    logicalPath,
 		FilesByPath: map[string]BundleFile{logicalPath: f},
 	}, nil
 }
@@ -66,5 +66,5 @@ func (b Bundle) ToDTO() api.BundleDTO {
 	for _, f := range b.FilesByPath {
 		files = append(files, api.BundleFileDTO{Path: f.Path, Hash: f.Hash, Size: f.Size})
 	}
-	return api.BundleDTO{RootHash: b.RootHash, Files: files}
+	return api.BundleDTO{RootPath: b.RootPath, Files: files}
 }

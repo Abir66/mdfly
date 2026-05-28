@@ -8,9 +8,9 @@ type BundleFileDTO struct {
 }
 
 // BundleDTO is the bundle description the CLI computes and sends at init.
-// RootHash names the root markdown file; Files lists every file by logical path.
+// RootPath is the logical path of the root markdown file within Files.
 type BundleDTO struct {
-	RootHash string          `json:"root_hash"`
+	RootPath string          `json:"root_path"`
 	Files    []BundleFileDTO `json:"files"`
 }
 

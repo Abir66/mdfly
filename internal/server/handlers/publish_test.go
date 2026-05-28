@@ -219,7 +219,7 @@ func TestPublishInit_dedupesPresignedURLsByBlobKey(t *testing.T) {
 	)
 
 	bundle := api.BundleDTO{
-		RootHash: hash,
+		RootPath: pathA,
 		Files: []api.BundleFileDTO{
 			{Path: pathA, Hash: hash, Size: size},
 			{Path: pathB, Hash: hash, Size: size},
