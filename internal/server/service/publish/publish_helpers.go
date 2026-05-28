@@ -2,13 +2,10 @@ package publish
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/Abir66/mdfly/internal/markdown"
-	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/httpx"
 	"github.com/Abir66/mdfly/internal/server/manifest"
 	"github.com/Abir66/mdfly/internal/server/storage"
@@ -69,38 +66,4 @@ func generateSlug() (string, error) {
 
 func documentURL(base, sl string) string {
 	return base + "/" + sl
-}
-
-// extractPublishMeta fetches the root blob and derives preview metadata from it.
-func extractPublishMeta(ctx context.Context, r2 *storage.Client, sl string, mfst manifest.Manifest) (db.PublishMetaParams, *httpx.Error) {
-	f, ok := mfst.RootFile()
-	if !ok {
-		return db.PublishMetaParams{}, httpx.Internal("root file missing from manifest")
-	}
-	key := storage.BlobKey(sl, f.Hash, storage.ExtFromPath(mfst.RootPath))
-	content, err := r2.GetBlob(ctx, key)
-	if err != nil {
-		return db.PublishMetaParams{}, httpx.Internal("failed to fetch root blob for metadata")
-	}
-
-	_, meta, err := markdown.Render(content)
-	if err != nil {
-		return db.PublishMetaParams{}, httpx.Internal("failed to render markdown for metadata")
-	}
-
-	var ogHash []byte
-	if meta.OGImagePath != "" {
-		if f, ok := mfst.FilesByPath[meta.OGImagePath]; ok {
-			decoded, err := hex.DecodeString(f.Hash)
-			if err == nil {
-				ogHash = decoded
-			}
-		}
-	}
-
-	return db.PublishMetaParams{
-		Title:       meta.Title,
-		Excerpt:     meta.Excerpt,
-		OGImageHash: ogHash,
-	}, nil
 }

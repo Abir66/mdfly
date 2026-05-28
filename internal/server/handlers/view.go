@@ -1,12 +1,12 @@
 package handlers
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Abir66/mdfly/internal/markdown"
@@ -65,17 +65,17 @@ func View(deps ViewDeps) http.HandlerFunc {
 			return
 		}
 
-		rendered, _, err := markdown.RenderWithTimeout(content, markdownRenderTimeout)
+		rendered, meta, err := markdown.RenderWithTimeout(content, markdownRenderTimeout)
 		if err != nil {
 			http.Error(w, "render error", http.StatusInternalServerError)
 			return
 		}
 
-		ogImageURL := resolveOGImageURL(deps.R2, doc, mfst)
+		ogImageURL := resolveOGImageURL(deps.R2, doc.Slug, meta.OGImagePath, mfst)
 
 		pageHTML, err := ssr.RenderPage(ssr.PageData{
-			Title:      doc.Title,
-			Excerpt:    doc.Excerpt,
+			Title:      meta.Title,
+			Excerpt:    meta.Excerpt,
 			OGImageURL: ogImageURL,
 			Body:       template.HTML(rendered),
 		})
@@ -97,17 +97,18 @@ func rootBlobKey(slug string, mfst manifest.Manifest) (string, error) {
 	return storage.BlobKey(slug, f.Hash, storage.ExtFromPath(mfst.RootPath)), nil
 }
 
-// resolveOGImageURL finds the public URL for the og image hash using the manifest.
-func resolveOGImageURL(r2 *storage.Client, doc *db.Document, mfst manifest.Manifest) string {
-	if len(doc.OGImageHash) == 0 {
+// resolveOGImageURL resolves a markdown image path against the manifest and
+// returns its public CDN URL. Returns "" if the path is empty or not a known
+// bundle asset (e.g. an absolute external URL).
+func resolveOGImageURL(r2 *storage.Client, slug, imgPath string, mfst manifest.Manifest) string {
+	if imgPath == "" {
 		return ""
 	}
-	wantHash := hex.EncodeToString(doc.OGImageHash)
-	for path, f := range mfst.FilesByPath {
-		if f.Hash == wantHash {
-			key := storage.BlobKey(doc.Slug, f.Hash, storage.ExtFromPath(path))
-			return r2.BlobPublicURL(key)
-		}
+	logical := strings.TrimPrefix(imgPath, "./")
+	f, ok := mfst.FilesByPath[logical]
+	if !ok {
+		return ""
 	}
-	return ""
+	key := storage.BlobKey(slug, f.Hash, storage.ExtFromPath(logical))
+	return r2.BlobPublicURL(key)
 }

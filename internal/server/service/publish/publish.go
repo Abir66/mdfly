@@ -114,13 +114,8 @@ func (s *Service) Commit(ctx context.Context, req api.CommitRequest) (CommitResu
 		return CommitResult{}, herr
 	}
 
-	meta, herr := extractPublishMeta(ctx, s.Storage, doc.Slug, mfst)
-	if herr != nil {
-		return CommitResult{}, herr
-	}
-
 	expiresAt := time.Now().Add(anonExpiresIn)
-	published, err := s.Db.Publish(ctx, req.IdempotencyKey, expiresAt, meta)
+	published, err := s.Db.Publish(ctx, req.IdempotencyKey, expiresAt)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return CommitResult{}, httpx.NotFound("no pending document for idempotency_key")

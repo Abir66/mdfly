@@ -36,9 +36,6 @@ type Document struct {
 	EditTokenHash  []byte
 	BytesTotal     int64
 	FileCount      int
-	Title          string
-	Excerpt        string
-	OGImageHash    []byte
 	ExpiresAt      *time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -55,13 +52,6 @@ type InsertPendingParams struct {
 	IdempotencyKey string
 	Manifest       manifest.Manifest
 	EditToken      string // plaintext; stored as SHA256(token)
-}
-
-// PublishMetaParams holds the preview-metadata columns written at commit time.
-type PublishMetaParams struct {
-	Title       string
-	Excerpt     string
-	OGImageHash []byte // nil if no image asset
 }
 
 // InsertPending inserts a documents row with status='pending'.
@@ -97,7 +87,6 @@ ON CONFLICT (idempotency_key) DO NOTHING
 RETURNING id, slug, idempotency_key, status,
           manifest, manifest_hash, edit_token_hash,
           bytes_total, file_count,
-          COALESCE(title, ''), COALESCE(excerpt, ''), og_image_hash,
           expires_at, created_at, updated_at`
 
 	row := c.pool.QueryRow(ctx, q,
@@ -120,7 +109,6 @@ func (c *Client) GetByIdempotencyKey(ctx context.Context, key string) (*Document
 SELECT id, slug, idempotency_key, status,
        manifest, manifest_hash, edit_token_hash,
        bytes_total, file_count,
-       COALESCE(title, ''), COALESCE(excerpt, ''), og_image_hash,
        expires_at, created_at, updated_at
 FROM documents
 WHERE idempotency_key = $1`
@@ -136,27 +124,23 @@ WHERE idempotency_key = $1`
 	return doc, nil
 }
 
-// Publish atomically flips status to 'published', sets expires_at, and stores
-// preview metadata. If already published, returns it as-is (terminal-state
-// idempotency). Returns ErrNotFound if no pending row matches key.
-func (c *Client) Publish(ctx context.Context, idempotencyKey string, expiresAt time.Time, meta PublishMetaParams) (*Document, error) {
+// Publish atomically flips status to 'published' and sets expires_at.
+// If the row is already published, returns it as-is (terminal-state idempotency).
+// Returns ErrNotFound if no pending row matches key.
+func (c *Client) Publish(ctx context.Context, idempotencyKey string, expiresAt time.Time) (*Document, error) {
 	const q = `
 UPDATE documents
 SET status = 'published',
     expires_at = $2,
-    title = $3,
-    excerpt = $4,
-    og_image_hash = $5,
     updated_at = now()
 WHERE idempotency_key = $1
   AND status = 'pending'
 RETURNING id, slug, idempotency_key, status,
           manifest, manifest_hash, edit_token_hash,
           bytes_total, file_count,
-          COALESCE(title, ''), COALESCE(excerpt, ''), og_image_hash,
           expires_at, created_at, updated_at`
 
-	row := c.pool.QueryRow(ctx, q, idempotencyKey, expiresAt, meta.Title, meta.Excerpt, meta.OGImageHash)
+	row := c.pool.QueryRow(ctx, q, idempotencyKey, expiresAt)
 	doc, err := scanDocument(row)
 	if err == nil {
 		return doc, nil
@@ -180,7 +164,6 @@ func (c *Client) GetBySlug(ctx context.Context, sl string) (*Document, error) {
 SELECT id, slug, idempotency_key, status,
        manifest, manifest_hash, edit_token_hash,
        bytes_total, file_count,
-       COALESCE(title, ''), COALESCE(excerpt, ''), og_image_hash,
        expires_at, created_at, updated_at
 FROM documents
 WHERE slug = $1 AND status = 'published'`
@@ -202,7 +185,6 @@ func scanDocument(row pgx.Row) (*Document, error) {
 		&d.ID, &d.Slug, &d.IdempotencyKey, &d.Status,
 		&d.ManifestJSON, &d.ManifestHash, &d.EditTokenHash,
 		&d.BytesTotal, &d.FileCount,
-		&d.Title, &d.Excerpt, &d.OGImageHash,
 		&d.ExpiresAt, &d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
