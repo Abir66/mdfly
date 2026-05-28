@@ -35,6 +35,24 @@ Try not to hardcode configurable values. Declare and/or use constants.
 When making any functional changes, update/fix the doc strings and tests too. Do not make the doc strings unnecessarily big.
 Don't put unnecessary comments
 
+
+* Prefer clear workflow-oriented top-level methods
+* Extract cohesive logic into helper methods
+* Avoid functions longer than ~50 lines unless justified
+* Avoid deep nesting (>3 levels)
+* Each method should have a single responsibility
+* Helper methods should encapsulate meaningful phases, not trivial operations
+* Avoid Java-style abstraction and unnecessary interfaces
+* Use concrete types unless polymorphism is actually needed
+* Avoid one-line wrapper methods
+* Optimize for readability and maintainability over cleverness
+* The main service method should read like a high-level workflow
+* Implementation details belong in helper methods
+* Reduce sequential procedural code by grouping logical phases
+
+
+
+
 ## Logging
 
 Use `log/slog` (stdlib, Go 1.21+) for all logging. Never use `log` or third-party loggers.
