@@ -22,7 +22,11 @@ type InitRequest struct {
 }
 
 // InitResponse is the body of a successful POST /v1/publish/init.
-// PresignedURLs maps each file's content hash to its presigned PUT URL.
+// PresignedURLs maps a representative bundle path to its presigned PUT URL.
+// The server deduplicates by R2 blobkey (slug+hash+ext), so paths that share
+// a blobkey with a representative are not in the map — uploading the
+// representative covers their content. The CLI iterates this map and PUTs
+// each (path, url) pair using the bundle file at that path.
 type InitResponse struct {
 	Slug          string            `json:"slug"`
 	PresignedURLs map[string]string `json:"presigned_urls"`
