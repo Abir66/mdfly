@@ -12,6 +12,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
+	"github.com/Abir66/mdfly/internal/server/publish"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -53,16 +54,16 @@ func main() {
 	})
 
 	pg := db.New(pool)
-	publishDeps := handlers.PublishDeps{
-		PG:      pg,
-		R2:      r2,
+	pubSvc := &publish.Service{
+		Db:      pg,
+		Storage: r2,
 		BaseURL: baseURL,
 	}
 	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /v1/publish/init", handlers.Init(publishDeps))
-	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(publishDeps))
+	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
+	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
 	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "ok")

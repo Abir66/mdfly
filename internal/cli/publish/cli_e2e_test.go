@@ -27,6 +27,7 @@ import (
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
+	"github.com/Abir66/mdfly/internal/server/publish"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -181,10 +182,10 @@ func TestCLIPublish(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	publishDeps := handlers.PublishDeps{PG: pg, R2: r2, BaseURL: srv.URL}
+	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
 	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
-	mux.HandleFunc("POST /v1/publish/init", handlers.Init(publishDeps))
-	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(publishDeps))
+	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
+	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
 	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
 
 	bin := buildCLI(t)
