@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Abir66/mdfly/internal/markdown"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/manifest"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
+
+const markdownRenderTimeout = 2 * time.Second
 
 // ViewDeps holds dependencies for the view handler.
 type ViewDeps struct {
@@ -59,7 +62,7 @@ func View(deps ViewDeps) http.HandlerFunc {
 			return
 		}
 
-		rendered, err := markdown.Render(content)
+		rendered, err := markdown.RenderWithTimeout(content, markdownRenderTimeout)
 		if err != nil {
 			http.Error(w, "render error", http.StatusInternalServerError)
 			return

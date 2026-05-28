@@ -74,10 +74,14 @@ func RenderWithTimeout(md []byte, timeout time.Duration) ([]byte, error) {
 		}
 		ch <- result{policy.SanitizeBytes(buf.Bytes()), nil}
 	}()
+	timer := time.NewTimer(timeout)
 	select {
 	case r := <-ch:
+		if !timer.Stop() {
+			<-timer.C
+		}
 		return r.html, r.err
-	case <-time.After(timeout):
+	case <-timer.C:
 		return nil, ErrTimeout
 	}
 }
