@@ -31,3 +31,26 @@ func Init(svc *publish.Service) http.HandlerFunc {
 		})
 	}
 }
+
+// Commit handles POST /v1/publish/commit.
+func Commit(svc *publish.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req api.CommitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, httpx.BadRequest("invalid JSON body"))
+			return
+		}
+
+		res, herr := svc.Commit(r.Context(), req)
+		if herr != nil {
+			httpx.WriteError(w, herr)
+			return
+		}
+
+		httpx.WriteJSON(w, http.StatusOK, api.CommitResponse{
+			URL:          res.URL,
+			Slug:         res.Slug,
+			ManifestHash: res.ManifestHash,
+		})
+	}
+}
