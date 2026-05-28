@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if .Title}}{{.Title}}{{else}}mdfly{{end}}</title>
+  {{- if .Excerpt}}
+  <meta name="description" content="{{.Excerpt}}">
+  {{- end}}
+  {{- if .Title}}
+  <meta property="og:title" content="{{.Title}}">
+  {{- end}}
+  {{- if .Excerpt}}
+  <meta property="og:description" content="{{.Excerpt}}">
+  {{- end}}
+  {{- if .OGImageURL}}
+  <meta property="og:image" content="{{.OGImageURL}}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{{.OGImageURL}}">
+  {{- end}}
+  {{- if .Title}}
+  <meta name="twitter:title" content="{{.Title}}">
+  {{- end}}
+  {{- if .Excerpt}}
+  <meta name="twitter:description" content="{{.Excerpt}}">
+  {{- end}}
+</head>
+<body>
+{{.Body}}
+</body>
+</html>

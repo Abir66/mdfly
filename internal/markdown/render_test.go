@@ -29,7 +29,7 @@ func TestRender_Golden(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, err := markdown.Render(input)
+			got, _, err := markdown.Render(input)
 			if err != nil {
 				t.Fatalf("Render: %v", err)
 			}
@@ -53,7 +53,7 @@ func TestRender_Golden(t *testing.T) {
 
 func TestRender_ScriptTagAbsent(t *testing.T) {
 	input := []byte("# Title\n\n<script>alert(1)</script>\n")
-	got, err := markdown.Render(input)
+	got, _, err := markdown.Render(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestRender_ScriptTagAbsent(t *testing.T) {
 
 func TestRender_OnerrorAttrAbsent(t *testing.T) {
 	input := []byte("# Title\n\n<img src=\"x\" onerror=\"alert(1)\">\n")
-	got, err := markdown.Render(input)
+	got, _, err := markdown.Render(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestRenderWithTimeout_TimesOut(t *testing.T) {
 	for i := 0; i < 50000; i++ {
 		sb.WriteString("# Heading\n\nParagraph with **bold** and _italic_ text.\n\n")
 	}
-	_, err := markdown.RenderWithTimeout([]byte(sb.String()), 1*time.Nanosecond)
+	_, _, err := markdown.RenderWithTimeout([]byte(sb.String()), 1*time.Nanosecond)
 	if !errors.Is(err, markdown.ErrTimeout) {
 		t.Errorf("expected ErrTimeout, got %v", err)
 	}

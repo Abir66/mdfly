@@ -1,15 +1,18 @@
 package handlers
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"time"
 
 	"github.com/Abir66/mdfly/internal/markdown"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/manifest"
+	"github.com/Abir66/mdfly/internal/server/ssr"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -62,14 +65,27 @@ func View(deps ViewDeps) http.HandlerFunc {
 			return
 		}
 
-		rendered, err := markdown.RenderWithTimeout(content, markdownRenderTimeout)
+		rendered, _, err := markdown.RenderWithTimeout(content, markdownRenderTimeout)
+		if err != nil {
+			http.Error(w, "render error", http.StatusInternalServerError)
+			return
+		}
+
+		ogImageURL := resolveOGImageURL(deps.R2, doc, mfst)
+
+		pageHTML, err := ssr.RenderPage(ssr.PageData{
+			Title:      doc.Title,
+			Excerpt:    doc.Excerpt,
+			OGImageURL: ogImageURL,
+			Body:       template.HTML(rendered),
+		})
 		if err != nil {
 			http.Error(w, "render error", http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, "<!doctype html><html><body>%s</body></html>", rendered)
+		fmt.Fprint(w, pageHTML)
 	}
 }
 
@@ -79,4 +95,19 @@ func rootBlobKey(slug string, mfst manifest.Manifest) (string, error) {
 		return "", fmt.Errorf("root path %q not found in manifest", mfst.RootPath)
 	}
 	return storage.BlobKey(slug, f.Hash, storage.ExtFromPath(mfst.RootPath)), nil
+}
+
+// resolveOGImageURL finds the public URL for the og image hash using the manifest.
+func resolveOGImageURL(r2 *storage.Client, doc *db.Document, mfst manifest.Manifest) string {
+	if len(doc.OGImageHash) == 0 {
+		return ""
+	}
+	wantHash := hex.EncodeToString(doc.OGImageHash)
+	for path, f := range mfst.FilesByPath {
+		if f.Hash == wantHash {
+			key := storage.BlobKey(doc.Slug, f.Hash, storage.ExtFromPath(path))
+			return r2.BlobPublicURL(key)
+		}
+	}
+	return ""
 }

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"regexp"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	chromahtml "github.com/alecthomas/chroma/v2/formatters/html"
 	"github.com/microcosm-cc/bluemonday"
@@ -13,15 +15,25 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer/html"
+	"gopkg.in/yaml.v3"
 )
 
 const RenderTimeout = 2 * time.Second
+const excerptMaxRunes = 200
 
 var ErrTimeout = errors.New("markdown: render timed out")
 
 var (
 	mdParser goldmark.Markdown
 	policy   *bluemonday.Policy
+)
+
+var (
+	reH1          = regexp.MustCompile(`(?i)<h1[^>]*>(.*?)</h1>`)
+	rePara        = regexp.MustCompile(`(?s)<p>(.*?)</p>`)
+	reImgSrc      = regexp.MustCompile(`<img[^>]+src="([^"]+)"`)
+	reTags        = regexp.MustCompile(`<[^>]+>`)
+	reFrontmatter = regexp.MustCompile(`(?s)^\s*---\n(.*?)\n---\n?`)
 )
 
 func init() {
@@ -54,25 +66,35 @@ func init() {
 	policy.AllowAttrs("checked", "disabled").OnElements("input")
 }
 
-// Render converts markdown to sanitized HTML using Goldmark (GFM + chroma) and bluemonday.
-func Render(md []byte) ([]byte, error) {
+// Meta holds extracted metadata from a markdown document.
+type Meta struct {
+	Title       string
+	Excerpt     string
+	OGImagePath string // raw relative path, empty if none found
+}
+
+type frontmatterFields struct {
+	Title       string `yaml:"title"`
+	Description string `yaml:"description"`
+	Image       string `yaml:"image"`
+}
+
+// Render converts markdown to sanitized HTML and extracts document metadata.
+func Render(md []byte) ([]byte, Meta, error) {
 	return RenderWithTimeout(md, RenderTimeout)
 }
 
 // RenderWithTimeout is like Render but aborts after the given duration.
-func RenderWithTimeout(md []byte, timeout time.Duration) ([]byte, error) {
+func RenderWithTimeout(md []byte, timeout time.Duration) ([]byte, Meta, error) {
 	type result struct {
 		html []byte
+		meta Meta
 		err  error
 	}
 	ch := make(chan result, 1)
 	go func() {
-		var buf bytes.Buffer
-		if err := mdParser.Convert(md, &buf); err != nil {
-			ch <- result{nil, err}
-			return
-		}
-		ch <- result{policy.SanitizeBytes(buf.Bytes()), nil}
+		h, m, err := renderCore(md)
+		ch <- result{h, m, err}
 	}()
 	timer := time.NewTimer(timeout)
 	select {
@@ -80,8 +102,78 @@ func RenderWithTimeout(md []byte, timeout time.Duration) ([]byte, error) {
 		if !timer.Stop() {
 			<-timer.C
 		}
-		return r.html, r.err
+		return r.html, r.meta, r.err
 	case <-timer.C:
-		return nil, ErrTimeout
+		return nil, Meta{}, ErrTimeout
 	}
+}
+
+func renderCore(md []byte) ([]byte, Meta, error) {
+	fm, body := parseFrontmatter(md)
+
+	var buf bytes.Buffer
+	if err := mdParser.Convert(body, &buf); err != nil {
+		return nil, Meta{}, err
+	}
+	sanitized := policy.SanitizeBytes(buf.Bytes())
+
+	meta := extractMeta(string(sanitized), fm)
+	return sanitized, meta, nil
+}
+
+func parseFrontmatter(md []byte) (frontmatterFields, []byte) {
+	loc := reFrontmatter.FindSubmatchIndex(md)
+	if loc == nil {
+		return frontmatterFields{}, md
+	}
+	var fm frontmatterFields
+	yaml.Unmarshal(md[loc[2]:loc[3]], &fm) //nolint:errcheck — best-effort
+	return fm, md[loc[1]:]
+}
+
+func extractMeta(htmlBody string, fm frontmatterFields) Meta {
+	return Meta{
+		Title:       extractTitle(htmlBody, fm.Title),
+		Excerpt:     extractExcerpt(htmlBody, fm.Description),
+		OGImagePath: extractOGImagePath(htmlBody, fm.Image),
+	}
+}
+
+func extractTitle(htmlBody, fmTitle string) string {
+	if fmTitle != "" {
+		return fmTitle
+	}
+	if m := reH1.FindStringSubmatch(htmlBody); m != nil {
+		return strings.TrimSpace(reTags.ReplaceAllString(m[1], ""))
+	}
+	return ""
+}
+
+func extractExcerpt(htmlBody, fmDesc string) string {
+	if fmDesc != "" {
+		return truncate(fmDesc, excerptMaxRunes)
+	}
+	if m := rePara.FindStringSubmatch(htmlBody); m != nil {
+		text := strings.TrimSpace(reTags.ReplaceAllString(m[1], ""))
+		return truncate(text, excerptMaxRunes)
+	}
+	return ""
+}
+
+func extractOGImagePath(htmlBody, fmImage string) string {
+	if fmImage != "" {
+		return fmImage
+	}
+	if m := reImgSrc.FindStringSubmatch(htmlBody); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+func truncate(s string, maxRunes int) string {
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:maxRunes])
 }
