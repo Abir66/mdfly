@@ -8,13 +8,15 @@ import (
 	"github.com/Abir66/mdfly/internal/server/publish"
 )
 
+const validHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 func validReq() api.InitRequest {
 	return api.InitRequest{
 		IdempotencyKey: "550e8400-e29b-41d4-a716-446655440000",
 		Bundle: api.BundleDTO{
 			RootPath: "hello.md",
 			Files: []api.BundleFileDTO{
-				{Path: "hello.md", Hash: "abc", Size: 42},
+				{Path: "hello.md", Hash: validHash, Size: 42},
 			},
 		},
 	}
@@ -71,6 +73,24 @@ func TestValidateInit_fileMissingPath(t *testing.T) {
 	err := publish.ValidateInit(req)
 	if err == nil || err.Status != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing path, got %+v", err)
+	}
+}
+
+func TestValidateInit_fileHashWrongLength(t *testing.T) {
+	req := validReq()
+	req.Bundle.Files[0].Hash = "abc123"
+	err := publish.ValidateInit(req)
+	if err == nil || err.Status != http.StatusBadRequest {
+		t.Fatalf("expected 400 for wrong-length hash, got %+v", err)
+	}
+}
+
+func TestValidateInit_fileHashInvalidHex(t *testing.T) {
+	req := validReq()
+	req.Bundle.Files[0].Hash = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+	err := publish.ValidateInit(req)
+	if err == nil || err.Status != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid hex hash, got %+v", err)
 	}
 }
 
