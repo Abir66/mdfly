@@ -6,8 +6,8 @@ import (
 	"github.com/Abir66/mdfly/internal/api"
 )
 
-// ErrRootHashNotFound is returned when a BundleDTO's RootHash matches no file.
-var ErrRootHashNotFound = errors.New("root hash not found in bundle files")
+// ErrRootPathNotFound is returned when a BundleDTO's RootPath is not present in Files.
+var ErrRootPathNotFound = errors.New("root path not found in bundle files")
 
 // ManifestFile is one file in a stored Manifest, keyed by its logical path.
 type ManifestFile struct {
@@ -22,24 +22,17 @@ type Manifest struct {
 	FilesByPath map[string]ManifestFile `json:"files_by_path"`
 }
 
-// FromDTO converts the wire BundleDTO into a path-keyed Manifest, resolving
-// RootHash to the matching file's path. Returns ErrRootHashNotFound if no
-// file carries the root hash.
+// FromDTO converts the wire BundleDTO into a path-keyed Manifest.
+// Returns ErrRootPathNotFound if dto.RootPath is not present in dto.Files.
 func FromDTO(dto api.BundleDTO) (Manifest, error) {
 	files := make(map[string]ManifestFile, len(dto.Files))
-	var rootPath string
-	found := false
 	for _, f := range dto.Files {
 		files[f.Path] = ManifestFile{Hash: f.Hash, Size: f.Size}
-		if !found && f.Hash == dto.RootHash {
-			rootPath = f.Path
-			found = true
-		}
 	}
-	if !found {
-		return Manifest{}, ErrRootHashNotFound
+	if _, ok := files[dto.RootPath]; !ok {
+		return Manifest{}, ErrRootPathNotFound
 	}
-	return Manifest{RootPath: rootPath, FilesByPath: files}, nil
+	return Manifest{RootPath: dto.RootPath, FilesByPath: files}, nil
 }
 
 // RootFile returns the root file entry and whether it exists in FilesByPath.

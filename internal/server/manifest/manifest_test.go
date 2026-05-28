@@ -10,7 +10,7 @@ import (
 
 func TestFromDTO_indexesByPath(t *testing.T) {
 	dto := api.BundleDTO{
-		RootHash: "roothash",
+		RootPath: "index.md",
 		Files: []api.BundleFileDTO{
 			{Path: "index.md", Hash: "roothash", Size: 10},
 			{Path: "img/logo.png", Hash: "imghash", Size: 99},
@@ -32,21 +32,21 @@ func TestFromDTO_indexesByPath(t *testing.T) {
 	}
 }
 
-func TestFromDTO_rootHashNotInFiles(t *testing.T) {
+func TestFromDTO_rootPathNotInFiles(t *testing.T) {
 	dto := api.BundleDTO{
-		RootHash: "missing",
+		RootPath: "missing.md",
 		Files:    []api.BundleFileDTO{{Path: "a.md", Hash: "other", Size: 1}},
 	}
 
 	_, err := manifest.FromDTO(dto)
-	if !errors.Is(err, manifest.ErrRootHashNotFound) {
-		t.Errorf("err=%v, want ErrRootHashNotFound", err)
+	if !errors.Is(err, manifest.ErrRootPathNotFound) {
+		t.Errorf("err=%v, want ErrRootPathNotFound", err)
 	}
 }
 
 func TestRootFile(t *testing.T) {
 	m, err := manifest.FromDTO(api.BundleDTO{
-		RootHash: "rh",
+		RootPath: "doc.md",
 		Files:    []api.BundleFileDTO{{Path: "doc.md", Hash: "rh", Size: 42}},
 	})
 	if err != nil {

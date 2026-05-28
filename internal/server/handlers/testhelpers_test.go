@@ -238,7 +238,7 @@ func contentHash(b []byte) string {
 func singleFileBundle(path string, content []byte) api.BundleDTO {
 	hash := contentHash(content)
 	return api.BundleDTO{
-		RootHash: hash,
+		RootPath: path,
 		Files: []api.BundleFileDTO{
 			{Path: path, Hash: hash, Size: int64(len(content))},
 		},

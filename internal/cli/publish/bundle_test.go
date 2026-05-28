@@ -26,18 +26,21 @@ func TestForSingleFile(t *testing.T) {
 	sum := sha256.Sum256(content)
 	wantHash := hex.EncodeToString(sum[:])
 
-	if b.RootHash != wantHash {
-		t.Errorf("RootHash=%q, want %q", b.RootHash, wantHash)
+	if b.RootPath != "test.md" {
+		t.Errorf("RootPath=%q, want test.md", b.RootPath)
 	}
-	if len(b.FilesByHash) != 1 {
-		t.Fatalf("FilesByHash len=%d, want 1", len(b.FilesByHash))
+	if len(b.FilesByPath) != 1 {
+		t.Fatalf("FilesByPath len=%d, want 1", len(b.FilesByPath))
 	}
-	f, ok := b.FilesByHash[wantHash]
+	f, ok := b.FilesByPath["test.md"]
 	if !ok {
-		t.Fatalf("FilesByHash has no entry for hash %q", wantHash)
+		t.Fatalf("FilesByPath has no entry for path %q", "test.md")
 	}
 	if f.Path != "test.md" {
 		t.Errorf("Path=%q, want test.md", f.Path)
+	}
+	if f.Hash != wantHash {
+		t.Errorf("Hash=%q, want %q", f.Hash, wantHash)
 	}
 	if f.DiskPath != path {
 		t.Errorf("DiskPath=%q, want %q", f.DiskPath, path)
@@ -71,13 +74,14 @@ func TestBundle_ToDTO(t *testing.T) {
 	}
 
 	dto := b.ToDTO()
-	if dto.RootHash != b.RootHash {
-		t.Errorf("dto.RootHash=%q, want %q", dto.RootHash, b.RootHash)
+	if dto.RootPath != b.RootPath {
+		t.Errorf("dto.RootPath=%q, want %q", dto.RootPath, b.RootPath)
 	}
 	if len(dto.Files) != 1 {
 		t.Fatalf("dto.Files len=%d, want 1", len(dto.Files))
 	}
-	if dto.Files[0].Hash != b.RootHash || dto.Files[0].Path != "doc.md" || dto.Files[0].Size != int64(len(content)) {
+	wantHash := b.FilesByPath[b.RootPath].Hash
+	if dto.Files[0].Hash != wantHash || dto.Files[0].Path != "doc.md" || dto.Files[0].Size != int64(len(content)) {
 		t.Errorf("dto.Files[0]=%+v unexpected", dto.Files[0])
 	}
 }

@@ -23,7 +23,8 @@ func sha256Hex(b []byte) string {
 
 // mockServer builds an httptest.Server that handles the 3-phase publish flow.
 // It stores the uploaded blob so the commit handler can verify it.
-func mockServer(t *testing.T, content []byte) *httptest.Server {
+// rootPath is the logical path the CLI is expected to publish under.
+func mockServer(t *testing.T, rootPath string, content []byte) *httptest.Server {
 	t.Helper()
 	hash := sha256Hex(content)
 	var blobUploaded bool
@@ -41,7 +42,7 @@ func mockServer(t *testing.T, content []byte) *httptest.Server {
 		presignedURL := srv.URL + "/blob/" + hash
 		writeJSON(w, api.InitResponse{
 			Slug:          "testslug1",
-			PresignedURLs: map[string]string{hash: presignedURL},
+			PresignedURLs: map[string]string{rootPath: presignedURL},
 		})
 	})
 
@@ -92,7 +93,7 @@ func TestRun_happyPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := mockServer(t, content)
+	srv := mockServer(t, "hello.md", content)
 
 	url, err := publish.Run(srv.URL, mdFile)
 	if err != nil {
@@ -135,6 +136,7 @@ func TestRun_sendsEditToken(t *testing.T) {
 	var gotToken string
 	var srv *httptest.Server
 	hash := sha256Hex(content)
+	const rootPath = "t.md"
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/publish/init", func(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +145,7 @@ func TestRun_sendsEditToken(t *testing.T) {
 		gotToken = req.EditToken
 		writeJSON(w, api.InitResponse{
 			Slug:          "tok1",
-			PresignedURLs: map[string]string{hash: srv.URL + "/blob/" + hash},
+			PresignedURLs: map[string]string{rootPath: srv.URL + "/blob/" + hash},
 		})
 	})
 	mux.HandleFunc("PUT /blob/", func(w http.ResponseWriter, r *http.Request) {

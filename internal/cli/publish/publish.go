@@ -52,10 +52,10 @@ func Run(apiBase, filePath string) (string, error) {
 		return "", fmt.Errorf("publish/init: %w", err)
 	}
 
-	for hash, presignedURL := range initResp.PresignedURLs {
-		f, ok := bundle.FilesByHash[hash]
+	for path, presignedURL := range initResp.PresignedURLs {
+		f, ok := bundle.FilesByPath[path]
 		if !ok {
-			return "", fmt.Errorf("presigned URL for unknown hash %s", hash)
+			return "", fmt.Errorf("presigned URL for unknown path %s", path)
 		}
 		content := f.Content
 		if content == nil {
