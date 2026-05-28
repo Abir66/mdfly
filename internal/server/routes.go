@@ -17,5 +17,5 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
-	return middleware.Recover(middleware.Logger(mux))
+	return middleware.Logger(middleware.Recover(mux))
 }

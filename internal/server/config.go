@@ -126,5 +126,12 @@ func parseDuration(raw string, def time.Duration) (time.Duration, error) {
 	if raw == "" {
 		return def, nil
 	}
-	return time.ParseDuration(raw)
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, err
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("duration must be positive, got %q", raw)
+	}
+	return d, nil
 }
