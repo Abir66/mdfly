@@ -80,14 +80,25 @@ func Init(deps PublishDeps) http.HandlerFunc {
 			return
 		}
 
+		// Group manifest paths by blobkey so distinct paths that hash to the same
+		// R2 object share one upload. We emit one presigned URL per unique
+		// blobkey, keyed by a representative path. The CLI looks up files by
+		// path; paths sharing a blobkey with a representative are not in the
+		// response — their content is covered by the representative's upload.
 		presignedURLs := make(map[string]string, len(mfst.FilesByPath))
+		seenBlobKeys := make(map[string]struct{}, len(mfst.FilesByPath))
 		for path, f := range mfst.FilesByPath {
+			key := storage.BlobKey(doc.Slug, f.Hash, storage.ExtFromPath(path))
+			if _, dup := seenBlobKeys[key]; dup {
+				continue
+			}
+			seenBlobKeys[key] = struct{}{}
 			url, err := buildPresignedURL(r.Context(), deps.R2, doc.Slug, path, f)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate presigned URLs")
 				return
 			}
-			presignedURLs[f.Hash] = url
+			presignedURLs[path] = url
 		}
 
 		writeJSON(w, http.StatusOK, api.InitResponse{

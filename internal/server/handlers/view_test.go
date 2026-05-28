@@ -19,15 +19,15 @@ func TestView_returnsMarkdownInPre(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	content := []byte("# Hello\n\nThis is mdfly.\n")
-	hash := contentHash(content)
-	bundle := singleFileBundle("hello.md", content)
+	const rootPath = "hello.md"
+	bundle := singleFileBundle(rootPath, content)
 	idempKey := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee01"
 
 	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
 		IdempotencyKey: idempKey, Bundle: bundle,
 	})
 	initBody := decodeInitResponse(t, initR)
-	putBlob(t, initBody.PresignedURLs[hash], content)
+	putBlob(t, initBody.PresignedURLs[rootPath], content)
 
 	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
 	commitBody := decodeCommitResponse(t, commitR)
@@ -90,15 +90,15 @@ func TestView_htmlEscaping(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	content := []byte("<script>alert('xss')</script>\n")
-	hash := contentHash(content)
-	bundle := singleFileBundle("xss.md", content)
+	const rootPath = "xss.md"
+	bundle := singleFileBundle(rootPath, content)
 	idempKey := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee02"
 
 	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
 		IdempotencyKey: idempKey, Bundle: bundle,
 	})
 	initBody := decodeInitResponse(t, initR)
-	putBlob(t, initBody.PresignedURLs[hash], content)
+	putBlob(t, initBody.PresignedURLs[rootPath], content)
 
 	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
 	commitBody := decodeCommitResponse(t, commitR)

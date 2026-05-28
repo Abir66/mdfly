@@ -18,9 +18,9 @@ func TestPublishInitAndCommit(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	content := []byte("# Hello mdfly\n\nThis is a test document.\n")
-	hash := contentHash(content)
+	const rootPath = "hello.md"
 
-	bundle := singleFileBundle("hello.md", content)
+	bundle := singleFileBundle(rootPath, content)
 	idempotencyKey := "550e8400-e29b-41d4-a716-446655440000"
 
 	initResp := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
@@ -44,9 +44,9 @@ func TestPublishInitAndCommit(t *testing.T) {
 	if len(initBody.PresignedURLs) != 1 {
 		t.Errorf("init response: presigned_urls len=%d, want 1", len(initBody.PresignedURLs))
 	}
-	presignedURL, ok := initBody.PresignedURLs[hash]
+	presignedURL, ok := initBody.PresignedURLs[rootPath]
 	if !ok {
-		t.Fatalf("init response: no presigned URL for hash %s", hash)
+		t.Fatalf("init response: no presigned URL for path %s", rootPath)
 	}
 
 	putBlob(t, presignedURL, content)
@@ -138,15 +138,15 @@ func TestPublishCommit_alreadyPublished(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	content := []byte("published again")
-	hash := contentHash(content)
-	bundle := singleFileBundle("pub.md", content)
+	const rootPath = "pub.md"
+	bundle := singleFileBundle(rootPath, content)
 	idempotencyKey := "6ba7b812-9dad-11d1-80b4-00c04fd430c8"
 
 	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
 		IdempotencyKey: idempotencyKey, Bundle: bundle,
 	})
 	initBody := decodeInitResponse(t, initR)
-	putBlob(t, initBody.PresignedURLs[hash], content)
+	putBlob(t, initBody.PresignedURLs[rootPath], content)
 
 	r1 := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempotencyKey})
 	b1 := decodeCommitResponse(t, r1)
@@ -193,5 +193,75 @@ func TestPublishInit_differentManifestSameKey(t *testing.T) {
 
 	if b1.Slug != b2.Slug {
 		t.Errorf("different manifest, same key: slug changed from %q to %q (must be same)", b1.Slug, b2.Slug)
+	}
+}
+
+// TestPublishInit_dedupesPresignedURLsByBlobKey verifies that when a bundle
+// contains two paths whose content + extension hash to the same R2 blobkey,
+// the server returns exactly one presigned URL. The CLI uploads that single
+// blob; commit's HEAD-verify still passes for every manifest path because
+// they all resolve to the same blobkey.
+func TestPublishInit_dedupesPresignedURLsByBlobKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	content := []byte("# shared\n\nsame bytes at two paths\n")
+	hash := contentHash(content)
+	size := int64(len(content))
+	const (
+		pathA = "a.md"
+		pathB = "copies/b.md" // same content + same .md ext → same blobkey
+	)
+
+	bundle := api.BundleDTO{
+		RootHash: hash,
+		Files: []api.BundleFileDTO{
+			{Path: pathA, Hash: hash, Size: size},
+			{Path: pathB, Hash: hash, Size: size},
+		},
+	}
+	idempotencyKey := "6ba7b814-9dad-11d1-80b4-00c04fd430c8"
+
+	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
+		IdempotencyKey: idempotencyKey, Bundle: bundle,
+	})
+	if initR.StatusCode != http.StatusOK {
+		body := readAll(t, initR.Body)
+		initR.Body.Close()
+		t.Fatalf("init status %d: %s", initR.StatusCode, body)
+	}
+	initBody := decodeInitResponse(t, initR)
+
+	if got := len(initBody.PresignedURLs); got != 1 {
+		t.Fatalf("presigned_urls len=%d, want 1 (dedup by blobkey)", got)
+	}
+
+	// Exactly one of the two manifest paths must be the representative key.
+	var presignedURL string
+	switch {
+	case initBody.PresignedURLs[pathA] != "":
+		presignedURL = initBody.PresignedURLs[pathA]
+	case initBody.PresignedURLs[pathB] != "":
+		presignedURL = initBody.PresignedURLs[pathB]
+	default:
+		t.Fatalf("presigned_urls keyed by neither %q nor %q: %v", pathA, pathB, initBody.PresignedURLs)
+	}
+
+	// Upload the single deduped blob, then commit; HEAD-verify covers both
+	// manifest paths because they share a blobkey.
+	putBlob(t, presignedURL, content)
+
+	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{
+		IdempotencyKey: idempotencyKey,
+	})
+	if commitR.StatusCode != http.StatusOK {
+		body := readAll(t, commitR.Body)
+		commitR.Body.Close()
+		t.Fatalf("commit status %d: %s", commitR.StatusCode, body)
 	}
 }
