@@ -1,6 +1,8 @@
 package publish
 
 import (
+	"encoding/hex"
+
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/httpx"
 )
@@ -30,6 +32,12 @@ func validateBundle(b api.BundleDTO) *httpx.Error {
 	for _, f := range b.Files {
 		if f.Hash == "" {
 			return httpx.BadRequest("bundle file hash required")
+		}
+		if len(f.Hash) != 64 {
+			return httpx.BadRequest("bundle file hash must be 64-char hex SHA256")
+		}
+		if _, err := hex.DecodeString(f.Hash); err != nil {
+			return httpx.BadRequest("bundle file hash must be valid hex SHA256")
 		}
 		if f.Path == "" {
 			return httpx.BadRequest("bundle file path required")
