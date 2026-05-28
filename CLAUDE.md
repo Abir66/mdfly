@@ -31,7 +31,9 @@ The project is pre-implementation. Do not start writing Go, SQL migrations, Dock
 
 ## Coding Guidelines
 
-Never hardcode values / strings. Declare and/or use constants
+Try not to hardcode configurable values. Declare and/or use constants.
+When making any functional changes, update/fix the doc strings and tests too. Do not make the doc strings unnecessarily big.
+Don't put unnecessary comments
 
 ## Logging
 
