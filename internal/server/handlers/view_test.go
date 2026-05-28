@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -137,6 +138,65 @@ func TestView_titleFromH1WhenNoFrontmatter(t *testing.T) {
 
 	if !strings.Contains(bodyStr, "<title>Inferred Title</title>") {
 		t.Errorf("missing <title>Inferred Title</title> in: %s", bodyStr)
+	}
+}
+
+func TestView_rewritesImageAssetURLs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+	publicBase := env.endpoint + "/" + env.bucket
+
+	rootContent := []byte("# Pics\n\n![logo](./logo.png)\n\n![remote](https://example.com/x.png)\n")
+	imgContent := []byte("\x89PNG\r\n\x1a\nfakepngbytes")
+	const rootPath = "hello.md"
+	const imgPath = "logo.png"
+
+	bundle := api.BundleDTO{
+		RootPath: rootPath,
+		Files: []api.BundleFileDTO{
+			{Path: rootPath, Hash: contentHash(rootContent), Size: int64(len(rootContent))},
+			{Path: imgPath, Hash: contentHash(imgContent), Size: int64(len(imgContent))},
+		},
+	}
+	idempKey := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee05"
+
+	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
+		IdempotencyKey: idempKey, Bundle: bundle,
+	})
+	initBody := decodeInitResponse(t, initR)
+	putBlob(t, initBody.PresignedURLs[rootPath], rootContent)
+	putBlob(t, initBody.PresignedURLs[imgPath], imgContent)
+
+	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
+	commitBody := decodeCommitResponse(t, commitR)
+
+	resp, err := http.Get(srv.URL + "/" + commitBody.Slug)
+	if err != nil {
+		t.Fatalf("GET /%s: %v", commitBody.Slug, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	wantSrc := fmt.Sprintf(`src="%s/documents/%s/%s.png"`, publicBase, commitBody.Slug, contentHash(imgContent))
+	if !strings.Contains(bodyStr, wantSrc) {
+		t.Errorf("body missing rewritten asset URL %q in:\n%s", wantSrc, bodyStr)
+	}
+	if !strings.Contains(bodyStr, `src="https://example.com/x.png"`) {
+		t.Errorf("external image must be preserved verbatim in:\n%s", bodyStr)
+	}
+	wantOG := fmt.Sprintf(`og:image" content="%s/documents/%s/%s.png"`, publicBase, commitBody.Slug, contentHash(imgContent))
+	if !strings.Contains(bodyStr, wantOG) {
+		t.Errorf("og:image must carry absolute asset URL in:\n%s", bodyStr)
 	}
 }
 

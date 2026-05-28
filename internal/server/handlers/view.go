@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Abir66/mdfly/internal/markdown"
@@ -71,7 +70,9 @@ func View(deps ViewDeps) http.HandlerFunc {
 			return
 		}
 
-		ogImageURL := resolveOGImageURL(deps.R2, doc.Slug, meta.OGImagePath, mfst)
+		resolve := assetResolver(deps.R2, doc.Slug, mfst)
+		rendered = markdown.RewriteImageRefs(rendered, resolve)
+		ogImageURL, _ := resolve(meta.OGImagePath)
 
 		pageHTML, err := ssr.RenderPage(ssr.PageData{
 			Title:      meta.Title,
@@ -97,18 +98,20 @@ func rootBlobKey(slug string, mfst manifest.Manifest) (string, error) {
 	return storage.BlobKey(slug, f.Hash, storage.ExtFromPath(mfst.RootPath)), nil
 }
 
-// resolveOGImageURL resolves a markdown image path against the manifest and
-// returns its public CDN URL. Returns "" if the path is empty or not a known
-// bundle asset (e.g. an absolute external URL).
-func resolveOGImageURL(r2 *storage.Client, slug, imgPath string, mfst manifest.Manifest) string {
-	if imgPath == "" {
-		return ""
+// assetResolver returns a function that maps a markdown asset reference to its
+// public CDN URL by looking the logical path up in the manifest. It returns
+// ok=false for empty, external, or unknown references, leaving them verbatim.
+func assetResolver(r2 *storage.Client, slug string, mfst manifest.Manifest) func(string) (string, bool) {
+	return func(ref string) (string, bool) {
+		if ref == "" || markdown.IsExternalRef(ref) {
+			return "", false
+		}
+		logical := markdown.NormalizeAssetPath(ref)
+		f, ok := mfst.FilesByPath[logical]
+		if !ok {
+			return "", false
+		}
+		key := storage.BlobKey(slug, f.Hash, storage.ExtFromPath(logical))
+		return r2.BlobPublicURL(key), true
 	}
-	logical := strings.TrimPrefix(imgPath, "./")
-	f, ok := mfst.FilesByPath[logical]
-	if !ok {
-		return ""
-	}
-	key := storage.BlobKey(slug, f.Hash, storage.ExtFromPath(logical))
-	return r2.BlobPublicURL(key)
 }

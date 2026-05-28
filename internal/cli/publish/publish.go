@@ -21,9 +21,9 @@ const (
 
 // Run orchestrates the 3-phase publish wire for a single file and returns the public URL.
 func Run(apiBase, filePath string) (string, error) {
-	bundle, err := ForSingleFile(filePath)
+	bundle, err := ForBundle(filePath)
 	if err != nil {
-		return "", fmt.Errorf("read file: %w", err)
+		return "", fmt.Errorf("build bundle: %w", err)
 	}
 
 	idempotencyKey, err := uuid.NewV7()

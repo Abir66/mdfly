@@ -38,25 +38,28 @@ func ForSingleFile(filePath string) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
-	sum := sha256.Sum256(content)
-	hash := hex.EncodeToString(sum[:])
-	size := int64(len(content))
-
 	logicalPath := filepath.Base(filePath)
-	f := BundleFile{
-		Path:     logicalPath,
-		DiskPath: filePath,
-		Hash:     hash,
-		Size:     size,
-	}
-	if size <= maxInlineContentBytes {
-		f.Content = content
-	}
-
+	f := newBundleFile(logicalPath, filePath, content)
 	return Bundle{
 		RootPath:    logicalPath,
 		FilesByPath: map[string]BundleFile{logicalPath: f},
 	}, nil
+}
+
+// newBundleFile builds a BundleFile from content already read into memory,
+// preloading Content for small files (<= maxInlineContentBytes).
+func newBundleFile(logicalPath, diskPath string, content []byte) BundleFile {
+	sum := sha256.Sum256(content)
+	f := BundleFile{
+		Path:     logicalPath,
+		DiskPath: diskPath,
+		Hash:     hex.EncodeToString(sum[:]),
+		Size:     int64(len(content)),
+	}
+	if f.Size <= maxInlineContentBytes {
+		f.Content = content
+	}
+	return f
 }
 
 // ToDTO converts the Bundle into the wire BundleDTO, dropping local-only fields.
