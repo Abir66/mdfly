@@ -36,6 +36,10 @@ func ForBundle(rootPath string) (Bundle, error) {
 			continue
 		}
 		diskPath := filepath.Join(rootDir, filepath.FromSlash(strings.TrimPrefix(ref, "./")))
+		rel, relErr := filepath.Rel(rootDir, diskPath)
+		if relErr != nil || strings.HasPrefix(rel, "..") {
+			return Bundle{}, fmt.Errorf("referenced asset %q escapes document directory", ref)
+		}
 		assetContent, err := os.ReadFile(diskPath)
 		if err != nil {
 			return Bundle{}, fmt.Errorf("referenced asset %q: %w", ref, err)

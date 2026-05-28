@@ -200,6 +200,45 @@ func TestView_rewritesImageAssetURLs(t *testing.T) {
 	}
 }
 
+func TestView_externalOGImagePreserved(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	rootContent := []byte("---\nimage: \"https://external.example/og.png\"\n---\n# Hello\n")
+	const rootPath = "hello.md"
+	bundle := singleFileBundle(rootPath, rootContent)
+	idempKey := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee06"
+
+	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
+		IdempotencyKey: idempKey, Bundle: bundle,
+	})
+	initBody := decodeInitResponse(t, initR)
+	putBlob(t, initBody.PresignedURLs[rootPath], rootContent)
+
+	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
+	commitBody := decodeCommitResponse(t, commitR)
+
+	resp, err := http.Get(srv.URL + "/" + commitBody.Slug)
+	if err != nil {
+		t.Fatalf("GET /%s: %v", commitBody.Slug, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, `og:image" content="https://external.example/og.png"`) {
+		t.Errorf("external og:image must be preserved verbatim in:\n%s", bodyStr)
+	}
+}
+
 func TestView_missingSlugReturns404(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")

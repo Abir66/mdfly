@@ -307,6 +307,9 @@ func TestCLIPublish_withImage(t *testing.T) {
 		t.Fatalf("GET %s: %v", url, err)
 	}
 	defer pr.Body.Close()
+	if pr.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s: status=%d, want 200", url, pr.StatusCode)
+	}
 	body, _ := io.ReadAll(pr.Body)
 	bodyStr := string(body)
 	if !strings.Contains(bodyStr, fmt.Sprintf(`src="%s"`, assetURL)) {

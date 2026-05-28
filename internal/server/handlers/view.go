@@ -72,7 +72,12 @@ func View(deps ViewDeps) http.HandlerFunc {
 
 		resolve := assetResolver(deps.R2, doc.Slug, mfst)
 		rendered = markdown.RewriteImageRefs(rendered, resolve)
-		ogImageURL, _ := resolve(meta.OGImagePath)
+		var ogImageURL string
+		if markdown.IsExternalRef(meta.OGImagePath) {
+			ogImageURL = meta.OGImagePath
+		} else {
+			ogImageURL, _ = resolve(meta.OGImagePath)
+		}
 
 		pageHTML, err := ssr.RenderPage(ssr.PageData{
 			Title:      meta.Title,
