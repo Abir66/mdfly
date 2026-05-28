@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
+	"time"
 
+	"github.com/Abir66/mdfly/internal/markdown"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/manifest"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
+
+const markdownRenderTimeout = 2 * time.Second
 
 // ViewDeps holds dependencies for the view handler.
 type ViewDeps struct {
@@ -59,9 +62,14 @@ func View(deps ViewDeps) http.HandlerFunc {
 			return
 		}
 
+		rendered, err := markdown.RenderWithTimeout(content, markdownRenderTimeout)
+		if err != nil {
+			http.Error(w, "render error", http.StatusInternalServerError)
+			return
+		}
+
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, "<!doctype html><html><body><pre>%s</pre></body></html>",
-			html.EscapeString(string(content)))
+		fmt.Fprintf(w, "<!doctype html><html><body>%s</body></html>", rendered)
 	}
 }
 
