@@ -29,12 +29,12 @@ func TestForSingleFile(t *testing.T) {
 	if b.RootHash != wantHash {
 		t.Errorf("RootHash=%q, want %q", b.RootHash, wantHash)
 	}
-	if len(b.FilesByHash) != 1 {
-		t.Fatalf("FilesByHash len=%d, want 1", len(b.FilesByHash))
+	if len(b.FilesByPath) != 1 {
+		t.Fatalf("FilesByPath len=%d, want 1", len(b.FilesByPath))
 	}
-	f, ok := b.FilesByHash[wantHash]
+	f, ok := b.FilesByPath["test.md"]
 	if !ok {
-		t.Fatalf("FilesByHash has no entry for hash %q", wantHash)
+		t.Fatalf("FilesByPath has no entry for path %q", "test.md")
 	}
 	if f.Path != "test.md" {
 		t.Errorf("Path=%q, want test.md", f.Path)
