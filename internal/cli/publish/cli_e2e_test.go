@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -225,6 +226,118 @@ func TestCLIPublish(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET %s: status=%d, want 200", url, resp.StatusCode)
+	}
+}
+
+func TestCLIPublish_withImage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	pg := db.New(pool)
+	publicBase := env.endpoint + "/" + env.bucket
+	r2 := storage.New(storage.Config{
+		Endpoint:        env.endpoint,
+		AccessKeyID:     env.accessKey,
+		SecretAccessKey: env.secretKey,
+		Bucket:          env.bucket,
+		PublicBaseURL:   publicBase,
+	})
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
+	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
+	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
+	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
+	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
+
+	bin := buildCLI(t)
+
+	dir := t.TempDir()
+	imgContent := []byte("\x89PNG\r\n\x1a\nfakepngbytes")
+	if err := os.WriteFile(filepath.Join(dir, "logo.png"), imgContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	mdFile := filepath.Join(dir, "hello.md")
+	mdContent := []byte("# Hello\n\n![logo](./logo.png)\n\n![remote](https://example.com/x.png)\n")
+	if err := os.WriteFile(mdFile, mdContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(bin, "publish", mdFile)
+	cmd.Env = append(os.Environ(), "MDFLY_API="+srv.URL)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("mdfly publish failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	url := strings.TrimSpace(stdout.String())
+	slug := strings.TrimPrefix(url, srv.URL+"/")
+
+	// Both blobs landed in R2 (authenticated HEAD; minio denies anonymous reads).
+	rootKey := storage.BlobKey(slug, hashOf(mdContent), ".md")
+	assetKey := storage.BlobKey(slug, hashOf(imgContent), ".png")
+	if err := r2.HeadBlob(context.Background(), rootKey, int64(len(mdContent))); err != nil {
+		t.Errorf("root blob missing in R2: %v", err)
+	}
+	if err := r2.HeadBlob(context.Background(), assetKey, int64(len(imgContent))); err != nil {
+		t.Errorf("asset blob missing in R2: %v", err)
+	}
+
+	// Rendered page rewrites the local image to the absolute CDN URL and leaves
+	// the external image untouched.
+	assetURL := fmt.Sprintf("%s/documents/%s/%s.png", publicBase, slug, hashOf(imgContent))
+	verifyClient := &http.Client{Timeout: 10 * time.Second}
+	pr, err := verifyClient.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer pr.Body.Close()
+	if pr.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s: status=%d, want 200", url, pr.StatusCode)
+	}
+	body, _ := io.ReadAll(pr.Body)
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, fmt.Sprintf(`src="%s"`, assetURL)) {
+		t.Errorf("rendered body missing rewritten asset URL %q in:\n%s", assetURL, bodyStr)
+	}
+	if !strings.Contains(bodyStr, `src="https://example.com/x.png"`) {
+		t.Errorf("external image must be preserved verbatim in:\n%s", bodyStr)
+	}
+}
+
+func TestCLIPublish_missingAssetFails(t *testing.T) {
+	bin := buildCLI(t)
+	dir := t.TempDir()
+	mdFile := filepath.Join(dir, "hello.md")
+	if err := os.WriteFile(mdFile, []byte("![x](./does-not-exist.png)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(bin, "publish", mdFile)
+	cmd.Env = append(os.Environ(), "MDFLY_API=http://127.0.0.1:0")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("want non-zero exit for missing referenced asset, got success")
+	}
+	if !strings.Contains(stderr.String(), "does-not-exist.png") {
+		t.Errorf("stderr should name the missing asset, got: %s", stderr.String())
 	}
 }
 
