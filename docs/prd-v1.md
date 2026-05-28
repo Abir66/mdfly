@@ -67,7 +67,10 @@ The slice introduces the following packages. Italicized are deep modules (lots o
 - ***`internal/server/db`*** — Documents-row CRUD (`InsertPending`, `Publish`, `GetBySlug`, `GetByIdempotencyKey`) on a `db.Client` over pgxpool. All SQL inline; no ORM.
 - ***`internal/server/storage`*** — R2 object storage on a `storage.Client`: presigned-PUT minting with `Content-Length` + `x-amz-checksum-sha256` pinned into the V4 signature, `HEAD` verification, raw blob fetch for SSR. Wraps AWS SDK v2 with mdfly-specific helpers. Shares no interface with `db` — promoted to its own top-level package.
 - ***`internal/server/ssr`*** — Embeds the HTML template via `//go:embed`, composes the resolved markdown render + Preview Metadata + CDN asset URLs into the final response. Single function: `Render(doc, body) → http.Response`. The mobile-responsive CSS is a single inlined stylesheet (no Tailwind build pipeline in v1).
-- `internal/server/handlers` — Thin HTTP handlers wiring requests through `slug` + `manifest` + `markdown` + `store` + `ssr`. Validation lives at the handler boundary; business logic does not.
+- ***`internal/server/service/publish`*** — The 3-phase publish service: `Service.Init` validates the request, mints a slug, persists the pending row, and returns presigned PUTs; `Service.Commit` HEAD-verifies blobs and atomically flips the row to `published`. Returns `*httpx.Error` on every failure so handlers stay thin. Domain logic for other verbs (auth, llm, purge) lands under `internal/server/service/<domain>/` as they ship.
+- `internal/server/handlers` — Thin HTTP glue. Decodes the wire type, calls into a `service/<domain>` Service, encodes the response. Validation lives in the service, not here.
+- `internal/server/middleware` — Global HTTP middleware applied in `routes.go`: `Recover` catches handler panics, `Logger` emits one slog line per request.
+- `internal/server` (top level) — `app.go` assembles the runtime (`App.New` → `Run` → `Close`, with SIGINT/SIGTERM-driven graceful shutdown), `config.go` (`Config` + `LoadConfig` over env), `routes.go` (route table + middleware chain). `cmd/mdfly-server/main.go` is a thin entrypoint over `server.LoadConfig` + `server.New` + `App.Run`.
 
 **CLI-only (`internal/cli/`):**
 

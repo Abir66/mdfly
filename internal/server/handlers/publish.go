@@ -6,7 +6,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/httpx"
-	"github.com/Abir66/mdfly/internal/server/publish"
+	"github.com/Abir66/mdfly/internal/server/service/publish"
 )
 
 // Init handles POST /v1/publish/init.

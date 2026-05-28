@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/api"
-	"github.com/Abir66/mdfly/internal/server/publish"
+	"github.com/Abir66/mdfly/internal/server/service/publish"
 )
 
 const validHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
