@@ -1,0 +1,89 @@
+package markdown_test
+
+import (
+	"errors"
+	"flag"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Abir66/mdfly/internal/markdown"
+)
+
+var update = flag.Bool("update", false, "update golden files")
+
+func TestRender_Golden(t *testing.T) {
+	matches, err := filepath.Glob("testdata/*/input.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("no testdata cases found")
+	}
+	for _, inputPath := range matches {
+		name := filepath.Base(filepath.Dir(inputPath))
+		t.Run(name, func(t *testing.T) {
+			input, err := os.ReadFile(inputPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := markdown.Render(input)
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			goldPath := filepath.Join(filepath.Dir(inputPath), "expected.html")
+			if *update {
+				if err := os.WriteFile(goldPath, got, 0644); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			expected, err := os.ReadFile(goldPath)
+			if err != nil {
+				t.Fatalf("golden file missing at %s; run: go test ./internal/markdown/... -update", goldPath)
+			}
+			if string(got) != string(expected) {
+				t.Errorf("output mismatch for %s\ngot:\n%s\nwant:\n%s", name, got, expected)
+			}
+		})
+	}
+}
+
+func TestRender_ScriptTagAbsent(t *testing.T) {
+	input := []byte("# Title\n\n<script>alert(1)</script>\n")
+	got, err := markdown.Render(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "<script") {
+		t.Errorf("output contains <script> tag:\n%s", got)
+	}
+	if strings.Contains(string(got), "alert(1)") {
+		t.Errorf("output contains script content:\n%s", got)
+	}
+}
+
+func TestRender_OnerrorAttrAbsent(t *testing.T) {
+	input := []byte("# Title\n\n<img src=\"x\" onerror=\"alert(1)\">\n")
+	got, err := markdown.Render(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "onerror") {
+		t.Errorf("output contains onerror attribute:\n%s", got)
+	}
+}
+
+func TestRenderWithTimeout_TimesOut(t *testing.T) {
+	// Large input + near-zero timeout → must return ErrTimeout.
+	var sb strings.Builder
+	for i := 0; i < 50000; i++ {
+		sb.WriteString("# Heading\n\nParagraph with **bold** and _italic_ text.\n\n")
+	}
+	_, err := markdown.RenderWithTimeout([]byte(sb.String()), 1*time.Nanosecond)
+	if !errors.Is(err, markdown.ErrTimeout) {
+		t.Errorf("expected ErrTimeout, got %v", err)
+	}
+}

@@ -9,7 +9,7 @@ import (
 	"github.com/Abir66/mdfly/internal/api"
 )
 
-func TestView_returnsMarkdownInPre(t *testing.T) {
+func TestView_returnsRenderedMarkdown(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")
 	}
@@ -52,11 +52,11 @@ func TestView_returnsMarkdownInPre(t *testing.T) {
 
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
-	if !strings.Contains(bodyStr, "<pre>") {
-		t.Errorf("body missing <pre>: %s", bodyStr)
+	if !strings.Contains(bodyStr, "<h1") {
+		t.Errorf("body missing rendered <h1> heading: %s", bodyStr)
 	}
-	if !strings.Contains(bodyStr, string(content)) {
-		t.Errorf("body missing markdown content: %s", bodyStr)
+	if !strings.Contains(bodyStr, "Hello") {
+		t.Errorf("body missing heading text: %s", bodyStr)
 	}
 }
 
@@ -116,10 +116,7 @@ func TestView_htmlEscaping(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
 
-	if strings.Contains(bodyStr, "<script>") {
-		t.Error("body contains unescaped <script> tag — XSS risk")
-	}
-	if !strings.Contains(bodyStr, "&lt;script&gt;") {
-		t.Errorf("body missing escaped script tag, got: %s", bodyStr)
+	if strings.Contains(bodyStr, "<script") {
+		t.Error("body contains <script> tag — XSS risk")
 	}
 }
