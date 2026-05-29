@@ -5,6 +5,7 @@ package httpx
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/Abir66/mdfly/internal/api"
@@ -14,9 +15,10 @@ import (
 // request that cannot be fulfilled. Handlers (and the workflow layer behind
 // them) return *Error; WriteError serializes it in the project error envelope.
 type Error struct {
-	Status int
-	Code   string
-	Msg    string
+	Status  int
+	Code    string
+	Msg     string
+	Details any
 }
 
 func (e *Error) Error() string { return e.Msg }
@@ -37,6 +39,20 @@ func Internal(msg string) *Error {
 	return &Error{Status: http.StatusInternalServerError, Code: "internal_error", Msg: msg}
 }
 
+// BundleTooLarge returns a 413 error for a bundle limit violation.
+func BundleTooLarge(limitName string, max, actual int64) *Error {
+	return &Error{
+		Status: http.StatusRequestEntityTooLarge,
+		Code:   "bundle_too_big",
+		Msg:    fmt.Sprintf("bundle exceeds %s limit (%d, max %d)", limitName, actual, max),
+		Details: map[string]any{
+			"limit":  limitName,
+			"max":    max,
+			"actual": actual,
+		},
+	}
+}
+
 // WriteJSON writes v as the response body with the given status and the
 // application/json content type.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
@@ -48,6 +64,6 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 // WriteError serializes e in the project error envelope.
 func WriteError(w http.ResponseWriter, e *Error) {
 	WriteJSON(w, e.Status, api.ErrorResponse{
-		Error: api.ErrorBody{Code: e.Code, Message: e.Msg},
+		Error: api.ErrorBody{Code: e.Code, Message: e.Msg, Details: e.Details},
 	})
 }

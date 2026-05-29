@@ -28,7 +28,11 @@ func validateBundle(b api.BundleDTO) *httpx.Error {
 	if b.RootPath == "" || len(b.Files) == 0 {
 		return httpx.BadRequest("bundle.root_path and bundle.files required")
 	}
+	if len(b.Files) > api.AnonMaxFileCount {
+		return httpx.BundleTooLarge("file_count", int64(api.AnonMaxFileCount), int64(len(b.Files)))
+	}
 	seenRoot := false
+	var totalBytes int64
 	for _, f := range b.Files {
 		if f.Hash == "" {
 			return httpx.BadRequest("bundle file hash required")
@@ -45,12 +49,19 @@ func validateBundle(b api.BundleDTO) *httpx.Error {
 		if f.Size < 0 {
 			return httpx.BadRequest("bundle file size must be non-negative")
 		}
+		if f.Size > api.AnonMaxSingleFileBytes {
+			return httpx.BundleTooLarge("single_file_bytes", api.AnonMaxSingleFileBytes, f.Size)
+		}
+		totalBytes += f.Size
 		if f.Path == b.RootPath {
 			seenRoot = true
 		}
 	}
 	if !seenRoot {
 		return httpx.BadRequest("bundle.root_path not present in bundle.files")
+	}
+	if totalBytes > api.AnonMaxTotalBytes {
+		return httpx.BundleTooLarge("total_bytes", api.AnonMaxTotalBytes, totalBytes)
 	}
 	return nil
 }

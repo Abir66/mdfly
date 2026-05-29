@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -23,6 +24,10 @@ func main() {
 	url, err := publish.Run(apiBase, os.Args[2])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		var limitErr *publish.BundleLimitError
+		if errors.As(err, &limitErr) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 	fmt.Println(url)

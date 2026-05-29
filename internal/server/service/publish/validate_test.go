@@ -1,6 +1,7 @@
 package publish_test
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -130,5 +131,76 @@ func TestValidateCommit_valid(t *testing.T) {
 	err := publish.ValidateCommit(api.CommitRequest{IdempotencyKey: "k"})
 	if err != nil {
 		t.Fatalf("valid commit rejected: %+v", err)
+	}
+}
+
+func makeFilesDTO(count int, sizeEach int64) []api.BundleFileDTO {
+	files := make([]api.BundleFileDTO, count)
+	for i := range count {
+		files[i] = api.BundleFileDTO{Path: validHash[:8] + fmt.Sprintf("%d", i) + ".md", Hash: validHash, Size: sizeEach}
+	}
+	files[0].Path = "root.md"
+	return files
+}
+
+func TestValidateInit_bundleTotalBytesExceeded(t *testing.T) {
+	req := api.InitRequest{
+		IdempotencyKey: "550e8400-e29b-41d4-a716-446655440000",
+		Bundle: api.BundleDTO{
+			RootPath: "root.md",
+			Files: []api.BundleFileDTO{
+				{Path: "root.md", Hash: validHash, Size: api.AnonMaxTotalBytes + 1},
+			},
+		},
+	}
+	err := publish.ValidateInit(req)
+	if err == nil {
+		t.Fatal("expected error for total bytes exceeded, got nil")
+	}
+	if err.Status != http.StatusRequestEntityTooLarge {
+		t.Errorf("status=%d, want 413", err.Status)
+	}
+	if err.Code != "bundle_too_big" {
+		t.Errorf("code=%q, want bundle_too_big", err.Code)
+	}
+}
+
+func TestValidateInit_bundleFileCountExceeded(t *testing.T) {
+	files := makeFilesDTO(api.AnonMaxFileCount+1, 1)
+	req := api.InitRequest{
+		IdempotencyKey: "550e8400-e29b-41d4-a716-446655440000",
+		Bundle:         api.BundleDTO{RootPath: "root.md", Files: files},
+	}
+	err := publish.ValidateInit(req)
+	if err == nil {
+		t.Fatal("expected error for file count exceeded, got nil")
+	}
+	if err.Status != http.StatusRequestEntityTooLarge {
+		t.Errorf("status=%d, want 413", err.Status)
+	}
+	if err.Code != "bundle_too_big" {
+		t.Errorf("code=%q, want bundle_too_big", err.Code)
+	}
+}
+
+func TestValidateInit_bundleSingleFileExceeded(t *testing.T) {
+	req := api.InitRequest{
+		IdempotencyKey: "550e8400-e29b-41d4-a716-446655440000",
+		Bundle: api.BundleDTO{
+			RootPath: "root.md",
+			Files: []api.BundleFileDTO{
+				{Path: "root.md", Hash: validHash, Size: api.AnonMaxSingleFileBytes + 1},
+			},
+		},
+	}
+	err := publish.ValidateInit(req)
+	if err == nil {
+		t.Fatal("expected error for single file exceeded, got nil")
+	}
+	if err.Status != http.StatusRequestEntityTooLarge {
+		t.Errorf("status=%d, want 413", err.Status)
+	}
+	if err.Code != "bundle_too_big" {
+		t.Errorf("code=%q, want bundle_too_big", err.Code)
 	}
 }
