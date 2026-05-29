@@ -130,18 +130,27 @@ func assetResolver(r2 *storage.Client, slug string, mfst manifest.Manifest) func
 }
 
 // resolveKey turns a markdown reference into a project-root-relative manifest
-// key. Relative references resolve against referrerDir; absolute references
-// resolve against projectRoot via Rel.
+// key. Every reference is resolved into the publisher's absolute path space and
+// then made relative to projectRoot, so absolute refs, plain relatives, and
+// relatives that climb above the root before landing back inside it all yield
+// the same key the CLI walk stored. A key keeps a leading "../" when the target
+// genuinely sits above the root. When projectRoot is unknown (legacy bundles),
+// relative refs fall back to a logical join and absolute refs are unresolvable.
 func resolveKey(referrerDir, projectRoot, ref string) (string, bool) {
-	if path.IsAbs(ref) {
-		if projectRoot == "" {
+	if projectRoot == "" {
+		if path.IsAbs(ref) {
 			return "", false
 		}
-		rel, err := filepath.Rel(projectRoot, filepath.FromSlash(ref))
-		if err != nil {
-			return "", false
-		}
-		return filepath.ToSlash(rel), true
+		return markdown.ResolveLogicalPath(referrerDir, ref), true
 	}
-	return markdown.ResolveLogicalPath(referrerDir, ref), true
+
+	abs := filepath.FromSlash(ref)
+	if !path.IsAbs(ref) {
+		abs = filepath.Join(projectRoot, filepath.FromSlash(referrerDir), abs)
+	}
+	rel, err := filepath.Rel(projectRoot, filepath.Clean(abs))
+	if err != nil {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }

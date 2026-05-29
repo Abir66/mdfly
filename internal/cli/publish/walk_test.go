@@ -263,7 +263,7 @@ func TestForBundle_inTreeDotDotFolds(t *testing.T) {
 	}
 }
 
-func TestForBundle_aboveRootKeepsDotDotKey(t *testing.T) {
+func TestForBundle_aboveRootSkipped(t *testing.T) {
 	dir := t.TempDir()
 	proj := filepath.Join(dir, "proj")
 	writeFile(t, filepath.Join(proj, "index.md"), []byte("[x](../shared/x.md)\n"))
@@ -273,8 +273,29 @@ func TestForBundle_aboveRootKeepsDotDotKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ForBundle: %v", err)
 	}
-	if _, ok := b.FilesByPath["../shared/x.md"]; !ok {
-		t.Errorf("above-root ref must key as ../shared/x.md; have %v", b.FilesByPath)
+	if _, ok := b.FilesByPath["../shared/x.md"]; ok {
+		t.Errorf("above-root ref must be skipped, not bundled; have %v", b.FilesByPath)
+	}
+	if len(b.FilesByPath) != 1 {
+		t.Errorf("only the root file must be bundled; have %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_bounceInUploaded(t *testing.T) {
+	// index.md climbs above the project root then back into it; the target
+	// ultimately resolves inside, so it must be uploaded under its in-root key.
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	writeFile(t, filepath.Join(proj, "sub", "x.md"), []byte("[z](../../proj/sub3/z.md)\n"))
+	writeFile(t, filepath.Join(proj, "sub3", "z.md"), []byte("# Z\n"))
+	writeFile(t, filepath.Join(proj, "index.md"), []byte("[x](./sub/x.md)\n"))
+
+	b, err := publish.ForBundle(filepath.Join(proj, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if _, ok := b.FilesByPath["sub3/z.md"]; !ok {
+		t.Errorf("bounce-in ref must key as sub3/z.md; have %v", b.FilesByPath)
 	}
 }
 
