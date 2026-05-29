@@ -16,11 +16,12 @@ import (
 // visit each file exactly once.
 //
 // The project root is the root file's directory; every file's logical key is its
-// path relative to that root, so a `../` or absolute reference yields a key above
-// the project root (kept with its `../` prefix). External references (http(s),
-// protocol-relative, other schemes) are not followed. A reference whose on-disk
-// target does not exist is logged and skipped, leaving the link verbatim — the
-// publish still succeeds.
+// path relative to that root. A reference that resolves outside the project root
+// (even via `../` or an absolute path) is skipped with a warning and left
+// verbatim; one that climbs above the root but folds back inside is uploaded
+// under its in-root key. External references (http(s), protocol-relative, other
+// schemes) are not followed. A reference whose on-disk target does not exist is
+// logged and skipped, leaving the link verbatim — the publish still succeeds.
 func ForBundle(rootPath string) (Bundle, error) {
 	absRoot, err := filepath.Abs(rootPath)
 	if err != nil {
@@ -55,7 +56,7 @@ func ForBundle(rootPath string) (Bundle, error) {
 		if !isMarkdown(cur) {
 			continue
 		}
-		for _, target := range reachableTargets(filepath.Dir(cur), content) {
+		for _, target := range reachableTargets(filepath.Dir(cur), projectRoot, content) {
 			if !visited[target] {
 				queue = append(queue, target)
 			}
@@ -71,7 +72,9 @@ func ForBundle(rootPath string) (Bundle, error) {
 
 // reachableTargets resolves every non-external image and link reference in a
 // markdown file to its absolute on-disk path, relative to referrerDir.
-func reachableTargets(referrerDir string, content []byte) []string {
+// References whose target resolves outside projectRoot (after folding any `../`)
+// are skipped with a warning and left verbatim in the published markdown.
+func reachableTargets(referrerDir, projectRoot string, content []byte) []string {
 	refs := append(markdown.ImageRefs(content), markdown.LinkRefs(content)...)
 	var targets []string
 	for _, ref := range refs {
@@ -80,13 +83,27 @@ func reachableTargets(referrerDir string, content []byte) []string {
 			continue
 		}
 		disk := filepath.FromSlash(ref)
-		if filepath.IsAbs(disk) {
-			targets = append(targets, filepath.Clean(disk))
+		target := filepath.Clean(disk)
+		if !filepath.IsAbs(disk) {
+			target = filepath.Clean(filepath.Join(referrerDir, disk))
+		}
+		if escapesRoot(projectRoot, target) {
+			slog.Warn("reference outside project root, leaving link verbatim", "ref", ref, "resolved", target)
 			continue
 		}
-		targets = append(targets, filepath.Clean(filepath.Join(referrerDir, disk)))
+		targets = append(targets, target)
 	}
 	return targets
+}
+
+// escapesRoot reports whether target resolves outside projectRoot.
+func escapesRoot(projectRoot, target string) bool {
+	rel, err := filepath.Rel(projectRoot, target)
+	if err != nil {
+		return true
+	}
+	rel = filepath.ToSlash(rel)
+	return rel == ".." || strings.HasPrefix(rel, "../")
 }
 
 // relKey returns target's slash-separated path relative to projectRoot, keeping
