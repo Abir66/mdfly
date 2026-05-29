@@ -22,6 +22,9 @@ import (
 const (
 	markdownRenderTimeout = 2 * time.Second
 	markdownExt           = ".md"
+	// maxUp caps ?up=N so a malicious request can't force a huge
+	// strings.Repeat("../", N) allocation. No real bundle nests this deep.
+	maxUp = 16
 )
 
 // ViewDeps holds dependencies for the view handler.
@@ -146,7 +149,7 @@ func resolveOGImage(ogPath string, resolve markdown.RefResolver) string {
 // nestedKey reconstructs the manifest key for GET /{slug}/{path...}. rest is the
 // project-root-relative path with .md stripped; up is the optional ?up=N count of
 // "../" prefixes for keys above the project root. ok is false for an empty path
-// or a malformed up value.
+// or an up value that is malformed, negative, or above maxUp.
 func nestedKey(rest, up string) (string, bool) {
 	rest = strings.Trim(rest, "/")
 	if rest == "" {
@@ -155,7 +158,7 @@ func nestedKey(rest, up string) (string, bool) {
 	n := 0
 	if up != "" {
 		parsed, err := strconv.Atoi(up)
-		if err != nil || parsed < 0 {
+		if err != nil || parsed < 0 || parsed > maxUp {
 			return "", false
 		}
 		n = parsed
@@ -173,7 +176,8 @@ func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, refer
 		if ref == "" || markdown.IsExternalRef(ref) {
 			return "", false
 		}
-		key, ok := resolveKey(referrerDir, mfst.ProjectRoot, ref)
+		baseRef, suffix := splitRefSuffix(ref)
+		key, ok := resolveKey(referrerDir, mfst.ProjectRoot, baseRef)
 		if !ok {
 			return "", false
 		}
@@ -182,9 +186,9 @@ func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, refer
 			return "", false
 		}
 		if isMarkdownKey(key) {
-			return slugPageURL(slug, key), true
+			return slugPageURL(slug, key) + suffix, true
 		}
-		return r2.BlobPublicURL(storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key))), true
+		return r2.BlobPublicURL(storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key))) + suffix, true
 	}
 }
 
@@ -206,6 +210,16 @@ func slugPageURL(slug, key string) string {
 
 func isMarkdownKey(key string) bool {
 	return storage.ExtFromPath(key) == markdownExt
+}
+
+// splitRefSuffix separates a markdown reference into the path portion and its
+// query/fragment suffix (the first "?" or "#" onward). The suffix is preserved
+// verbatim so a rewritten URL keeps refs like ./y.md#intro or ./img.png?v=1.
+func splitRefSuffix(ref string) (base, suffix string) {
+	if i := strings.IndexAny(ref, "?#"); i >= 0 {
+		return ref[:i], ref[i:]
+	}
+	return ref, ""
 }
 
 // resolveKey turns a markdown reference into a project-root-relative manifest
