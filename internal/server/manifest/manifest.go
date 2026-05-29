@@ -16,9 +16,12 @@ type ManifestFile struct {
 }
 
 // Manifest is the server-side, persisted form of a bundle. It is keyed by
-// logical path so SSR can rewrite asset references to R2 blob keys in O(1).
+// project-root-relative logical path so SSR can rewrite references to R2 blob
+// keys in O(1). ProjectRoot is the publisher's absolute project-root path, used
+// to resolve absolute references found in markdown content.
 type Manifest struct {
 	RootPath    string                  `json:"root_path"`
+	ProjectRoot string                  `json:"project_root"`
 	FilesByPath map[string]ManifestFile `json:"files_by_path"`
 }
 
@@ -32,7 +35,7 @@ func FromDTO(dto api.BundleDTO) (Manifest, error) {
 	if _, ok := files[dto.RootPath]; !ok {
 		return Manifest{}, ErrRootPathNotFound
 	}
-	return Manifest{RootPath: dto.RootPath, FilesByPath: files}, nil
+	return Manifest{RootPath: dto.RootPath, ProjectRoot: dto.ProjectRoot, FilesByPath: files}, nil
 }
 
 // RootFile returns the root file entry and whether it exists in FilesByPath.

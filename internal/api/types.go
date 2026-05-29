@@ -8,10 +8,13 @@ type BundleFileDTO struct {
 }
 
 // BundleDTO is the bundle description the CLI computes and sends at init.
-// RootPath is the logical path of the root markdown file within Files.
+// RootPath is the project-root-relative path of the root markdown file within
+// Files. ProjectRoot is the publisher's absolute project-root path, used by the
+// server to resolve absolute references in markdown content.
 type BundleDTO struct {
-	RootPath string          `json:"root_path"`
-	Files    []BundleFileDTO `json:"files"`
+	RootPath    string          `json:"root_path"`
+	ProjectRoot string          `json:"project_root"`
+	Files       []BundleFileDTO `json:"files"`
 }
 
 // InitRequest is the request body for POST /v1/publish/init.

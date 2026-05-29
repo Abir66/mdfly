@@ -137,12 +137,203 @@ func TestForBundle_goldenWithImage(t *testing.T) {
 	}
 }
 
-func TestForBundle_missingAssetErrors(t *testing.T) {
+func TestForBundle_goldenMultiMd(t *testing.T) {
+	root := filepath.Join("testdata", "bundles", "multi-md", "index.md")
+
+	b, err := publish.ForBundle(root)
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if b.RootPath != "index.md" {
+		t.Errorf("RootPath=%q, want index.md", b.RootPath)
+	}
+
+	wantKeys := []string{"index.md", "y.md", "sub/another.md", "sub/a.md", "sub2/a.md", "logo.png"}
+	if len(b.FilesByPath) != len(wantKeys) {
+		t.Fatalf("FilesByPath=%v, want exactly %v", b.FilesByPath, wantKeys)
+	}
+	for _, k := range wantKeys {
+		if _, ok := b.FilesByPath[k]; !ok {
+			t.Errorf("missing key %q; have %v", k, b.FilesByPath)
+		}
+	}
+
+	indexBytes, err := os.ReadFile(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := b.FilesByPath["index.md"].Hash; got != hashOf(indexBytes) {
+		t.Errorf("index.md not stored byte-identically: hash=%q want %q", got, hashOf(indexBytes))
+	}
+}
+
+func TestForBundle_missingAssetWarnsAndContinues(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "hello.md")
 	writeFile(t, root, []byte("![x](./does-not-exist.png)\n"))
 
-	if _, err := publish.ForBundle(root); err == nil {
-		t.Error("want error for missing referenced asset, got nil")
+	b, err := publish.ForBundle(root)
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if len(b.FilesByPath) != 1 {
+		t.Errorf("missing asset must not be bundled; files=%v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_projectRootAndRootPath(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	root := filepath.Join(sub, "index.md")
+	writeFile(t, root, []byte("# Hi\n"))
+
+	b, err := publish.ForBundle(root)
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if b.RootPath != "index.md" {
+		t.Errorf("RootPath=%q, want index.md", b.RootPath)
+	}
+	if b.ProjectRoot != sub {
+		t.Errorf("ProjectRoot=%q, want %q", b.ProjectRoot, sub)
+	}
+}
+
+func TestForBundle_transitiveMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.md"), []byte("[y](./y.md)\n"))
+	writeFile(t, filepath.Join(dir, "y.md"), []byte("[a](./sub2/a.md)\n"))
+	writeFile(t, filepath.Join(dir, "sub2", "a.md"), []byte("# A\n"))
+
+	b, err := publish.ForBundle(filepath.Join(dir, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	for _, key := range []string{"index.md", "y.md", "sub2/a.md"} {
+		if _, ok := b.FilesByPath[key]; !ok {
+			t.Errorf("missing key %q; have %v", key, b.FilesByPath)
+		}
+	}
+	if len(b.FilesByPath) != 3 {
+		t.Errorf("want 3 files, got %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_cycle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a.md"), []byte("[b](./b.md)\n"))
+	writeFile(t, filepath.Join(dir, "b.md"), []byte("[a](./a.md)\n"))
+
+	b, err := publish.ForBundle(filepath.Join(dir, "a.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if len(b.FilesByPath) != 2 {
+		t.Errorf("cycle must visit each file once; got %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_baseDirAwareKey(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.md"), []byte("[s](./sub/another.md)\n"))
+	writeFile(t, filepath.Join(dir, "sub", "another.md"), []byte("[a](./a.md)\n"))
+	writeFile(t, filepath.Join(dir, "sub", "a.md"), []byte("# A\n"))
+
+	b, err := publish.ForBundle(filepath.Join(dir, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if _, ok := b.FilesByPath["sub/a.md"]; !ok {
+		t.Errorf("./a.md from sub/another.md must key as sub/a.md; have %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_inTreeDotDotFolds(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.md"), []byte("[z](./sub2/z.md)\n"))
+	writeFile(t, filepath.Join(dir, "sub2", "z.md"), []byte("[a](../sub/a.md)\n"))
+	writeFile(t, filepath.Join(dir, "sub", "a.md"), []byte("# A\n"))
+
+	b, err := publish.ForBundle(filepath.Join(dir, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if _, ok := b.FilesByPath["sub/a.md"]; !ok {
+		t.Errorf("in-tree ../sub/a.md must fold to sub/a.md; have %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_aboveRootKeepsDotDotKey(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	writeFile(t, filepath.Join(proj, "index.md"), []byte("[x](../shared/x.md)\n"))
+	writeFile(t, filepath.Join(dir, "shared", "x.md"), []byte("# X\n"))
+
+	b, err := publish.ForBundle(filepath.Join(proj, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if _, ok := b.FilesByPath["../shared/x.md"]; !ok {
+		t.Errorf("above-root ref must key as ../shared/x.md; have %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_diamondCountsOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.md"), []byte("[a](./a.md)\n[b](./b.md)\n"))
+	writeFile(t, filepath.Join(dir, "a.md"), []byte("[s](./shared.md)\n"))
+	writeFile(t, filepath.Join(dir, "b.md"), []byte("[s](./shared.md)\n"))
+	writeFile(t, filepath.Join(dir, "shared.md"), []byte("# S\n"))
+
+	b, err := publish.ForBundle(filepath.Join(dir, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if len(b.FilesByPath) != 4 {
+		t.Errorf("diamond shared target must count once; got %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_absolutePathRefKeyedByRel(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	logo := filepath.Join(proj, "logo.png")
+	writeFile(t, logo, []byte("img"))
+	writeFile(t, filepath.Join(proj, "index.md"), []byte("![l]("+logo+")\n"))
+
+	b, err := publish.ForBundle(filepath.Join(proj, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if _, ok := b.FilesByPath["logo.png"]; !ok {
+		t.Errorf("absolute in-root ref must key as logo.png; have %v", b.FilesByPath)
+	}
+}
+
+func TestForBundle_byteIdenticalHash(t *testing.T) {
+	dir := t.TempDir()
+	body := []byte("# Hi\n\n![l](./logo.png)\n")
+	writeFile(t, filepath.Join(dir, "index.md"), body)
+	writeFile(t, filepath.Join(dir, "logo.png"), []byte("img"))
+
+	b, err := publish.ForBundle(filepath.Join(dir, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if got := b.FilesByPath["index.md"].Hash; got != hashOf(body) {
+		t.Errorf("root stored non-identically: hash=%q want %q", got, hashOf(body))
+	}
+}
+
+func TestForBundle_absoluteRefNotFollowed(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.md"), []byte("[x](https://example.com/x.md)\n"))
+
+	b, err := publish.ForBundle(filepath.Join(dir, "index.md"))
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	if len(b.FilesByPath) != 1 {
+		t.Errorf("absolute URL must not be followed; got %v", b.FilesByPath)
 	}
 }

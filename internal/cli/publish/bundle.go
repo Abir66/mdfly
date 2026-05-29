@@ -24,11 +24,12 @@ type BundleFile struct {
 	Content  []byte
 }
 
-// Bundle is the CLI-local view of a publish bundle, keyed by logical path.
-// Path keying preserves every file even when two files share content (same hash)
-// or share both content and extension at different paths.
+// Bundle is the CLI-local view of a publish bundle, keyed by project-root-relative
+// logical path. Path keying preserves every file even when two files share content
+// (same hash) or share both content and extension at different paths.
 type Bundle struct {
-	RootPath    string
+	RootPath    string // project-root-relative path of the root markdown file
+	ProjectRoot string // absolute path of the project root (root file's dir)
 	FilesByPath map[string]BundleFile
 }
 
@@ -38,10 +39,15 @@ func ForSingleFile(filePath string) (Bundle, error) {
 	if err != nil {
 		return Bundle{}, err
 	}
-	logicalPath := filepath.Base(filePath)
-	f := newBundleFile(logicalPath, filePath, content)
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return Bundle{}, err
+	}
+	logicalPath := filepath.Base(absPath)
+	f := newBundleFile(logicalPath, absPath, content)
 	return Bundle{
 		RootPath:    logicalPath,
+		ProjectRoot: filepath.Dir(absPath),
 		FilesByPath: map[string]BundleFile{logicalPath: f},
 	}, nil
 }
@@ -69,5 +75,5 @@ func (b Bundle) ToDTO() api.BundleDTO {
 	for _, f := range b.FilesByPath {
 		files = append(files, api.BundleFileDTO{Path: f.Path, Hash: f.Hash, Size: f.Size})
 	}
-	return api.BundleDTO{RootPath: b.RootPath, Files: files}
+	return api.BundleDTO{RootPath: b.RootPath, ProjectRoot: b.ProjectRoot, Files: files}
 }
