@@ -25,6 +25,9 @@ func Run(apiBase, filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("build bundle: %w", err)
 	}
+	if err := checkBundleLimits(bundle); err != nil {
+		return "", err
+	}
 
 	idempotencyKey, err := uuid.NewV7()
 	if err != nil {
