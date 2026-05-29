@@ -32,7 +32,7 @@ The complete set of files uploaded for one Publish: root `.md` + all transitivel
 
 ### Bundle Limits
 Hard caps applied at Publish time: max total bytes and max file count across all files in a Bundle, plus a single-file size cap. CLI computes before upload and aborts early; server re-validates. Tiered by identity:
-- **Anonymous tier**: 10 MB total, 50 files, 25 MB single file
+- **Anonymous tier**: 25 MB total, 50 files, 10 MB single file
 - **Owned tier**: 100 MB total, 500 files, 25 MB single file
 
 ### Slug
