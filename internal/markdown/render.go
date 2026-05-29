@@ -12,9 +12,12 @@ import (
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
+	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,6 +30,42 @@ var (
 	mdParser goldmark.Markdown
 	policy   *bluemonday.Policy
 )
+
+// RefResolver maps a raw markdown reference to its final URL. It returns
+// ok=false to leave the reference verbatim (external, empty, or unknown).
+type RefResolver func(ref string) (string, bool)
+
+// refResolverKey carries a RefResolver through the parser context so the AST
+// transformer can rewrite references without rebuilding the parser per render.
+var refResolverKey = parser.NewContextKey()
+
+// refTransformer rewrites every image and link destination through the
+// RefResolver found in the parser context, before HTML generation. With no
+// resolver in context it is a no-op (e.g. ImageRefs/LinkRefs raw parses).
+type refTransformer struct{}
+
+func (refTransformer) Transform(node *ast.Document, _ text.Reader, pc parser.Context) {
+	resolve, ok := pc.Get(refResolverKey).(RefResolver)
+	if !ok || resolve == nil {
+		return
+	}
+	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) { //nolint:errcheck — walk never errors
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch t := n.(type) {
+		case *ast.Image:
+			if u, ok := resolve(string(t.Destination)); ok {
+				t.Destination = []byte(u)
+			}
+		case *ast.Link:
+			if u, ok := resolve(string(t.Destination)); ok {
+				t.Destination = []byte(u)
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+}
 
 var (
 	reH1          = regexp.MustCompile(`(?i)<h1[^>]*>(.*?)</h1>`)
@@ -49,6 +88,7 @@ func init() {
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),
+			parser.WithASTTransformers(util.Prioritized(refTransformer{}, 100)),
 		),
 		goldmark.WithRendererOptions(
 			html.WithUnsafe(),
@@ -86,6 +126,17 @@ func Render(md []byte) ([]byte, Meta, error) {
 
 // RenderWithTimeout is like Render but aborts after the given duration.
 func RenderWithTimeout(md []byte, timeout time.Duration) ([]byte, Meta, error) {
+	return RenderRefsWithTimeout(md, nil, timeout)
+}
+
+// RenderRefs is like Render but rewrites every image and link destination
+// through resolve before HTML generation. A nil resolver leaves refs verbatim.
+func RenderRefs(md []byte, resolve RefResolver) ([]byte, Meta, error) {
+	return RenderRefsWithTimeout(md, resolve, RenderTimeout)
+}
+
+// RenderRefsWithTimeout is like RenderRefs but aborts after the given duration.
+func RenderRefsWithTimeout(md []byte, resolve RefResolver, timeout time.Duration) ([]byte, Meta, error) {
 	type result struct {
 		html []byte
 		meta Meta
@@ -93,7 +144,7 @@ func RenderWithTimeout(md []byte, timeout time.Duration) ([]byte, Meta, error) {
 	}
 	ch := make(chan result, 1)
 	go func() {
-		h, m, err := renderCore(md)
+		h, m, err := renderCore(md, resolve)
 		ch <- result{h, m, err}
 	}()
 	timer := time.NewTimer(timeout)
@@ -108,11 +159,17 @@ func RenderWithTimeout(md []byte, timeout time.Duration) ([]byte, Meta, error) {
 	}
 }
 
-func renderCore(md []byte) ([]byte, Meta, error) {
+func renderCore(md []byte, resolve RefResolver) ([]byte, Meta, error) {
 	fm, body := parseFrontmatter(md)
 
 	var buf bytes.Buffer
-	if err := mdParser.Convert(body, &buf); err != nil {
+	convertOpts := []parser.ParseOption{}
+	if resolve != nil {
+		ctx := parser.NewContext()
+		ctx.Set(refResolverKey, resolve)
+		convertOpts = append(convertOpts, parser.WithContext(ctx))
+	}
+	if err := mdParser.Convert(body, &buf, convertOpts...); err != nil {
 		return nil, Meta{}, err
 	}
 	sanitized := policy.SanitizeBytes(buf.Bytes())

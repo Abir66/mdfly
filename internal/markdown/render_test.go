@@ -76,6 +76,51 @@ func TestRender_OnerrorAttrAbsent(t *testing.T) {
 	}
 }
 
+func TestRenderRefs_rewritesImageAndLinkDestinations(t *testing.T) {
+	resolve := func(ref string) (string, bool) {
+		switch ref {
+		case "./logo.png":
+			return "https://cdn.mdfly.dev/documents/s/abc.png", true
+		case "./y.md":
+			return "/s/y", true
+		}
+		return "", false
+	}
+	in := []byte("![logo](./logo.png)\n\n[y](./y.md)\n\n[ext](https://example.com)\n\n![miss](./missing.png)\n")
+	got, _, err := markdown.RenderRefs(in, resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	if !strings.Contains(s, `src="https://cdn.mdfly.dev/documents/s/abc.png"`) {
+		t.Errorf("image dest not rewritten:\n%s", s)
+	}
+	if !strings.Contains(s, `href="/s/y"`) {
+		t.Errorf("link dest not rewritten:\n%s", s)
+	}
+	if !strings.Contains(s, `href="https://example.com"`) {
+		t.Errorf("external link must be verbatim:\n%s", s)
+	}
+	if !strings.Contains(s, `src="./missing.png"`) {
+		t.Errorf("unresolved image must be verbatim:\n%s", s)
+	}
+}
+
+func TestRenderRefs_nilResolverLeavesRefs(t *testing.T) {
+	in := []byte("![logo](./logo.png)\n\n[y](./y.md)\n")
+	got, _, err := markdown.RenderRefs(in, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	if !strings.Contains(s, `src="./logo.png"`) {
+		t.Errorf("nil resolver must leave image dest:\n%s", s)
+	}
+	if !strings.Contains(s, `href="./y.md"`) {
+		t.Errorf("nil resolver must leave link dest:\n%s", s)
+	}
+}
+
 func TestRenderWithTimeout_TimesOut(t *testing.T) {
 	// Large input + near-zero timeout → must return ErrTimeout.
 	var sb strings.Builder
