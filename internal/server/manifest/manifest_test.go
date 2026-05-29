@@ -32,6 +32,20 @@ func TestFromDTO_indexesByPath(t *testing.T) {
 	}
 }
 
+func TestFromDTO_carriesProjectRoot(t *testing.T) {
+	m, err := manifest.FromDTO(api.BundleDTO{
+		RootPath:    "index.md",
+		ProjectRoot: "/home/user/proj",
+		Files:       []api.BundleFileDTO{{Path: "index.md", Hash: "rh", Size: 1}},
+	})
+	if err != nil {
+		t.Fatalf("FromDTO: %v", err)
+	}
+	if m.ProjectRoot != "/home/user/proj" {
+		t.Errorf("ProjectRoot=%q, want /home/user/proj", m.ProjectRoot)
+	}
+}
+
 func TestFromDTO_rootPathNotInFiles(t *testing.T) {
 	dto := api.BundleDTO{
 		RootPath: "missing.md",

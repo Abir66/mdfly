@@ -33,17 +33,38 @@ func ImageRefs(md []byte) []string {
 	return refs
 }
 
+// LinkRefs returns the raw destinations of every markdown link (`[](dest)`) in
+// the source markdown, in document order. Frontmatter is skipped. Destinations
+// are returned verbatim (e.g. "./y.md", "https://x/y.md").
+func LinkRefs(md []byte) []string {
+	_, body := parseFrontmatter(md)
+	doc := mdParser.Parser().Parse(text.NewReader(body))
+
+	var refs []string
+	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) { //nolint:errcheck — walk never errors
+		if entering {
+			if link, ok := n.(*ast.Link); ok {
+				refs = append(refs, string(link.Destination))
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	return refs
+}
+
+// ResolveLogicalPath resolves a local reference against the referrer's logical
+// directory into a cleaned logical path. referrerDir is the project-root-relative
+// directory of the referring file ("." for files at the project root). The result
+// keeps a leading "../" when the reference escapes the project root.
+func ResolveLogicalPath(referrerDir, ref string) string {
+	return path.Clean(path.Join(referrerDir, strings.TrimPrefix(ref, "./")))
+}
+
 // IsExternalRef reports whether a reference points outside the bundle and must
 // not be downloaded: protocol-relative ("//host/x") or any scheme ("https:",
 // "data:", "mailto:"). Relative paths ("./x", "imgs/x", "../x") are local.
 func IsExternalRef(ref string) bool {
 	return strings.HasPrefix(ref, "//") || reURLScheme.MatchString(ref)
-}
-
-// NormalizeAssetPath turns a local image reference into its bundle-relative
-// logical path: leading "./" stripped and the path cleaned.
-func NormalizeAssetPath(ref string) string {
-	return path.Clean(strings.TrimPrefix(ref, "./"))
 }
 
 // RewriteImageRefs rewrites every <img src> in rendered HTML using resolve.

@@ -1,7 +1,7 @@
 package publish
 
 import (
-	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,43 +9,101 @@ import (
 	"github.com/Abir66/mdfly/internal/markdown"
 )
 
-// ForBundle reads the root markdown file at rootPath, walks its image
-// references (`![](./path)`), and returns a Bundle containing the root plus
-// every reachable relative image asset.
+// ForBundle reads the root markdown file at rootPath and walks it transitively:
+// it follows markdown links (`[](./other.md)`) into reachable `.md` files and
+// collects every referenced asset (`![](./img.png)`). The walk is breadth-first
+// with a visited-set keyed by absolute on-disk path, so cycles and diamonds
+// visit each file exactly once.
 //
-// External references (http(s), protocol-relative, other schemes) are skipped,
-// not downloaded. A referenced asset that does not exist on disk is a fatal
-// error so the CLI fails before any network call. Each logical path is added
-// at most once.
+// The project root is the root file's directory; every file's logical key is its
+// path relative to that root, so a `../` or absolute reference yields a key above
+// the project root (kept with its `../` prefix). External references (http(s),
+// protocol-relative, other schemes) are not followed. A reference whose on-disk
+// target does not exist is logged and skipped, leaving the link verbatim — the
+// publish still succeeds.
 func ForBundle(rootPath string) (Bundle, error) {
-	content, err := os.ReadFile(rootPath)
+	absRoot, err := filepath.Abs(rootPath)
 	if err != nil {
 		return Bundle{}, err
 	}
+	projectRoot := filepath.Dir(absRoot)
 
-	rootLogical := filepath.Base(rootPath)
-	files := map[string]BundleFile{rootLogical: newBundleFile(rootLogical, rootPath, content)}
+	files := map[string]BundleFile{}
+	visited := map[string]bool{}
+	queue := []string{absRoot}
 
-	rootDir := filepath.Dir(rootPath)
-	for _, ref := range markdown.ImageRefs(content) {
-		if markdown.IsExternalRef(ref) {
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if visited[cur] {
 			continue
 		}
-		logical := markdown.NormalizeAssetPath(ref)
-		if _, seen := files[logical]; seen {
-			continue
-		}
-		diskPath := filepath.Join(rootDir, filepath.FromSlash(strings.TrimPrefix(ref, "./")))
-		rel, relErr := filepath.Rel(rootDir, diskPath)
-		if relErr != nil || strings.HasPrefix(rel, "..") {
-			return Bundle{}, fmt.Errorf("referenced asset %q escapes document directory", ref)
-		}
-		assetContent, err := os.ReadFile(diskPath)
+		visited[cur] = true
+
+		content, err := os.ReadFile(cur)
 		if err != nil {
-			return Bundle{}, fmt.Errorf("referenced asset %q: %w", ref, err)
+			if cur == absRoot {
+				return Bundle{}, err
+			}
+			slog.Warn("referenced file not found, leaving link verbatim", "path", cur, "err", err)
+			continue
 		}
-		files[logical] = newBundleFile(logical, diskPath, assetContent)
+
+		key := relKey(projectRoot, cur)
+		files[key] = newBundleFile(key, cur, content)
+
+		if !isMarkdown(cur) {
+			continue
+		}
+		for _, target := range reachableTargets(filepath.Dir(cur), content) {
+			if !visited[target] {
+				queue = append(queue, target)
+			}
+		}
 	}
 
-	return Bundle{RootPath: rootLogical, FilesByPath: files}, nil
+	return Bundle{
+		RootPath:    relKey(projectRoot, absRoot),
+		ProjectRoot: projectRoot,
+		FilesByPath: files,
+	}, nil
+}
+
+// reachableTargets resolves every non-external image and link reference in a
+// markdown file to its absolute on-disk path, relative to referrerDir.
+func reachableTargets(referrerDir string, content []byte) []string {
+	refs := append(markdown.ImageRefs(content), markdown.LinkRefs(content)...)
+	var targets []string
+	for _, ref := range refs {
+		ref = stripFragment(ref)
+		if ref == "" || markdown.IsExternalRef(ref) {
+			continue
+		}
+		disk := filepath.FromSlash(ref)
+		if filepath.IsAbs(disk) {
+			targets = append(targets, filepath.Clean(disk))
+			continue
+		}
+		targets = append(targets, filepath.Clean(filepath.Join(referrerDir, disk)))
+	}
+	return targets
+}
+
+// relKey returns target's slash-separated path relative to projectRoot, keeping
+// a leading "../" when target sits above the root.
+func relKey(projectRoot, target string) string {
+	rel, err := filepath.Rel(projectRoot, target)
+	if err != nil {
+		return filepath.ToSlash(target)
+	}
+	return filepath.ToSlash(rel)
+}
+
+func isMarkdown(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".md")
+}
+
+func stripFragment(ref string) string {
+	before, _, _ := strings.Cut(ref, "#")
+	return before
 }
