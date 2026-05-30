@@ -55,6 +55,16 @@ func TestView_returnsRenderedMarkdown(t *testing.T) {
 		t.Errorf("Content-Security-Policy=%q, want jsdelivr CDN allowed", csp)
 	}
 
+	if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=300, s-maxage=86400" {
+		t.Errorf("Cache-Control=%q, want public, max-age=300, s-maxage=86400", cc)
+	}
+	if v := resp.Header.Get("Vary"); v != "Accept" {
+		t.Errorf("Vary=%q, want Accept", v)
+	}
+	if rt := resp.Header.Get("X-Robots-Tag"); rt != "noindex, nofollow" {
+		t.Errorf("X-Robots-Tag=%q, want noindex, nofollow", rt)
+	}
+
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
 	if !strings.Contains(bodyStr, "<h1") {
@@ -355,6 +365,19 @@ func TestView_missingSlugReturns404(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status=%d, want 404", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("Content-Type=%q, want text/html", ct)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=60" {
+		t.Errorf("Cache-Control=%q, want public, max-age=60", cc)
+	}
+	if rt := resp.Header.Get("X-Robots-Tag"); rt != "noindex" {
+		t.Errorf("X-Robots-Tag=%q, want noindex", rt)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "404 — not found") {
+		t.Errorf("body missing 404 marker: %q", body)
 	}
 }
 

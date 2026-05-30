@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/Abir66/mdfly/internal/server/handlers"
@@ -13,10 +12,9 @@ func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(a.publish))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(a.publish))
+	mux.HandleFunc("GET /healthz", handlers.Healthz())
+	mux.HandleFunc("GET /robots.txt", handlers.Robots())
 	mux.HandleFunc("GET /{slug}", handlers.View(a.view))
 	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(a.view))
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, "ok")
-	})
 	return middleware.Logger(middleware.Recover(mux))
 }

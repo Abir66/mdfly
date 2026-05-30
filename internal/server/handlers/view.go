@@ -25,15 +25,31 @@ func ViewPath(svc *view.Service) http.HandlerFunc {
 	}
 }
 
-// writeViewResult writes the rendered page, or maps the error to a plain HTTP
-// response. View routes serve a human HTML viewer, so errors stay plain text
+// writeViewResult writes the rendered page, or maps the error to an HTTP
+// response. View routes serve a human HTML viewer, so errors stay HTML/plain
 // (not the JSON envelope) — the single seam for future SSR'd error pages.
 func writeViewResult(w http.ResponseWriter, html string, herr *httpx.Error) {
 	if herr != nil {
-		http.Error(w, herr.Msg, herr.Status)
+		writeViewError(w, herr)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Content-Security-Policy", ssr.ContentSecurityPolicy)
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Content-Security-Policy", ssr.ContentSecurityPolicy)
+	h.Set("Cache-Control", slugCacheControl())
+	h.Set("Vary", "Accept")
+	h.Set("X-Robots-Tag", robotsTagSlug)
 	fmt.Fprint(w, html)
+}
+
+// writeViewError maps an httpx.Error to a view-path response: a 404 renders the
+// minimal HTML page (CONTEXT.md "Document"), anything else stays plain text but
+// still carries the noindex marker every slug response gets.
+func writeViewError(w http.ResponseWriter, herr *httpx.Error) {
+	if herr.Status == http.StatusNotFound {
+		writeNotFound(w)
+		return
+	}
+	w.Header().Set("X-Robots-Tag", robotsTagSlug)
+	http.Error(w, herr.Msg, herr.Status)
 }
