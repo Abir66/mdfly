@@ -4,7 +4,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/server/handlers"
@@ -41,7 +40,7 @@ func TestHealthz_reportsLivenessWithoutDeps(t *testing.T) {
 		t.Errorf("Content-Type=%q, want text/plain; charset=utf-8", ct)
 	}
 	body, _ := io.ReadAll(rec.Body)
-	if strings.TrimSpace(string(body)) != "ok" {
-		t.Errorf("body=%q, want ok", body)
+	if string(body) != "ok" {
+		t.Errorf("body=%q, want %q", body, "ok")
 	}
 }

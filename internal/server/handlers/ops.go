@@ -28,6 +28,6 @@ func Robots() http.HandlerFunc {
 func Healthz() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", contentTypePlain)
-		fmt.Fprintln(w, healthzBody)
+		fmt.Fprint(w, healthzBody)
 	}
 }
