@@ -29,6 +29,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
+	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -184,10 +185,10 @@ func TestCLIPublish(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
-	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
+	viewSvc := &view.Service{Db: pg, Storage: r2}
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
-	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
+	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
 
 	bin := buildCLI(t)
 
@@ -258,10 +259,10 @@ func TestCLIPublish_withImage(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
-	viewDeps := handlers.ViewDeps{PG: pg, R2: r2}
+	viewSvc := &view.Service{Db: pg, Storage: r2}
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
-	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
+	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
 
 	bin := buildCLI(t)
 

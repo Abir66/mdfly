@@ -17,6 +17,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
+	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -38,6 +39,7 @@ type App struct {
 	db      *db.Client
 	storage *storage.Client
 	publish *publish.Service
+	view    *view.Service
 }
 
 // New wires the App from cfg: opens the DB pool, pings it, builds the R2 client,
@@ -62,6 +64,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			Storage: r2,
 			BaseURL: cfg.BaseURL,
 		},
+		view: &view.Service{Db: pg, Storage: r2},
 	}, nil
 }
 
