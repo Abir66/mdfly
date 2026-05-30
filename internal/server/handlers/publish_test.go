@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -168,7 +169,24 @@ func TestPublishCommit_alreadyPublished(t *testing.T) {
 	}
 }
 
-func TestPublishInit_differentManifestSameKey(t *testing.T) {
+func TestPublishCommit_unknownKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	r := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{
+		IdempotencyKey: "6ba7b816-9dad-11d1-80b4-00c04fd430c8",
+	})
+	if r.StatusCode != http.StatusNotFound {
+		t.Fatalf("commit with never-seen key: status=%d, want 404", r.StatusCode)
+	}
+}
+
+func TestPublishInit_sameManifestSameKey(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")
 	}
@@ -178,21 +196,57 @@ func TestPublishInit_differentManifestSameKey(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	idempotencyKey := "6ba7b813-9dad-11d1-80b4-00c04fd430c8"
-	m1 := singleFileBundle("a.md", []byte("content a"))
-	m2 := singleFileBundle("b.md", []byte("content b"))
+	m := singleFileBundle("a.md", []byte("content a"))
 
 	r1 := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempotencyKey, Bundle: m1,
+		IdempotencyKey: idempotencyKey, Bundle: m,
 	})
 	b1 := decodeInitResponse(t, r1)
 
 	r2 := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
-		IdempotencyKey: idempotencyKey, Bundle: m2,
+		IdempotencyKey: idempotencyKey, Bundle: m,
 	})
+	if r2.StatusCode != http.StatusOK {
+		t.Fatalf("re-init same manifest: status=%d, want 200", r2.StatusCode)
+	}
 	b2 := decodeInitResponse(t, r2)
 
 	if b1.Slug != b2.Slug {
-		t.Errorf("different manifest, same key: slug changed from %q to %q (must be same)", b1.Slug, b2.Slug)
+		t.Errorf("same manifest, same key: slug changed from %q to %q (must be same)", b1.Slug, b2.Slug)
+	}
+}
+
+func TestPublishInit_differentManifestSameKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	idempotencyKey := "6ba7b815-9dad-11d1-80b4-00c04fd430c8"
+	m1 := singleFileBundle("a.md", []byte("content a"))
+	m2 := singleFileBundle("b.md", []byte("content b"))
+
+	postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
+		IdempotencyKey: idempotencyKey, Bundle: m1,
+	})
+
+	r2 := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
+		IdempotencyKey: idempotencyKey, Bundle: m2,
+	})
+	if r2.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("different manifest, same key: status=%d, want 422", r2.StatusCode)
+	}
+	var env2 api.ErrorResponse
+	body := readAll(t, r2.Body)
+	r2.Body.Close()
+	if err := json.Unmarshal(body, &env2); err != nil {
+		t.Fatalf("decode error envelope: %v (body %s)", err, body)
+	}
+	if env2.Error.Code != "idempotency_key_payload_mismatch" {
+		t.Errorf("error code=%q, want idempotency_key_payload_mismatch", env2.Error.Code)
 	}
 }
 

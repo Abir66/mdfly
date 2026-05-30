@@ -37,6 +37,19 @@ func TestConflict_customCode(t *testing.T) {
 	}
 }
 
+func TestUnprocessable_status422(t *testing.T) {
+	e := httpx.Unprocessable("idempotency_key_payload_mismatch", "collision")
+	if e.Status != http.StatusUnprocessableEntity {
+		t.Errorf("status=%d, want 422", e.Status)
+	}
+	if e.Code != "idempotency_key_payload_mismatch" {
+		t.Errorf("code=%q, want idempotency_key_payload_mismatch", e.Code)
+	}
+	if _, ok := e.Details.(map[string]any); !ok {
+		t.Errorf("details=%v, want empty map", e.Details)
+	}
+}
+
 func TestInternal_status500(t *testing.T) {
 	e := httpx.Internal("boom")
 	if e.Status != http.StatusInternalServerError || e.Code != "internal_error" {

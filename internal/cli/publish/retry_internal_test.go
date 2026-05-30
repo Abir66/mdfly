@@ -60,6 +60,28 @@ func TestPutBlob_retriesTransient503(t *testing.T) {
 	}
 }
 
+func TestPostJSON_payloadMismatch422(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		w.Write([]byte(`{"error":{"code":"idempotency_key_payload_mismatch","message":"collision","details":{}}}`))
+	}))
+	defer srv.Close()
+
+	_, err := withRetry(context.Background(), func() (map[string]any, error) {
+		return postJSON[map[string]any](context.Background(), srv.Client(), srv.URL, map[string]any{})
+	})
+	var mismatch *IdempotencyMismatchError
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("err=%v, want *IdempotencyMismatchError", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Errorf("calls=%d, want 1 (422 must not retry)", got)
+	}
+}
+
 func TestIsRetryable(t *testing.T) {
 	cases := []struct {
 		name string
