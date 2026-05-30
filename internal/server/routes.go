@@ -13,9 +13,8 @@ func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(a.publish))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(a.publish))
-	viewDeps := handlers.ViewDeps{PG: a.db, R2: a.storage}
-	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
-	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(viewDeps))
+	mux.HandleFunc("GET /{slug}", handlers.View(a.view))
+	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(a.view))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
