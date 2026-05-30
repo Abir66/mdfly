@@ -24,19 +24,19 @@ func postJSON[T any](ctx context.Context, client *http.Client, url string, body 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return zero, err
+		return zero, &transientError{err: err}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return zero, fmt.Errorf("reading response body: %w", err)
+		return zero, &transientError{err: fmt.Errorf("reading response body: %w", err)}
 	}
 	if resp.StatusCode != http.StatusOK {
 		var apiErr api.ErrorResponse
 		if jerr := json.Unmarshal(data, &apiErr); jerr == nil && apiErr.Error.Code != "" {
-			return zero, fmt.Errorf("status %d (%s): %s", resp.StatusCode, apiErr.Error.Code, apiErr.Error.Message)
+			return zero, &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("status %d (%s): %s", resp.StatusCode, apiErr.Error.Code, apiErr.Error.Message)}
 		}
-		return zero, fmt.Errorf("status %d: %s", resp.StatusCode, data)
+		return zero, &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("status %d: %s", resp.StatusCode, data)}
 	}
 	var result T
 	if err := json.Unmarshal(data, &result); err != nil {
@@ -54,15 +54,15 @@ func putBlob(ctx context.Context, client *http.Client, presignedURL string, cont
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return &transientError{err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("reading response body: %w", err)
+			return &transientError{err: fmt.Errorf("reading response body: %w", err)}
 		}
-		return fmt.Errorf("PUT status %d: %s", resp.StatusCode, body)
+		return &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("PUT status %d: %s", resp.StatusCode, body)}
 	}
 	return nil
 }
