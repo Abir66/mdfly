@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"path"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Abir66/mdfly/internal/markdown"
@@ -17,7 +19,13 @@ import (
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
-const markdownRenderTimeout = 2 * time.Second
+const (
+	markdownRenderTimeout = 2 * time.Second
+	markdownExt           = ".md"
+	// maxUp caps ?up=N so a malicious request can't force a huge
+	// strings.Repeat("../", N) allocation. No real bundle nests this deep.
+	maxUp = 16
+)
 
 // ViewDeps holds dependencies for the view handler.
 type ViewDeps struct {
@@ -25,99 +33,151 @@ type ViewDeps struct {
 	R2 *storage.Client
 }
 
-// View handles GET /{slug}.
+// View handles GET /{slug}, rendering the bundle's root document.
 func View(deps ViewDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		sl := r.PathValue("slug")
-		if sl == "" {
+		slug := r.PathValue("slug")
+		if slug == "" {
 			http.NotFound(w, r)
 			return
 		}
-
-		doc, err := deps.PG.GetBySlug(r.Context(), sl)
-		if err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				http.NotFound(w, r)
-				return
-			}
-			http.Error(w, "internal error", http.StatusInternalServerError)
+		mfst, ok := loadManifest(w, r, deps, slug)
+		if !ok {
 			return
 		}
+		serveDocPage(w, r, deps, slug, mfst, mfst.RootPath)
+	}
+}
 
-		var mfst manifest.Manifest
-		if err := json.Unmarshal(doc.ManifestJSON, &mfst); err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+// ViewPath handles GET /{slug}/{path...}, rendering a nested .md page. The path
+// segment is the project-root-relative key with the .md extension stripped;
+// ?up=N reconstructs a key that sits N levels above the project root.
+func ViewPath(deps ViewDeps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("slug")
+		if slug == "" {
+			http.NotFound(w, r)
 			return
 		}
-
-		rootKey, err := rootBlobKey(doc.Slug, mfst)
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+		key, ok := nestedKey(r.PathValue("path"), r.URL.Query().Get("up"))
+		if !ok {
+			http.NotFound(w, r)
 			return
 		}
-
-		content, err := deps.R2.GetBlob(r.Context(), rootKey)
-		if err != nil {
-			if errors.Is(err, storage.ErrBlobMissing) {
-				http.Error(w, "blob not found", http.StatusInternalServerError)
-				return
-			}
-			http.Error(w, "internal error", http.StatusInternalServerError)
+		mfst, ok := loadManifest(w, r, deps, slug)
+		if !ok {
 			return
 		}
+		serveDocPage(w, r, deps, slug, mfst, key)
+	}
+}
 
-		rendered, meta, err := markdown.RenderWithTimeout(content, markdownRenderTimeout)
-		if err != nil {
-			http.Error(w, "render error", http.StatusInternalServerError)
-			return
-		}
-
-		resolve := assetResolver(deps.R2, doc.Slug, mfst)
-		rendered = markdown.RewriteImageRefs(rendered, resolve)
-		var ogImageURL string
-		if markdown.IsExternalRef(meta.OGImagePath) {
-			ogImageURL = meta.OGImagePath
+// loadManifest fetches and decodes the document's manifest, writing the
+// appropriate error response and returning ok=false on failure.
+func loadManifest(w http.ResponseWriter, r *http.Request, deps ViewDeps, slug string) (manifest.Manifest, bool) {
+	doc, err := deps.PG.GetBySlug(r.Context(), slug)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
 		} else {
-			ogImageURL, _ = resolve(meta.OGImagePath)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 		}
-
-		pageHTML, err := ssr.RenderPage(ssr.PageData{
-			Title:      meta.Title,
-			Excerpt:    meta.Excerpt,
-			OGImageURL: ogImageURL,
-			Body:       template.HTML(rendered),
-		})
-		if err != nil {
-			http.Error(w, "render error", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, pageHTML)
+		return manifest.Manifest{}, false
 	}
+	var mfst manifest.Manifest
+	if err := json.Unmarshal(doc.ManifestJSON, &mfst); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return manifest.Manifest{}, false
+	}
+	return mfst, true
 }
 
-func rootBlobKey(slug string, mfst manifest.Manifest) (string, error) {
-	f, ok := mfst.RootFile()
+// serveDocPage renders the file at key within the bundle and writes the page.
+// An unknown key is a 404.
+func serveDocPage(w http.ResponseWriter, r *http.Request, deps ViewDeps, slug string, mfst manifest.Manifest, key string) {
+	f, ok := mfst.FilesByPath[key]
 	if !ok {
-		return "", fmt.Errorf("root path %q not found in manifest", mfst.RootPath)
+		http.NotFound(w, r)
+		return
 	}
-	return storage.BlobKey(slug, f.Hash, storage.ExtFromPath(mfst.RootPath)), nil
+
+	content, err := deps.R2.GetBlob(r.Context(), storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key)))
+	if err != nil {
+		if errors.Is(err, storage.ErrBlobMissing) {
+			http.Error(w, "blob not found", http.StatusInternalServerError)
+		} else {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	resolve := pageResolver(deps.R2, slug, mfst, path.Dir(key))
+	rendered, meta, err := markdown.RenderRefsWithTimeout(content, resolve, markdownRenderTimeout)
+	if err != nil {
+		http.Error(w, "render error", http.StatusInternalServerError)
+		return
+	}
+
+	ogImageURL := resolveOGImage(meta.OGImagePath, resolve)
+
+	pageHTML, err := ssr.RenderPage(ssr.PageData{
+		Title:      meta.Title,
+		Excerpt:    meta.Excerpt,
+		OGImageURL: ogImageURL,
+		Body:       template.HTML(rendered),
+	})
+	if err != nil {
+		http.Error(w, "render error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, pageHTML)
 }
 
-// assetResolver returns a function that maps a markdown asset reference to its
-// public CDN URL by resolving it to a project-root-relative key and looking that
-// up in the manifest. References are resolved relative to the root document's
-// directory; absolute references are resolved against the manifest's project
-// root. It returns ok=false for empty, external, or unknown references, leaving
-// them verbatim.
-func assetResolver(r2 *storage.Client, slug string, mfst manifest.Manifest) func(string) (string, bool) {
-	rootDir := path.Dir(mfst.RootPath)
+// resolveOGImage maps the document's OG-image path to an absolute URL. External
+// refs (and body images already rewritten to a CDN URL) are used verbatim;
+// in-bundle refs are resolved through the page resolver.
+func resolveOGImage(ogPath string, resolve markdown.RefResolver) string {
+	if markdown.IsExternalRef(ogPath) {
+		return ogPath
+	}
+	url, _ := resolve(ogPath)
+	return url
+}
+
+// nestedKey reconstructs the manifest key for GET /{slug}/{path...}. rest is the
+// project-root-relative path with .md stripped; up is the optional ?up=N count of
+// "../" prefixes for keys above the project root. ok is false for an empty path
+// or an up value that is malformed, negative, or above maxUp.
+func nestedKey(rest, up string) (string, bool) {
+	rest = strings.Trim(rest, "/")
+	if rest == "" {
+		return "", false
+	}
+	n := 0
+	if up != "" {
+		parsed, err := strconv.Atoi(up)
+		if err != nil || parsed < 0 || parsed > maxUp {
+			return "", false
+		}
+		n = parsed
+	}
+	return strings.Repeat("../", n) + rest + markdownExt, true
+}
+
+// pageResolver returns a resolver mapping a markdown reference to its final URL:
+// an in-bundle markdown file → /{slug}/{key without .md} (with ?up=N when above
+// root); an in-bundle asset → its public CDN URL. Empty, external, or unknown
+// references return ok=false so the caller leaves them verbatim. References are
+// resolved relative to referrerDir (the rendered page's directory).
+func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, referrerDir string) markdown.RefResolver {
 	return func(ref string) (string, bool) {
 		if ref == "" || markdown.IsExternalRef(ref) {
 			return "", false
 		}
-		key, ok := resolveKey(rootDir, mfst.ProjectRoot, ref)
+		baseRef, suffix := splitRefSuffix(ref)
+		key, ok := resolveKey(referrerDir, mfst.ProjectRoot, baseRef)
 		if !ok {
 			return "", false
 		}
@@ -125,8 +185,41 @@ func assetResolver(r2 *storage.Client, slug string, mfst manifest.Manifest) func
 		if !ok {
 			return "", false
 		}
-		return r2.BlobPublicURL(storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key))), true
+		if isMarkdownKey(key) {
+			return slugPageURL(slug, key) + suffix, true
+		}
+		return r2.BlobPublicURL(storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key))) + suffix, true
 	}
+}
+
+// slugPageURL builds the viewer URL for a markdown manifest key. A key above the
+// project root (leading "../") encodes its depth as ?up=N because browsers and
+// proxies strip dot-segments from the path.
+func slugPageURL(slug, key string) string {
+	up := 0
+	for strings.HasPrefix(key, "../") {
+		up++
+		key = key[len("../"):]
+	}
+	url := "/" + slug + "/" + strings.TrimSuffix(key, markdownExt)
+	if up > 0 {
+		url += "?up=" + strconv.Itoa(up)
+	}
+	return url
+}
+
+func isMarkdownKey(key string) bool {
+	return storage.ExtFromPath(key) == markdownExt
+}
+
+// splitRefSuffix separates a markdown reference into the path portion and its
+// query/fragment suffix (the first "?" or "#" onward). The suffix is preserved
+// verbatim so a rewritten URL keeps refs like ./y.md#intro or ./img.png?v=1.
+func splitRefSuffix(ref string) (base, suffix string) {
+	if i := strings.IndexAny(ref, "?#"); i >= 0 {
+		return ref[:i], ref[i:]
+	}
+	return ref, ""
 }
 
 // resolveKey turns a markdown reference into a project-root-relative manifest

@@ -239,6 +239,101 @@ func TestView_externalOGImagePreserved(t *testing.T) {
 	}
 }
 
+func TestView_nestedRoutingAndCrossMdRewrite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+	publicBase := env.endpoint + "/" + env.bucket
+
+	const projectRoot = "/proj"
+	logo := []byte("\x89PNG\r\n\x1a\nfakepngbytes")
+	logoHash := contentHash(logo)
+	files := map[string][]byte{
+		"index.md":  []byte("# Index\n\n[y](./y.md)\n\n[deep](./sub2/a.md)\n\n![logo](./logo.png)\n"),
+		"y.md":      []byte("# Y\n\n[back](./index.md)\n"),
+		"sub2/a.md": []byte("# Sub2 A\n\n![rel](../logo.png)\n\n![abs](/proj/logo.png)\n"),
+		"logo.png":  logo,
+	}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee11", projectRoot, "index.md", files)
+
+	logoSrc := fmt.Sprintf(`src="%s/documents/%s/%s.png"`, publicBase, slug, logoHash)
+
+	// Root page: cross-md links and image rewritten.
+	status, body := getString(t, srv.URL+"/"+slug)
+	if status != http.StatusOK {
+		t.Fatalf("root status=%d, want 200", status)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/y"`, slug)) {
+		t.Errorf("root: ./y.md not rewritten to /%s/y:\n%s", slug, body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/sub2/a"`, slug)) {
+		t.Errorf("root: ./sub2/a.md not rewritten to /%s/sub2/a:\n%s", slug, body)
+	}
+	if !strings.Contains(body, logoSrc) {
+		t.Errorf("root: logo not rewritten to CDN URL %q:\n%s", logoSrc, body)
+	}
+
+	// Nested page y: renders and back-link rewritten relative to root.
+	status, body = getString(t, srv.URL+"/"+slug+"/y")
+	if status != http.StatusOK {
+		t.Fatalf("/%s/y status=%d, want 200", slug, status)
+	}
+	if !strings.Contains(body, "<h1") || !strings.Contains(body, "Y") {
+		t.Errorf("/%s/y missing rendered heading:\n%s", slug, body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/index"`, slug)) {
+		t.Errorf("/%s/y: ./index.md back-link not rewritten:\n%s", slug, body)
+	}
+
+	// Nested page sub2/a: relative AND absolute image refs resolve to root logo.
+	status, body = getString(t, srv.URL+"/"+slug+"/sub2/a")
+	if status != http.StatusOK {
+		t.Fatalf("/%s/sub2/a status=%d, want 200", slug, status)
+	}
+	if !strings.Contains(body, "Sub2 A") {
+		t.Errorf("/%s/sub2/a missing content:\n%s", slug, body)
+	}
+	if !strings.Contains(body, logoSrc) {
+		t.Errorf("/%s/sub2/a: ../logo.png + /proj/logo.png must resolve to %q:\n%s", slug, logoSrc, body)
+	}
+
+	// Unknown nested path → 404.
+	status, _ = getString(t, srv.URL+"/"+slug+"/does-not-exist")
+	if status != http.StatusNotFound {
+		t.Errorf("unknown nested path status=%d, want 404", status)
+	}
+}
+
+func TestView_aboveRootUpParam(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	// Seed an above-root key directly (the CLI no longer emits these; the
+	// ?up=N path stays for forward-compatibility — S10 revised).
+	files := map[string][]byte{
+		"index.md":     []byte("# Index\n"),
+		"../parent.md": []byte("# Parent Page\n"),
+	}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee12", "/proj/sub", "index.md", files)
+
+	status, body := getString(t, srv.URL+"/"+slug+"/parent?up=1")
+	if status != http.StatusOK {
+		t.Fatalf("/%s/parent?up=1 status=%d, want 200", slug, status)
+	}
+	if !strings.Contains(body, "Parent Page") {
+		t.Errorf("?up=1 did not reconstruct ../parent.md:\n%s", body)
+	}
+}
+
 func TestView_missingSlugReturns404(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")

@@ -2,7 +2,6 @@ package markdown_test
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/markdown"
@@ -88,26 +87,5 @@ func TestIsExternalRef(t *testing.T) {
 		if markdown.IsExternalRef(r) {
 			t.Errorf("IsExternalRef(%q)=true, want false", r)
 		}
-	}
-}
-
-func TestRewriteImageRefs(t *testing.T) {
-	resolve := func(src string) (string, bool) {
-		if src == "./logo.png" {
-			return "https://cdn.mdfly.dev/documents/slug/abc.png", true
-		}
-		return "", false
-	}
-	in := []byte(`<p><img src="./logo.png" alt="logo"><img src="https://ext.com/x.png"></p>`)
-	got := string(markdown.RewriteImageRefs(in, resolve))
-
-	if !strings.Contains(got, `src="https://cdn.mdfly.dev/documents/slug/abc.png"`) {
-		t.Errorf("local img not rewritten: %s", got)
-	}
-	if !strings.Contains(got, `src="https://ext.com/x.png"`) {
-		t.Errorf("external img must be left verbatim: %s", got)
-	}
-	if !strings.Contains(got, `alt="logo"`) {
-		t.Errorf("other attrs must survive: %s", got)
 	}
 }

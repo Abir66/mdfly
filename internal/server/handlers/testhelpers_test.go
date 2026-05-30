@@ -175,6 +175,7 @@ func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *http
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
 	mux.HandleFunc("GET /{slug}", handlers.View(viewDeps))
+	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(viewDeps))
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -244,6 +245,38 @@ func singleFileBundle(path string, content []byte) api.BundleDTO {
 			{Path: path, Hash: hash, Size: int64(len(content))},
 		},
 	}
+}
+
+// publishFiles publishes a multi-file bundle (init → upload → commit) and
+// returns its slug. Files whose path was deduped under another blobkey are
+// skipped at upload (their bytes ship under the representative path).
+func publishFiles(t *testing.T, srv *httptest.Server, idempKey, projectRoot, rootPath string, files map[string][]byte) string {
+	t.Helper()
+	dto := api.BundleDTO{RootPath: rootPath, ProjectRoot: projectRoot}
+	for p, c := range files {
+		dto.Files = append(dto.Files, api.BundleFileDTO{Path: p, Hash: contentHash(c), Size: int64(len(c))})
+	}
+	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{IdempotencyKey: idempKey, Bundle: dto})
+	initBody := decodeInitResponse(t, initR)
+	for p, c := range files {
+		if url, ok := initBody.PresignedURLs[p]; ok {
+			putBlob(t, url, c)
+		}
+	}
+	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
+	return decodeCommitResponse(t, commitR).Slug
+}
+
+// getString GETs url and returns the status code and body.
+func getString(t *testing.T, url string) (int, string) {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
 }
 
 // putBlob uploads via a presigned URL the way the real CLI does: body and
