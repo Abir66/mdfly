@@ -68,7 +68,7 @@ func TestRenderPage_EmptyTitleFallback(t *testing.T) {
 }
 
 func TestRenderPage_MermaidBootSnippet(t *testing.T) {
-	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML(`<pre class="mermaid">graph TD</pre>`)})
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML("<pre>g</pre>"), EnrichMermaid: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestRenderPage_MermaidBootSnippet(t *testing.T) {
 }
 
 func TestRenderPage_MathBootSnippet(t *testing.T) {
-	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML(`<span class="math math-inline">x^2</span>`)})
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML("<span>x</span>"), EnrichMath: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,8 +94,7 @@ func TestRenderPage_MathBootSnippet(t *testing.T) {
 }
 
 func TestRenderPage_BothBootSnippet(t *testing.T) {
-	body := `<pre class="mermaid">g</pre><div class="math math-display">x</div>`
-	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML(body)})
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML("<p>x</p>"), EnrichMermaid: true, EnrichMath: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +104,7 @@ func TestRenderPage_BothBootSnippet(t *testing.T) {
 }
 
 func TestRenderPage_NoBootSnippetWhenPlain(t *testing.T) {
-	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML("<h1>Doc</h1><p>plain</p>")})
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML(`<pre class="mermaid">not real</pre>`)})
 	if err != nil {
 		t.Fatal(err)
 	}

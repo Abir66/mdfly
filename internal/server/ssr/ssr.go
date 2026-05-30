@@ -18,6 +18,11 @@ type PageData struct {
 	Excerpt    string
 	OGImageURL string
 	Body       template.HTML
+	// EnrichMermaid/EnrichMath gate the client-side boot snippet. The caller
+	// sets these from the renderer's report of what placeholders it emitted —
+	// the body is never re-scanned.
+	EnrichMermaid bool
+	EnrichMath    bool
 }
 
 // pageView is PageData plus the computed enrichment boot snippet passed to the
@@ -30,7 +35,7 @@ type pageView struct {
 // RenderPage executes the page template and returns the full HTML document.
 func RenderPage(data PageData) (string, error) {
 	var buf bytes.Buffer
-	view := pageView{PageData: data, BootScript: bootScript(string(data.Body))}
+	view := pageView{PageData: data, BootScript: bootScript(data.EnrichMermaid, data.EnrichMath)}
 	if err := pageTmpl.Execute(&buf, view); err != nil {
 		return "", err
 	}

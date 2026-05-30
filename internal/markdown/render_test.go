@@ -114,6 +114,45 @@ func TestRender_MathDisplayPlaceholder(t *testing.T) {
 	}
 }
 
+func TestRender_MathDisplayMultiline(t *testing.T) {
+	got, _, err := markdown.Render([]byte("$$\na + b\n= c\n$$\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(got); !strings.Contains(s, `<div class="math math-display">a + b`) || !strings.Contains(s, "= c</div>") {
+		t.Errorf("multiline display math not captured:\n%s", s)
+	}
+}
+
+func TestRender_MetaEnrichFlags(t *testing.T) {
+	cases := []struct {
+		name          string
+		md            string
+		mermaid, math bool
+	}{
+		{"mermaid", "```mermaid\ngraph TD\n```\n", true, false},
+		{"inline-math", "value $x^2$ here\n", false, true},
+		{"display-math", "$$x^2$$\n", false, true},
+		{"both", "$x$\n\n```mermaid\ng\n```\n", true, true},
+		{"plain", "# Title\n\njust text\n", false, false},
+		{"class-string-in-code", "```go\nx := `class=\"mermaid\"`\n```\n", false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, meta, err := markdown.Render([]byte(c.md))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if meta.HasMermaid != c.mermaid {
+				t.Errorf("HasMermaid=%v, want %v", meta.HasMermaid, c.mermaid)
+			}
+			if meta.HasMath != c.math {
+				t.Errorf("HasMath=%v, want %v", meta.HasMath, c.math)
+			}
+		})
+	}
+}
+
 func TestRender_DollarNotMathLeftVerbatim(t *testing.T) {
 	got, _, err := markdown.Render([]byte("It costs $5 today.\n"))
 	if err != nil {

@@ -112,6 +112,8 @@ type Meta struct {
 	Title       string
 	Excerpt     string
 	OGImagePath string // raw relative path, empty if none found
+	HasMermaid  bool   // body emitted a Mermaid placeholder (needs client shim)
+	HasMath     bool   // body emitted a KaTeX placeholder (needs client shim)
 }
 
 type frontmatterFields struct {
@@ -164,18 +166,20 @@ func renderCore(md []byte, resolve RefResolver) ([]byte, Meta, error) {
 	fm, body := parseFrontmatter(md)
 
 	var buf bytes.Buffer
-	convertOpts := []parser.ParseOption{}
+	ctx := parser.NewContext()
+	flags := &enrichFlags{}
+	ctx.Set(enrichFlagsKey, flags)
 	if resolve != nil {
-		ctx := parser.NewContext()
 		ctx.Set(refResolverKey, resolve)
-		convertOpts = append(convertOpts, parser.WithContext(ctx))
 	}
-	if err := mdParser.Convert(body, &buf, convertOpts...); err != nil {
+	if err := mdParser.Convert(body, &buf, parser.WithContext(ctx)); err != nil {
 		return nil, Meta{}, err
 	}
 	sanitized := policy.SanitizeBytes(buf.Bytes())
 
 	meta := extractMeta(string(sanitized), fm)
+	meta.HasMermaid = flags.mermaid
+	meta.HasMath = flags.math
 	return sanitized, meta, nil
 }
 

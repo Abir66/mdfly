@@ -13,8 +13,9 @@ import (
 )
 
 // Placeholder CSS classes emitted for client-side enrichment (ADR-0018, S12).
-// The ssr boot snippet keys off these to lazy-load Mermaid/KaTeX; nothing renders
-// these server-side. They must satisfy the bluemonday class allow-list.
+// The ssr boot snippet keys off the per-render enrichFlags (not these strings)
+// to lazy-load Mermaid/KaTeX; nothing renders these server-side. They must
+// satisfy the bluemonday class allow-list.
 const (
 	ClassMermaid     = "mermaid"
 	ClassMathInline  = "math math-inline"
@@ -23,19 +24,37 @@ const (
 
 const mathDelim = '$'
 
+var mathFence = []byte{mathDelim, mathDelim}
+
 var (
-	kindMermaid = ast.NewNodeKind("Mermaid")
-	kindMath    = ast.NewNodeKind("Math")
+	kindMermaid    = ast.NewNodeKind("Mermaid")
+	kindMathInline = ast.NewNodeKind("MathInline")
+	kindMathBlock  = ast.NewNodeKind("MathBlock")
 )
 
-// enrichExtension wires the Mermaid placeholder transformer, the math inline
-// parser, and their renderers into a goldmark instance.
+// enrichFlags records which enrichment placeholders a single render emitted, so
+// callers can gate the client-side boot snippet without re-scanning the HTML.
+type enrichFlags struct {
+	mermaid bool
+	math    bool
+}
+
+var enrichFlagsKey = parser.NewContextKey()
+
+func enrichFlagsFrom(pc parser.Context) *enrichFlags {
+	f, _ := pc.Get(enrichFlagsKey).(*enrichFlags)
+	return f
+}
+
+// enrichExtension wires the Mermaid placeholder transformer, the math parsers,
+// and their renderers into a goldmark instance.
 type enrichExtension struct{}
 
 func (enrichExtension) Extend(m goldmark.Markdown) {
 	m.Parser().AddOptions(
 		parser.WithASTTransformers(util.Prioritized(mermaidTransformer{}, 90)),
-		parser.WithInlineParsers(util.Prioritized(mathParser{}, 500)),
+		parser.WithBlockParsers(util.Prioritized(mathBlockParser{}, 100)),
+		parser.WithInlineParsers(util.Prioritized(mathInlineParser{}, 500)),
 	)
 	m.Renderer().AddOptions(renderer.WithNodeRenderers(util.Prioritized(enrichRenderer{}, 100)))
 }
@@ -44,7 +63,8 @@ type enrichRenderer struct{}
 
 func (enrichRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
 	reg.Register(kindMermaid, renderMermaid)
-	reg.Register(kindMath, renderMath)
+	reg.Register(kindMathInline, renderMathInline)
+	reg.Register(kindMathBlock, renderMathBlock)
 }
 
 // mermaidBlock holds the raw source of a ```mermaid fenced block.
@@ -60,7 +80,7 @@ func (n *mermaidBlock) Dump(source []byte, level int) { ast.DumpHelper(n, source
 // so they bypass chroma highlighting and render as a client-side placeholder.
 type mermaidTransformer struct{}
 
-func (mermaidTransformer) Transform(doc *ast.Document, reader text.Reader, _ parser.Context) {
+func (mermaidTransformer) Transform(doc *ast.Document, reader text.Reader, pc parser.Context) {
 	source := reader.Source()
 	var targets []*ast.FencedCodeBlock
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) { //nolint:errcheck — walk never errors
@@ -71,6 +91,12 @@ func (mermaidTransformer) Transform(doc *ast.Document, reader text.Reader, _ par
 		}
 		return ast.WalkContinue, nil
 	})
+	if len(targets) == 0 {
+		return
+	}
+	if f := enrichFlagsFrom(pc); f != nil {
+		f.mermaid = true
+	}
 	for _, fc := range targets {
 		mb := &mermaidBlock{source: blockText(fc, source)}
 		fc.Parent().ReplaceChild(fc.Parent(), fc, mb)
@@ -97,42 +123,43 @@ func renderMermaid(w util.BufWriter, _ []byte, node ast.Node, entering bool) (as
 	return ast.WalkSkipChildren, nil
 }
 
-// mathNode holds the raw TeX of a `$...$` (inline) or `$$...$$` (display) span.
-type mathNode struct {
+// mathInline holds the raw TeX of an inline `$...$` span.
+type mathInline struct {
 	ast.BaseInline
-	tex     []byte
-	display bool
+	tex []byte
 }
 
-func (*mathNode) Kind() ast.NodeKind              { return kindMath }
-func (n *mathNode) Dump(source []byte, level int) { ast.DumpHelper(n, source, level, nil, nil) }
+func (*mathInline) Kind() ast.NodeKind          { return kindMathInline }
+func (n *mathInline) Dump(source []byte, l int) { ast.DumpHelper(n, source, l, nil, nil) }
 
-// mathParser recognizes inline `$...$` and single-line display `$$...$$` spans,
-// emitting placeholders for client-side KaTeX. Multi-line display blocks are not
-// yet handled (see S12 notes).
-type mathParser struct{}
+// mathBlock holds the raw TeX of a display `$$...$$` span (one or more lines).
+// The TeX is kept as Lines() segments, reconstructed from source at render —
+// the idiom goldmark's own fenced-code block uses for multi-line raw content.
+type mathBlock struct {
+	ast.BaseBlock
+}
 
-func (mathParser) Trigger() []byte { return []byte{mathDelim} }
+func (*mathBlock) Kind() ast.NodeKind          { return kindMathBlock }
+func (n *mathBlock) Dump(source []byte, l int) { ast.DumpHelper(n, source, l, nil, nil) }
 
-func (mathParser) Parse(_ ast.Node, block text.Reader, _ parser.Context) ast.Node {
+// mathInlineParser recognizes inline `$...$` spans. Display `$$...$$` is handled
+// by mathBlockParser, so a `$$` start here is left for it.
+type mathInlineParser struct{}
+
+func (mathInlineParser) Trigger() []byte { return []byte{mathDelim} }
+
+func (mathInlineParser) Parse(_ ast.Node, block text.Reader, pc parser.Context) ast.Node {
 	line, _ := block.PeekLine()
-	if len(line) < 2 || line[0] != mathDelim {
+	if len(line) < 2 || line[0] != mathDelim || line[1] == mathDelim {
 		return nil
-	}
-	if line[1] == mathDelim {
-		idx := bytes.Index(line[2:], []byte{mathDelim, mathDelim})
-		if idx <= 0 {
-			return nil
-		}
-		block.Advance(2 + idx + 2)
-		return newMath(line[2:2+idx], true)
 	}
 	idx := bytes.IndexByte(line[1:], mathDelim)
 	if idx <= 0 || !isMathContent(line[1:1+idx]) {
 		return nil
 	}
 	block.Advance(1 + idx + 1)
-	return newMath(line[1:1+idx], false)
+	flagMath(pc)
+	return &mathInline{tex: clone(line[1 : 1+idx])}
 }
 
 // isMathContent rejects spans padded with spaces (e.g. "$5 and $") so that lone
@@ -141,23 +168,81 @@ func isMathContent(c []byte) bool {
 	return len(c) > 0 && c[0] != ' ' && c[len(c)-1] != ' '
 }
 
-func newMath(src []byte, display bool) *mathNode {
-	tex := make([]byte, len(src))
-	copy(tex, src)
-	return &mathNode{tex: tex, display: display}
+// mathBlockParser recognizes display math fenced by `$$`, on one line
+// (`$$a+b$$`) or spanning several lines.
+type mathBlockParser struct{}
+
+func (mathBlockParser) Trigger() []byte { return []byte{mathDelim} }
+
+// Open/Continue follow goldmark's fenced-code idiom: never advance the opening
+// line (goldmark advances whole lines between calls); within a line use
+// AdvanceToEOL. Manual byte-advancing the full line double-advances and swallows
+// content lines.
+func (mathBlockParser) Open(_ ast.Node, reader text.Reader, pc parser.Context) (ast.Node, parser.State) {
+	line, seg := reader.PeekLine()
+	if len(line) < 2 || line[0] != mathDelim || line[1] != mathDelim {
+		return nil, parser.NoChildren
+	}
+	flagMath(pc)
+	node := &mathBlock{}
+	rest := line[2:]
+	if idx := bytes.Index(rest, mathFence); idx >= 0 {
+		node.Lines().Append(text.NewSegment(seg.Start+2, seg.Start+2+idx))
+		return node, parser.Close | parser.NoChildren
+	}
+	if len(bytes.TrimSpace(rest)) > 0 {
+		node.Lines().Append(text.NewSegment(seg.Start+2, seg.Stop))
+	}
+	return node, parser.NoChildren
 }
 
-func renderMath(w util.BufWriter, _ []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+func (mathBlockParser) Continue(node ast.Node, reader text.Reader, _ parser.Context) parser.State {
+	line, seg := reader.PeekLine()
+	if idx := bytes.Index(line, mathFence); idx >= 0 {
+		if idx > 0 {
+			node.Lines().Append(text.NewSegment(seg.Start, seg.Start+idx))
+		}
+		reader.AdvanceToEOL()
+		return parser.Close
+	}
+	node.Lines().Append(seg)
+	reader.AdvanceToEOL()
+	return parser.Continue | parser.NoChildren
+}
+
+func (mathBlockParser) Close(_ ast.Node, _ text.Reader, _ parser.Context) {}
+func (mathBlockParser) CanInterruptParagraph() bool                       { return true }
+func (mathBlockParser) CanAcceptIndentedLine() bool                       { return false }
+
+func flagMath(pc parser.Context) {
+	if f := enrichFlagsFrom(pc); f != nil {
+		f.math = true
+	}
+}
+
+func clone(b []byte) []byte {
+	c := make([]byte, len(b))
+	copy(c, b)
+	return c
+}
+
+func renderMathInline(w util.BufWriter, _ []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if !entering {
 		return ast.WalkContinue, nil
 	}
-	n := node.(*mathNode)
-	tag, class := "span", ClassMathInline
-	if n.display {
-		tag, class = "div", ClassMathDisplay
+	return writeMath(w, "span", ClassMathInline, node.(*mathInline).tex)
+}
+
+func renderMathBlock(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
+	if !entering {
+		return ast.WalkContinue, nil
 	}
+	return writeMath(w, "div", ClassMathDisplay, blockText(node, source))
+}
+
+func writeMath(w util.BufWriter, tag, class string, tex []byte) (ast.WalkStatus, error) {
 	w.WriteString("<" + tag + ` class="` + class + `">`)
-	template.HTMLEscape(w, n.tex)
+	template.HTMLEscape(w, bytes.TrimSpace(tex))
 	w.WriteString("</" + tag + ">")
 	return ast.WalkSkipChildren, nil
 }

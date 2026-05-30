@@ -101,10 +101,12 @@ func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifes
 	}
 
 	pageHTML, err := ssr.RenderPage(ssr.PageData{
-		Title:      meta.Title,
-		Excerpt:    meta.Excerpt,
-		OGImageURL: resolveOGImage(meta.OGImagePath, resolve),
-		Body:       template.HTML(rendered),
+		Title:         meta.Title,
+		Excerpt:       meta.Excerpt,
+		OGImageURL:    resolveOGImage(meta.OGImagePath, resolve),
+		Body:          template.HTML(rendered),
+		EnrichMermaid: meta.HasMermaid,
+		EnrichMath:    meta.HasMath,
 	})
 	if err != nil {
 		slog.Error("ssr.RenderPage failed", "slug", slug, "key", key, "err", err)

@@ -27,18 +27,10 @@ const ContentSecurityPolicy = "default-src 'self'; " +
 	"font-src " + cdnBase + " data:; " +
 	"script-src 'self' 'unsafe-inline' " + cdnBase
 
-// Markers the boot snippet keys off — must mirror markdown placeholder classes.
-const (
-	mermaidMarker = `class="mermaid"`
-	mathMarker    = `class="math`
-)
-
-// bootScript builds the inline enrichment snippet for the given body, lazy-loading
-// Mermaid and/or KaTeX from the CDN only for the placeholders actually present.
-// Returns empty when the body has neither, so plain documents ship zero JS.
-func bootScript(body string) template.HTML {
-	mermaid := strings.Contains(body, mermaidMarker)
-	math := strings.Contains(body, mathMarker)
+// bootScript builds the inline enrichment snippet, lazy-loading Mermaid and/or
+// KaTeX from the CDN only for the placeholders the renderer reported. Returns
+// empty when neither is present, so plain documents ship zero JS.
+func bootScript(mermaid, math bool) template.HTML {
 	if !mermaid && !math {
 		return ""
 	}
