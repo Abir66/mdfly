@@ -69,9 +69,9 @@ func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, refer
 			return "", false
 		}
 		if isMarkdownKey(key) {
-			return slugPageURL(slug, key) + suffix, true
+			return appendSuffix(slugPageURL(slug, key), suffix), true
 		}
-		return r2.BlobPublicURL(storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key))) + suffix, true
+		return appendSuffix(r2.BlobPublicURL(storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key))), suffix), true
 	}
 }
 
@@ -103,6 +103,17 @@ func splitRefSuffix(ref string) (base, suffix string) {
 		return ref[:i], ref[i:]
 	}
 	return ref, ""
+}
+
+// appendSuffix joins a splitRefSuffix suffix onto an already-built URL. A "?"
+// query suffix becomes "&" when the URL already carries a query (e.g. ?up=N from
+// slugPageURL) so the two merge into one valid query string; fragment suffixes
+// and the no-existing-query case pass through verbatim.
+func appendSuffix(url, suffix string) string {
+	if strings.HasPrefix(suffix, "?") && strings.Contains(url, "?") {
+		return url + "&" + suffix[len("?"):]
+	}
+	return url + suffix
 }
 
 // resolveKey turns a markdown reference into a project-root-relative manifest

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"log/slog"
 	"path"
 	"time"
 
@@ -67,10 +68,12 @@ func (s *Service) loadManifest(ctx context.Context, slug string) (manifest.Manif
 		if errors.Is(err, db.ErrNotFound) {
 			return manifest.Manifest{}, httpx.NotFound("not found")
 		}
+		slog.Error("db.GetBySlug failed", "slug", slug, "err", err)
 		return manifest.Manifest{}, httpx.Internal("internal error")
 	}
 	var mfst manifest.Manifest
 	if err := json.Unmarshal(doc.ManifestJSON, &mfst); err != nil {
+		slog.Error("manifest unmarshal failed", "slug", slug, "err", err)
 		return manifest.Manifest{}, httpx.Internal("internal error")
 	}
 	return mfst, nil
@@ -86,12 +89,14 @@ func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifes
 
 	content, err := s.Storage.GetBlob(ctx, storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key)))
 	if err != nil {
+		slog.Error("storage.GetBlob failed", "slug", slug, "key", key, "hash", f.Hash, "err", err)
 		return "", httpx.Internal("internal error")
 	}
 
 	resolve := pageResolver(s.Storage, slug, mfst, path.Dir(key))
 	rendered, meta, err := markdown.RenderRefsWithTimeout(content, resolve, markdownRenderTimeout)
 	if err != nil {
+		slog.Error("markdown render failed", "slug", slug, "key", key, "err", err)
 		return "", httpx.Internal("render error")
 	}
 
@@ -102,6 +107,7 @@ func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifes
 		Body:       template.HTML(rendered),
 	})
 	if err != nil {
+		slog.Error("ssr.RenderPage failed", "slug", slug, "key", key, "err", err)
 		return "", httpx.Internal("render error")
 	}
 	return pageHTML, nil
