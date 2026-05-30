@@ -76,6 +76,54 @@ func TestRender_OnerrorAttrAbsent(t *testing.T) {
 	}
 }
 
+func TestRender_MermaidPlaceholder(t *testing.T) {
+	input := []byte("```mermaid\ngraph TD\n    A --> B\n```\n")
+	got, _, err := markdown.Render(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	if !strings.Contains(s, `<pre class="mermaid">`) {
+		t.Errorf("missing mermaid placeholder:\n%s", s)
+	}
+	if !strings.Contains(s, "graph TD") || !strings.Contains(s, "A --&gt; B") {
+		t.Errorf("mermaid source not preserved/escaped:\n%s", s)
+	}
+	if strings.Contains(s, "language-mermaid") {
+		t.Errorf("mermaid must not render as a highlighted code block:\n%s", s)
+	}
+}
+
+func TestRender_MathInlinePlaceholder(t *testing.T) {
+	got, _, err := markdown.Render([]byte("Euler: $x^2$ done.\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(got); !strings.Contains(s, `<span class="math math-inline">x^2</span>`) {
+		t.Errorf("missing inline math placeholder:\n%s", s)
+	}
+}
+
+func TestRender_MathDisplayPlaceholder(t *testing.T) {
+	got, _, err := markdown.Render([]byte("$$a+b=c$$\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(got); !strings.Contains(s, `<div class="math math-display">a+b=c</div>`) {
+		t.Errorf("missing display math placeholder:\n%s", s)
+	}
+}
+
+func TestRender_DollarNotMathLeftVerbatim(t *testing.T) {
+	got, _, err := markdown.Render([]byte("It costs $5 today.\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := string(got); strings.Contains(s, `class="math`) {
+		t.Errorf("lone dollar must not become math:\n%s", s)
+	}
+}
+
 func TestRenderRefs_rewritesImageAndLinkDestinations(t *testing.T) {
 	resolve := func(ref string) (string, bool) {
 		switch ref {

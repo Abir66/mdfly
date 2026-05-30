@@ -27,5 +27,8 @@
 </head>
 <body>
 {{.Body}}
+{{- if .BootScript}}
+{{.BootScript}}
+{{- end}}
 </body>
 </html>

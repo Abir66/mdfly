@@ -85,6 +85,7 @@ func init() {
 					chromahtml.WithClasses(false),
 				),
 			),
+			enrichExtension{},
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),

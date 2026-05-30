@@ -67,6 +67,56 @@ func TestRenderPage_EmptyTitleFallback(t *testing.T) {
 	}
 }
 
+func TestRenderPage_MermaidBootSnippet(t *testing.T) {
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML(`<pre class="mermaid">graph TD</pre>`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "cdn.jsdelivr.net/npm/mermaid@") {
+		t.Errorf("expected lazy-loaded mermaid bundle from jsdelivr:\n%s", out)
+	}
+	if strings.Contains(out, "katex@") {
+		t.Errorf("katex must not load without math nodes:\n%s", out)
+	}
+}
+
+func TestRenderPage_MathBootSnippet(t *testing.T) {
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML(`<span class="math math-inline">x^2</span>`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "cdn.jsdelivr.net/npm/katex@") {
+		t.Errorf("expected lazy-loaded katex bundle from jsdelivr:\n%s", out)
+	}
+	if strings.Contains(out, "mermaid@") {
+		t.Errorf("mermaid must not load without mermaid nodes:\n%s", out)
+	}
+}
+
+func TestRenderPage_BothBootSnippet(t *testing.T) {
+	body := `<pre class="mermaid">g</pre><div class="math math-display">x</div>`
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML(body)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "mermaid@") || !strings.Contains(out, "katex@") {
+		t.Errorf("expected both mermaid and katex to load:\n%s", out)
+	}
+}
+
+func TestRenderPage_NoBootSnippetWhenPlain(t *testing.T) {
+	out, err := ssr.RenderPage(ssr.PageData{Body: template.HTML("<h1>Doc</h1><p>plain</p>")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "<script") {
+		t.Errorf("plain document must carry no enrichment script:\n%s", out)
+	}
+	if strings.Contains(out, "jsdelivr") {
+		t.Errorf("plain document must not reference the CDN:\n%s", out)
+	}
+}
+
 func TestRenderPage_NoOGImageWhenEmpty(t *testing.T) {
 	out, err := ssr.RenderPage(ssr.PageData{Title: "T", Body: template.HTML("<p>b</p>")})
 	if err != nil {
