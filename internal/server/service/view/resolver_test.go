@@ -115,9 +115,10 @@ func TestPageResolver_preservesSuffix(t *testing.T) {
 		RootPath:    "index.md",
 		ProjectRoot: "/proj",
 		FilesByPath: map[string]manifest.ManifestFile{
-			"index.md": {Hash: "rh", Size: 1},
-			"y.md":     {Hash: "yh", Size: 1},
-			"logo.png": {Hash: "lh", Size: 1},
+			"index.md":       {Hash: "rh", Size: 1},
+			"y.md":           {Hash: "yh", Size: 1},
+			"logo.png":       {Hash: "lh", Size: 1},
+			"../shared/x.md": {Hash: "xh", Size: 1},
 		},
 	}
 	r2 := storage.New(storage.Config{PublicBaseURL: "https://cdn.test"})
@@ -129,6 +130,8 @@ func TestPageResolver_preservesSuffix(t *testing.T) {
 	}{
 		{"./y.md#intro", "/s/y#intro"},
 		{"./y.md?a=1", "/s/y?a=1"},
+		{"../shared/x.md?a=1", "/s/shared/x?up=1&a=1"},
+		{"../shared/x.md#frag", "/s/shared/x?up=1#frag"},
 		{"./logo.png?v=1", "https://cdn.test/" + storage.BlobKey(slug, "lh", ".png") + "?v=1"},
 		{"./logo.png#frag", "https://cdn.test/" + storage.BlobKey(slug, "lh", ".png") + "#frag"},
 	}
