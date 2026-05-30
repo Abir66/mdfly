@@ -78,6 +78,22 @@ func TestRenderPage_MermaidBootSnippet(t *testing.T) {
 	if strings.Contains(out, "katex@") {
 		t.Errorf("katex must not load without math nodes:\n%s", out)
 	}
+	if !strings.Contains(out, "startOnLoad:false") || !strings.Contains(out, "mermaid.run()") {
+		t.Errorf("mermaid must initialize with startOnLoad:false and call mermaid.run() after async load:\n%s", out)
+	}
+}
+
+func TestContentSecurityPolicy_NoUnsafeInlineScript(t *testing.T) {
+	_, scriptSrc, found := strings.Cut(ssr.ContentSecurityPolicy, "script-src")
+	if !found {
+		t.Fatalf("CSP missing script-src directive: %q", ssr.ContentSecurityPolicy)
+	}
+	if strings.Contains(scriptSrc, "'unsafe-inline'") {
+		t.Errorf("script-src must not allow 'unsafe-inline': %q", scriptSrc)
+	}
+	if !strings.Contains(scriptSrc, "'sha256-") {
+		t.Errorf("script-src must pin the boot snippet by sha256 hash: %q", scriptSrc)
+	}
 }
 
 func TestRenderPage_MathBootSnippet(t *testing.T) {
