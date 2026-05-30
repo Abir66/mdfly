@@ -1,8 +1,11 @@
 package publish
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -33,6 +36,28 @@ func pow(base float64, exp int) float64 {
 		out *= base
 	}
 	return out
+}
+
+func TestPutBlob_retriesTransient503(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) <= 2 {
+			http.Error(w, "transient", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := withRetry(context.Background(), func() (struct{}, error) {
+		return struct{}{}, putBlob(context.Background(), srv.Client(), srv.URL, []byte("blob"))
+	})
+	if err != nil {
+		t.Fatalf("withRetry(putBlob) failed despite retryable 503s: %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Errorf("PUT calls=%d, want 3 (2 failed + 1 success)", got)
+	}
 }
 
 func TestIsRetryable(t *testing.T) {

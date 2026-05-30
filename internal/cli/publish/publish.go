@@ -69,7 +69,10 @@ func Run(apiBase, filePath string) (string, error) {
 				return "", fmt.Errorf("read file %s: %w", f.Path, err)
 			}
 		}
-		if err := putBlob(ctx, client, presignedURL, content); err != nil {
+		_, err = withRetry(ctx, func() (struct{}, error) {
+			return struct{}{}, putBlob(ctx, client, presignedURL, content)
+		})
+		if err != nil {
 			return "", fmt.Errorf("upload blob: %w", err)
 		}
 	}

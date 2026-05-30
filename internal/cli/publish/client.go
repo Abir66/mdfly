@@ -54,15 +54,15 @@ func putBlob(ctx context.Context, client *http.Client, presignedURL string, cont
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return &transientError{err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("reading response body: %w", err)
+			return &transientError{err: fmt.Errorf("reading response body: %w", err)}
 		}
-		return fmt.Errorf("PUT status %d: %s", resp.StatusCode, body)
+		return &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("PUT status %d: %s", resp.StatusCode, body)}
 	}
 	return nil
 }
