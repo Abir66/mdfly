@@ -51,6 +51,10 @@ func TestView_returnsRenderedMarkdown(t *testing.T) {
 		t.Errorf("Content-Type=%q, want charset=utf-8", ct)
 	}
 
+	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "cdn.jsdelivr.net") {
+		t.Errorf("Content-Security-Policy=%q, want jsdelivr CDN allowed", csp)
+	}
+
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
 	if !strings.Contains(bodyStr, "<h1") {

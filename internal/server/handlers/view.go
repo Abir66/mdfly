@@ -6,6 +6,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/server/httpx"
 	"github.com/Abir66/mdfly/internal/server/service/view"
+	"github.com/Abir66/mdfly/internal/server/ssr"
 )
 
 // View handles GET /{slug}, rendering the bundle's root document.
@@ -33,5 +34,6 @@ func writeViewResult(w http.ResponseWriter, html string, herr *httpx.Error) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", ssr.ContentSecurityPolicy)
 	fmt.Fprint(w, html)
 }
