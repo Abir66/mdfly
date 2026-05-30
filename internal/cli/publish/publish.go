@@ -46,10 +46,12 @@ func Run(apiBase, filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("build init URL: %w", err)
 	}
-	initResp, err := postJSON[api.InitResponse](ctx, client, initURL, api.InitRequest{
-		IdempotencyKey: idempotencyKey.String(),
-		Bundle:         bundle.ToDTO(),
-		EditToken:      editToken,
+	initResp, err := withRetry(ctx, func() (api.InitResponse, error) {
+		return postJSON[api.InitResponse](ctx, client, initURL, api.InitRequest{
+			IdempotencyKey: idempotencyKey.String(),
+			Bundle:         bundle.ToDTO(),
+			EditToken:      editToken,
+		})
 	})
 	if err != nil {
 		return "", fmt.Errorf("publish/init: %w", err)
@@ -76,8 +78,10 @@ func Run(apiBase, filePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("build commit URL: %w", err)
 	}
-	commitResp, err := postJSON[api.CommitResponse](ctx, client, commitURL, api.CommitRequest{
-		IdempotencyKey: idempotencyKey.String(),
+	commitResp, err := withRetry(ctx, func() (api.CommitResponse, error) {
+		return postJSON[api.CommitResponse](ctx, client, commitURL, api.CommitRequest{
+			IdempotencyKey: idempotencyKey.String(),
+		})
 	})
 	if err != nil {
 		return "", fmt.Errorf("publish/commit: %w", err)

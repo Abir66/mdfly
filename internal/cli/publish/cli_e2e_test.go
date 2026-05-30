@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -318,6 +319,101 @@ func TestCLIPublish_withImage(t *testing.T) {
 	}
 	if !strings.Contains(bodyStr, `src="https://example.com/x.png"`) {
 		t.Errorf("external image must be preserved verbatim in:\n%s", bodyStr)
+	}
+}
+
+// failFirstN wraps h so the first n calls return 503 before any reach h. Used to
+// simulate transient backend failures the CLI must retry through (ADR-0013).
+func failFirstN(n int32, h http.HandlerFunc) (http.HandlerFunc, *int32) {
+	var calls int32
+	wrapped := func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) <= n {
+			http.Error(w, `{"error":{"code":"unavailable","message":"transient"}}`, http.StatusServiceUnavailable)
+			return
+		}
+		h(w, r)
+	}
+	return wrapped, &calls
+}
+
+// TestCLIPublish_retriesOnTransient503 fails the first two init and commit
+// attempts with 503; the CLI's third attempt of each must succeed with the same
+// idempotency_key, yielding a viewable document.
+func TestCLIPublish_retriesOnTransient503(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	pg := db.New(pool)
+	r2 := storage.New(storage.Config{
+		Endpoint:        env.endpoint,
+		AccessKeyID:     env.accessKey,
+		SecretAccessKey: env.secretKey,
+		Bucket:          env.bucket,
+		PublicBaseURL:   env.endpoint + "/" + env.bucket,
+	})
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
+	viewSvc := &view.Service{Db: pg, Storage: r2}
+
+	const failures = 2
+	initH, initCalls := failFirstN(failures, handlers.Init(pubSvc))
+	commitH, commitCalls := failFirstN(failures, handlers.Commit(pubSvc))
+	mux.HandleFunc("POST /v1/publish/init", initH)
+	mux.HandleFunc("POST /v1/publish/commit", commitH)
+	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
+
+	bin := buildCLI(t)
+
+	dir := t.TempDir()
+	mdFile := filepath.Join(dir, "hello.md")
+	content := []byte("# Retry test\n\nTransient 503s.\n")
+	if err := os.WriteFile(mdFile, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(bin, "publish", mdFile)
+	cmd.Env = append(os.Environ(), "MDFLY_API="+srv.URL)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("mdfly publish failed despite retryable 503s: %v\nstderr: %s", err, stderr.String())
+	}
+
+	if got := atomic.LoadInt32(initCalls); got != failures+1 {
+		t.Errorf("init calls=%d, want %d (2 failed + 1 success)", got, failures+1)
+	}
+	if got := atomic.LoadInt32(commitCalls); got != failures+1 {
+		t.Errorf("commit calls=%d, want %d (2 failed + 1 success)", got, failures+1)
+	}
+
+	url := strings.TrimSpace(stdout.String())
+	if !strings.HasPrefix(url, srv.URL+"/") {
+		t.Fatalf("stdout URL=%q, want prefix %s/", url, srv.URL)
+	}
+
+	verifyClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := verifyClient.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET %s: status=%d, want 200", url, resp.StatusCode)
 	}
 }
 
