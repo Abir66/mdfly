@@ -46,6 +46,23 @@ func (d *Document) ManifestHashHex() string {
 	return hex.EncodeToString(d.ManifestHash)
 }
 
+// ManifestHash returns sha256(json.Marshal(m)), the canonical content hash
+// stored in the manifest_hash column. It is the single definition of payload
+// identity used for idempotency mismatch detection (ADR-0013).
+func ManifestHash(m manifest.Manifest) ([]byte, error) {
+	_, h, err := marshalManifest(m)
+	return h, err
+}
+
+func marshalManifest(m manifest.Manifest) (manifestJSON []byte, hash []byte, err error) {
+	manifestJSON, err = json.Marshal(m)
+	if err != nil {
+		return nil, nil, err
+	}
+	sum := sha256.Sum256(manifestJSON)
+	return manifestJSON, sum[:], nil
+}
+
 // InsertPendingParams holds the values for InsertPending.
 type InsertPendingParams struct {
 	Slug           string
@@ -57,12 +74,10 @@ type InsertPendingParams struct {
 // InsertPending inserts a documents row with status='pending'.
 // On idempotency_key conflict (DO NOTHING) it fetches and returns the existing row.
 func (c *Client) InsertPending(ctx context.Context, p InsertPendingParams) (*Document, error) {
-	manifestJSON, err := json.Marshal(p.Manifest)
+	manifestJSON, manifestHash, err := marshalManifest(p.Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("marshal manifest: %w", err)
 	}
-	mhRaw := sha256.Sum256(manifestJSON)
-	manifestHash := mhRaw[:]
 
 	var bytesTotal int64
 	for _, f := range p.Manifest.FilesByPath {

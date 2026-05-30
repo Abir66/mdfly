@@ -39,6 +39,12 @@ func Internal(msg string) *Error {
 	return &Error{Status: http.StatusInternalServerError, Code: "internal_error", Msg: msg}
 }
 
+// Unprocessable returns a 422 error with a custom machine-readable code and an
+// empty details object (ADR-0013 idempotency payload mismatch).
+func Unprocessable(code, msg string) *Error {
+	return &Error{Status: http.StatusUnprocessableEntity, Code: code, Msg: msg, Details: map[string]any{}}
+}
+
 // BundleTooLarge returns a 413 error for a bundle limit violation.
 func BundleTooLarge(limitName string, max, actual int64) *Error {
 	return &Error{

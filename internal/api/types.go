@@ -1,5 +1,9 @@
 package api
 
+// CodeIdempotencyPayloadMismatch is the error code returned by /v1/publish/init
+// (422) when an idempotency_key is reused with a different payload (ADR-0013).
+const CodeIdempotencyPayloadMismatch = "idempotency_key_payload_mismatch"
+
 // BundleFileDTO is one file entry in a BundleDTO, sent over the wire at init.
 type BundleFileDTO struct {
 	Path string `json:"path"`

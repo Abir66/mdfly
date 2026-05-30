@@ -34,6 +34,9 @@ func postJSON[T any](ctx context.Context, client *http.Client, url string, body 
 	if resp.StatusCode != http.StatusOK {
 		var apiErr api.ErrorResponse
 		if jerr := json.Unmarshal(data, &apiErr); jerr == nil && apiErr.Error.Code != "" {
+			if apiErr.Error.Code == api.CodeIdempotencyPayloadMismatch {
+				return zero, &IdempotencyMismatchError{}
+			}
 			return zero, &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("status %d (%s): %s", resp.StatusCode, apiErr.Error.Code, apiErr.Error.Message)}
 		}
 		return zero, &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("status %d: %s", resp.StatusCode, data)}

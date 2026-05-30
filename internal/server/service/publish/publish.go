@@ -5,6 +5,7 @@
 package publish
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -71,6 +72,10 @@ func (s *Service) Init(ctx context.Context, req api.InitRequest) (InitResult, *h
 		return InitResult{}, httpx.Internal("failed to create document")
 	}
 
+	if herr := ensurePayloadMatches(doc, mfst); herr != nil {
+		return InitResult{}, herr
+	}
+
 	urls, herr := buildPresignedURLs(ctx, s.Storage, doc.Slug, mfst)
 	if herr != nil {
 		return InitResult{}, herr
@@ -81,6 +86,21 @@ func (s *Service) Init(ctx context.Context, req api.InitRequest) (InitResult, *h
 		PresignedURLs: urls,
 		InlineAccept:  false,
 	}, nil
+}
+
+// ensurePayloadMatches reports a 422 when an existing row was reused under the
+// same idempotency_key but the incoming manifest hashes differently (ADR-0013).
+// On a fresh insert the stored hash equals the incoming hash, so this passes.
+func ensurePayloadMatches(doc *db.Document, mfst manifest.Manifest) *httpx.Error {
+	incoming, err := db.ManifestHash(mfst)
+	if err != nil {
+		return httpx.Internal("manifest hashing failed")
+	}
+	if !bytes.Equal(incoming, doc.ManifestHash) {
+		return httpx.Unprocessable(api.CodeIdempotencyPayloadMismatch,
+			"idempotency_key reused with a different payload")
+	}
+	return nil
 }
 
 // Commit runs the commit phase of the publish protocol. Already-published rows
