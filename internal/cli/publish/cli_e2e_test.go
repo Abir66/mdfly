@@ -3,6 +3,7 @@ package publish_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -322,11 +324,37 @@ func TestCLIPublish_withImage(t *testing.T) {
 	}
 }
 
-// failFirstN wraps h so the first n calls return 503 before any reach h. Used to
-// simulate transient backend failures the CLI must retry through (ADR-0013).
-func failFirstN(n int32, h http.HandlerFunc) (http.HandlerFunc, *int32) {
+// keyRecorder collects the idempotency_key seen on each request, across retries.
+type keyRecorder struct {
+	mu   sync.Mutex
+	keys []string
+}
+
+func (k *keyRecorder) add(key string) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.keys = append(k.keys, key)
+}
+
+func (k *keyRecorder) all() []string {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return append([]string(nil), k.keys...)
+}
+
+// failFirstN wraps h so the first n calls return 503 before reaching h; retries
+// after n run the real handler, exercising server-side idempotency (ADR-0013).
+// Every call records the request's idempotency_key (body preserved for h).
+func failFirstN(n int32, rec *keyRecorder, h http.HandlerFunc) (http.HandlerFunc, *int32) {
 	var calls int32
 	wrapped := func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var probe struct {
+			IdempotencyKey string `json:"idempotency_key"`
+		}
+		json.Unmarshal(body, &probe) //nolint:errcheck
+		rec.add(probe.IdempotencyKey)
 		if atomic.AddInt32(&calls, 1) <= n {
 			http.Error(w, `{"error":{"code":"unavailable","message":"transient"}}`, http.StatusServiceUnavailable)
 			return
@@ -334,6 +362,23 @@ func failFirstN(n int32, h http.HandlerFunc) (http.HandlerFunc, *int32) {
 		h(w, r)
 	}
 	return wrapped, &calls
+}
+
+// assertSameKey checks every recorded key is non-empty and identical, proving
+// the CLI reused one idempotency_key across all retries of a phase.
+func assertSameKey(t *testing.T, phase string, keys []string) {
+	t.Helper()
+	if len(keys) == 0 {
+		t.Fatalf("%s: no idempotency_key recorded", phase)
+	}
+	for i, k := range keys {
+		if k == "" {
+			t.Errorf("%s call %d: empty idempotency_key", phase, i)
+		}
+		if k != keys[0] {
+			t.Errorf("%s call %d: key %q != first %q", phase, i, k, keys[0])
+		}
+	}
 }
 
 // TestCLIPublish_retriesOnTransient503 fails the first two init and commit
@@ -370,8 +415,9 @@ func TestCLIPublish_retriesOnTransient503(t *testing.T) {
 	viewSvc := &view.Service{Db: pg, Storage: r2}
 
 	const failures = 2
-	initH, initCalls := failFirstN(failures, handlers.Init(pubSvc))
-	commitH, commitCalls := failFirstN(failures, handlers.Commit(pubSvc))
+	var initKeys, commitKeys keyRecorder
+	initH, initCalls := failFirstN(failures, &initKeys, handlers.Init(pubSvc))
+	commitH, commitCalls := failFirstN(failures, &commitKeys, handlers.Commit(pubSvc))
 	mux.HandleFunc("POST /v1/publish/init", initH)
 	mux.HandleFunc("POST /v1/publish/commit", commitH)
 	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
@@ -399,6 +445,13 @@ func TestCLIPublish_retriesOnTransient503(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(commitCalls); got != failures+1 {
 		t.Errorf("commit calls=%d, want %d (2 failed + 1 success)", got, failures+1)
+	}
+
+	assertSameKey(t, "init", initKeys.all())
+	assertSameKey(t, "commit", commitKeys.all())
+	if initKeys.all()[0] != commitKeys.all()[0] {
+		t.Errorf("init key %q != commit key %q; one key per publish expected",
+			initKeys.all()[0], commitKeys.all()[0])
 	}
 
 	url := strings.TrimSpace(stdout.String())
