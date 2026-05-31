@@ -281,45 +281,72 @@ func TestView_nestedRoutingAndCrossMdRewrite(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("root status=%d, want 200", status)
 	}
-	if !strings.Contains(body, fmt.Sprintf(`href="/%s/y"`, slug)) {
-		t.Errorf("root: ./y.md not rewritten to /%s/y:\n%s", slug, body)
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/y.md"`, slug)) {
+		t.Errorf("root: ./y.md not rewritten to /%s/y.md:\n%s", slug, body)
 	}
-	if !strings.Contains(body, fmt.Sprintf(`href="/%s/sub2/a"`, slug)) {
-		t.Errorf("root: ./sub2/a.md not rewritten to /%s/sub2/a:\n%s", slug, body)
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/sub2/a.md"`, slug)) {
+		t.Errorf("root: ./sub2/a.md not rewritten to /%s/sub2/a.md:\n%s", slug, body)
 	}
 	if !strings.Contains(body, logoSrc) {
 		t.Errorf("root: logo not rewritten to CDN URL %q:\n%s", logoSrc, body)
 	}
 
-	// Nested page y: renders and back-link rewritten relative to root.
-	status, body = getString(t, srv.URL+"/"+slug+"/y")
+	// Nested page y.md: renders and back-link rewritten relative to root.
+	status, body = getString(t, srv.URL+"/"+slug+"/y.md")
 	if status != http.StatusOK {
-		t.Fatalf("/%s/y status=%d, want 200", slug, status)
+		t.Fatalf("/%s/y.md status=%d, want 200", slug, status)
 	}
 	if !strings.Contains(body, "<h1") || !strings.Contains(body, "Y") {
-		t.Errorf("/%s/y missing rendered heading:\n%s", slug, body)
+		t.Errorf("/%s/y.md missing rendered heading:\n%s", slug, body)
 	}
-	if !strings.Contains(body, fmt.Sprintf(`href="/%s/index"`, slug)) {
-		t.Errorf("/%s/y: ./index.md back-link not rewritten:\n%s", slug, body)
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/index.md"`, slug)) {
+		t.Errorf("/%s/y.md: ./index.md back-link not rewritten:\n%s", slug, body)
 	}
 
-	// Nested page sub2/a: relative AND absolute image refs resolve to root logo.
-	status, body = getString(t, srv.URL+"/"+slug+"/sub2/a")
+	// Nested page sub2/a.md: relative AND absolute image refs resolve to root logo.
+	status, body = getString(t, srv.URL+"/"+slug+"/sub2/a.md")
 	if status != http.StatusOK {
-		t.Fatalf("/%s/sub2/a status=%d, want 200", slug, status)
+		t.Fatalf("/%s/sub2/a.md status=%d, want 200", slug, status)
 	}
 	if !strings.Contains(body, "Sub2 A") {
-		t.Errorf("/%s/sub2/a missing content:\n%s", slug, body)
+		t.Errorf("/%s/sub2/a.md missing content:\n%s", slug, body)
 	}
 	if !strings.Contains(body, logoSrc) {
-		t.Errorf("/%s/sub2/a: ../logo.png + /proj/logo.png must resolve to %q:\n%s", slug, logoSrc, body)
+		t.Errorf("/%s/sub2/a.md: ../logo.png + /proj/logo.png must resolve to %q:\n%s", slug, logoSrc, body)
+	}
+
+	// Directory prefix is a placeholder 404 until S23 (Directory Listing).
+	status, _ = getString(t, srv.URL+"/"+slug+"/sub2")
+	if status != http.StatusNotFound {
+		t.Errorf("directory prefix /%s/sub2 status=%d, want 404 (S23 placeholder)", slug, status)
 	}
 
 	// Unknown nested path → 404.
-	status, _ = getString(t, srv.URL+"/"+slug+"/does-not-exist")
+	status, _ = getString(t, srv.URL+"/"+slug+"/does-not-exist.md")
 	if status != http.StatusNotFound {
 		t.Errorf("unknown nested path status=%d, want 404", status)
 	}
+
+	// Trailing slash 301-canonicalizes to the slash-free form.
+	resp, err := noRedirectClient().Get(srv.URL + "/" + slug + "/y.md/")
+	if err != nil {
+		t.Fatalf("GET /%s/y.md/: %v", slug, err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Errorf("trailing-slash status=%d, want 301", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/"+slug+"/y.md" {
+		t.Errorf("trailing-slash Location=%q, want /%s/y.md", loc, slug)
+	}
+}
+
+// noRedirectClient returns an http.Client that does not follow redirects, so a
+// 301's status and Location can be asserted directly.
+func noRedirectClient() *http.Client {
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
 }
 
 func TestView_aboveRootUpParam(t *testing.T) {
@@ -339,9 +366,9 @@ func TestView_aboveRootUpParam(t *testing.T) {
 	}
 	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee12", "/proj/sub", "index.md", files)
 
-	status, body := getString(t, srv.URL+"/"+slug+"/parent?up=1")
+	status, body := getString(t, srv.URL+"/"+slug+"/parent.md?up=1")
 	if status != http.StatusOK {
-		t.Fatalf("/%s/parent?up=1 status=%d, want 200", slug, status)
+		t.Fatalf("/%s/parent.md?up=1 status=%d, want 200", slug, status)
 	}
 	if !strings.Contains(body, "Parent Page") {
 		t.Errorf("?up=1 did not reconstruct ../parent.md:\n%s", body)

@@ -19,9 +19,10 @@ const (
 )
 
 // nestedKey reconstructs the manifest key for GET /{slug}/{path...}. rest is the
-// project-root-relative path with .md stripped; up is the optional ?up=N count of
-// "../" prefixes for keys above the project root. ok is false for an empty path
-// or an up value that is malformed, negative, or above maxUp.
+// project-root-relative path with its extension intact (ADR-0024 reverses the
+// strip-.md convention); up is the optional ?up=N count of "../" prefixes for
+// keys above the project root. ok is false for an empty path or an up value that
+// is malformed, negative, or above maxUp.
 func nestedKey(rest, up string) (string, bool) {
 	rest = strings.Trim(rest, "/")
 	if rest == "" {
@@ -35,7 +36,7 @@ func nestedKey(rest, up string) (string, bool) {
 		}
 		n = parsed
 	}
-	return strings.Repeat("../", n) + rest + markdownExt, true
+	return strings.Repeat("../", n) + rest, true
 }
 
 // resolveOGImage maps the document's OG-image path to an absolute URL. External
@@ -75,16 +76,17 @@ func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, refer
 	}
 }
 
-// slugPageURL builds the viewer URL for a markdown manifest key. A key above the
-// project root (leading "../") encodes its depth as ?up=N because browsers and
-// proxies strip dot-segments from the path.
+// slugPageURL builds the viewer URL for a markdown manifest key. The key's
+// extension is kept (ADR-0024). A key above the project root (leading "../")
+// encodes its depth as ?up=N because browsers and proxies strip dot-segments
+// from the path.
 func slugPageURL(slug, key string) string {
 	up := 0
 	for strings.HasPrefix(key, "../") {
 		up++
 		key = key[len("../"):]
 	}
-	url := "/" + slug + "/" + strings.TrimSuffix(key, markdownExt)
+	url := "/" + slug + "/" + key
 	if up > 0 {
 		url += "?up=" + strconv.Itoa(up)
 	}
