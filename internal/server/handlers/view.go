@@ -34,7 +34,7 @@ func ViewPath(svc *view.Service) http.HandlerFunc {
 // redirectTrailingSlash issues a 301 to the trailing-slash-free path (query
 // preserved) when the request URL ends in "/", and reports whether it did.
 func redirectTrailingSlash(w http.ResponseWriter, r *http.Request) bool {
-	p := r.URL.Path
+	p := r.URL.EscapedPath()
 	if len(p) <= 1 || !strings.HasSuffix(p, "/") {
 		return false
 	}

@@ -51,10 +51,11 @@ func resolveOGImage(ogPath string, resolve markdown.RefResolver) string {
 }
 
 // pageResolver returns a resolver mapping a markdown reference to its final URL:
-// an in-bundle markdown file → /{slug}/{key without .md} (with ?up=N when above
-// root); an in-bundle asset → its public CDN URL. Empty, external, or unknown
-// references return ok=false so the caller leaves them verbatim. References are
-// resolved relative to referrerDir (the rendered page's directory).
+// an in-bundle markdown file → /{slug}/{key with extension} (with ?up=N when
+// above root, per ADR-0024); an in-bundle asset → its public CDN URL. Empty,
+// external, or unknown references return ok=false so the caller leaves them
+// verbatim. References are resolved relative to referrerDir (the rendered page's
+// directory).
 func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, referrerDir string) markdown.RefResolver {
 	return func(ref string) (string, bool) {
 		if ref == "" || markdown.IsExternalRef(ref) {

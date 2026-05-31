@@ -44,9 +44,9 @@ func (s *Service) RenderRoot(ctx context.Context, slug string) (string, *httpx.E
 	return s.render(ctx, slug, mfst, mfst.RootPath)
 }
 
-// RenderPath renders a nested .md page for GET /{slug}/{path...}. rawPath is the
-// project-root-relative key with the .md extension stripped; up is the optional
-// ?up=N count reconstructing a key above the project root.
+// RenderPath renders a nested page for GET /{slug}/{path...}. rawPath is the
+// project-root-relative key with its extension intact (ADR-0024); up is the
+// optional ?up=N count reconstructing a key above the project root.
 func (s *Service) RenderPath(ctx context.Context, slug, rawPath, up string) (string, *httpx.Error) {
 	if slug == "" {
 		return "", httpx.NotFound("not found")
