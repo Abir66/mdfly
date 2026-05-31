@@ -16,6 +16,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/markdown"
 	"github.com/Abir66/mdfly/internal/server/db"
+	"github.com/Abir66/mdfly/internal/server/filetree"
 	"github.com/Abir66/mdfly/internal/server/httpx"
 	"github.com/Abir66/mdfly/internal/server/manifest"
 	"github.com/Abir66/mdfly/internal/server/ssr"
@@ -43,9 +44,9 @@ func (s *Service) RenderRoot(ctx context.Context, slug string) (string, *httpx.E
 	return s.render(ctx, slug, mfst, mfst.RootPath)
 }
 
-// RenderPath renders a nested .md page for GET /{slug}/{path...}. rawPath is the
-// project-root-relative key with the .md extension stripped; up is the optional
-// ?up=N count reconstructing a key above the project root.
+// RenderPath renders a nested page for GET /{slug}/{path...}. rawPath is the
+// project-root-relative key with its extension intact (ADR-0024); up is the
+// optional ?up=N count reconstructing a key above the project root.
 func (s *Service) RenderPath(ctx context.Context, slug, rawPath, up string) (string, *httpx.Error) {
 	if slug == "" {
 		return "", httpx.NotFound("not found")
@@ -79,13 +80,36 @@ func (s *Service) loadManifest(ctx context.Context, slug string) (manifest.Manif
 	return mfst, nil
 }
 
-// render renders the file at key within the bundle and returns the page HTML.
-// An unknown key is a 404.
+// render resolves key against the bundle manifest and dispatches on node type
+// (ADR-0024). An exact markdown key renders to HTML; a directory prefix and a
+// non-markdown file are placeholders until S23 (listing) and S24 (asset center);
+// anything else is a 404.
 func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
-	f, ok := mfst.FilesByPath[key]
-	if !ok {
+	res := filetree.Classify(manifestKeys(mfst), key)
+	switch res.Kind {
+	case filetree.File:
+		if !isMarkdownKey(res.Key) {
+			return "", httpx.NotFound("not found")
+		}
+		return s.renderMarkdown(ctx, slug, mfst, res.Key)
+	default:
 		return "", httpx.NotFound("not found")
 	}
+}
+
+// manifestKeys returns the bundle's manifest keys as a slice for filetree.
+func manifestKeys(mfst manifest.Manifest) []string {
+	keys := make([]string, 0, len(mfst.FilesByPath))
+	for k := range mfst.FilesByPath {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// renderMarkdown fetches the markdown blob at key, rewrites in-bundle references,
+// and renders the full HTML page.
+func (s *Service) renderMarkdown(ctx context.Context, slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
+	f := mfst.FilesByPath[key]
 
 	content, err := s.Storage.GetBlob(ctx, storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key)))
 	if err != nil {

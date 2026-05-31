@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Abir66/mdfly/internal/server/httpx"
 	"github.com/Abir66/mdfly/internal/server/service/view"
@@ -17,12 +18,32 @@ func View(svc *view.Service) http.HandlerFunc {
 	}
 }
 
-// ViewPath handles GET /{slug}/{path...}, rendering a nested .md page.
+// ViewPath handles GET /{slug}/{path...}, rendering a nested page. A trailing
+// slash is 301-canonicalized to the slash-free form (ADR-0024) so every node has
+// one URL.
 func ViewPath(svc *view.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if redirectTrailingSlash(w, r) {
+			return
+		}
 		html, herr := svc.RenderPath(r.Context(), r.PathValue("slug"), r.PathValue("path"), r.URL.Query().Get("up"))
 		writeViewResult(w, html, herr)
 	}
+}
+
+// redirectTrailingSlash issues a 301 to the trailing-slash-free path (query
+// preserved) when the request URL ends in "/", and reports whether it did.
+func redirectTrailingSlash(w http.ResponseWriter, r *http.Request) bool {
+	p := r.URL.EscapedPath()
+	if len(p) <= 1 || !strings.HasSuffix(p, "/") {
+		return false
+	}
+	target := strings.TrimRight(p, "/")
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, target, http.StatusMovedPermanently)
+	return true
 }
 
 // writeViewResult writes the rendered page, or maps the error to an HTTP

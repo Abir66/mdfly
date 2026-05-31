@@ -50,10 +50,10 @@ func TestSlugPageURL(t *testing.T) {
 		key  string
 		want string
 	}{
-		{"y.md", "/s/y"},
-		{"sub2/a.md", "/s/sub2/a"},
-		{"../shared/x.md", "/s/shared/x?up=1"},
-		{"../../a.md", "/s/a?up=2"},
+		{"y.md", "/s/y.md"},
+		{"sub2/a.md", "/s/sub2/a.md"},
+		{"../shared/x.md", "/s/shared/x.md?up=1"},
+		{"../../a.md", "/s/a.md?up=2"},
 	}
 	for _, tt := range tests {
 		if got := slugPageURL("s", tt.key); got != tt.want {
@@ -69,15 +69,16 @@ func TestNestedKey(t *testing.T) {
 		wantKey string
 		wantOK  bool
 	}{
-		{"y", "", "y.md", true},
-		{"sub2/a", "", "sub2/a.md", true},
-		{"/y/", "", "y.md", true},
-		{"a", "2", "../../a.md", true},
+		{"y.md", "", "y.md", true},
+		{"sub2/a.md", "", "sub2/a.md", true},
+		{"/y.md/", "", "y.md", true},
+		{"a.md", "2", "../../a.md", true},
+		{"assets/logo.png", "", "assets/logo.png", true},
 		{"", "", "", false},
-		{"y", "abc", "", false},
-		{"y", "-1", "", false},
-		{"y", strconv.Itoa(maxUp), strings.Repeat("../", maxUp) + "y.md", true},
-		{"y", strconv.Itoa(maxUp + 1), "", false},
+		{"y.md", "abc", "", false},
+		{"y.md", "-1", "", false},
+		{"y.md", strconv.Itoa(maxUp), strings.Repeat("../", maxUp) + "y.md", true},
+		{"y.md", strconv.Itoa(maxUp + 1), "", false},
 	}
 	for _, tt := range tests {
 		key, ok := nestedKey(tt.rest, tt.up)
@@ -128,10 +129,10 @@ func TestPageResolver_preservesSuffix(t *testing.T) {
 		ref  string
 		want string
 	}{
-		{"./y.md#intro", "/s/y#intro"},
-		{"./y.md?a=1", "/s/y?a=1"},
-		{"../shared/x.md?a=1", "/s/shared/x?up=1&a=1"},
-		{"../shared/x.md#frag", "/s/shared/x?up=1#frag"},
+		{"./y.md#intro", "/s/y.md#intro"},
+		{"./y.md?a=1", "/s/y.md?a=1"},
+		{"../shared/x.md?a=1", "/s/shared/x.md?up=1&a=1"},
+		{"../shared/x.md#frag", "/s/shared/x.md?up=1#frag"},
 		{"./logo.png?v=1", "https://cdn.test/" + storage.BlobKey(slug, "lh", ".png") + "?v=1"},
 		{"./logo.png#frag", "https://cdn.test/" + storage.BlobKey(slug, "lh", ".png") + "#frag"},
 	}
