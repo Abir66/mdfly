@@ -101,6 +101,17 @@ func isMarkdownKey(key string) bool {
 	return storage.ExtFromPath(key) == markdownExt
 }
 
+// imageExts are the extensions rendered inline as <img> (SVG is safe via <img>).
+var imageExts = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true,
+	".gif": true, ".webp": true, ".svg": true,
+}
+
+// isImageKey reports whether key names an inline-renderable image.
+func isImageKey(key string) bool {
+	return imageExts[storage.ExtFromPath(key)]
+}
+
 // isDirKey reports whether key names an in-bundle directory — a path prefix of
 // one or more manifest keys (no folders are stored, so this is the only test).
 func isDirKey(mfst manifest.Manifest, key string) bool {

@@ -400,6 +400,65 @@ func TestView_directoryListingWithReadme(t *testing.T) {
 	}
 }
 
+func TestView_assetCenterDispatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+	publicBase := env.endpoint + "/" + env.bucket
+
+	const projectRoot = "/proj"
+	pdfContent := append([]byte("%PDF-1.4\n"), 0x00, 0xff)
+	files := map[string][]byte{
+		"index.md": []byte("# Index\n"),
+		"app.go":   []byte("package main\n\nfunc main() {}\n"),
+		"fake.cpp": []byte("int main() {\x00binary junk\xff}\n"),
+		"doc.pdf":  pdfContent,
+	}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee44", projectRoot, "index.md", files)
+
+	// Small text/code file → server-highlighted source (chroma inline styles).
+	status, body := getString(t, srv.URL+"/"+slug+"/app.go")
+	if status != http.StatusOK {
+		t.Fatalf("/app.go status=%d, want 200", status)
+	}
+	if !strings.Contains(body, "<pre") || !strings.Contains(body, "func") {
+		t.Errorf("/app.go missing highlighted source:\n%s", body)
+	}
+	// New-surface responses inherit the cache + robots headers.
+	if cc := getString2Header(t, srv.URL+"/"+slug+"/app.go", "Cache-Control"); cc != "public, max-age=300, s-maxage=86400" {
+		t.Errorf("highlight Cache-Control=%q, want public, max-age=300, s-maxage=86400", cc)
+	}
+	if rt := getString2Header(t, srv.URL+"/"+slug+"/app.go", "X-Robots-Tag"); rt != "noindex, nofollow" {
+		t.Errorf("highlight X-Robots-Tag=%q, want noindex, nofollow", rt)
+	}
+
+	// A .cpp file that is actually binary → download card after the post-fetch sniff.
+	status, body = getString(t, srv.URL+"/"+slug+"/fake.cpp")
+	if status != http.StatusOK {
+		t.Fatalf("/fake.cpp status=%d, want 200", status)
+	}
+	if !strings.Contains(body, `class="download-card"`) {
+		t.Errorf("/fake.cpp should yield a download card after binary sniff:\n%s", body)
+	}
+
+	// A PDF → metadata card with a Download link to the CDN blob.
+	status, body = getString(t, srv.URL+"/"+slug+"/doc.pdf")
+	if status != http.StatusOK {
+		t.Fatalf("/doc.pdf status=%d, want 200", status)
+	}
+	if !strings.Contains(body, `class="download-card"`) {
+		t.Errorf("/doc.pdf missing download card:\n%s", body)
+	}
+	wantDownload := fmt.Sprintf(`href="%s/documents/%s/%s.pdf" download`, publicBase, slug, contentHash(pdfContent))
+	if !strings.Contains(body, wantDownload) {
+		t.Errorf("/doc.pdf download link %q missing in:\n%s", wantDownload, body)
+	}
+}
+
 // getString2Header GETs url and returns one response header value.
 func getString2Header(t *testing.T, url, header string) string {
 	t.Helper()

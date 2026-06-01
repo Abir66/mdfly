@@ -62,6 +62,16 @@
       {{- end}}
     </ul>
     {{- end}}
+    {{- if .Image}}
+    <img class="asset-image" src="{{.Image.URL}}" alt="{{.Image.Name}}">
+    {{- end}}
+    {{- if .Download}}
+    <div class="download-card">
+      <p class="asset-name">{{.Download.Name}}</p>
+      <p class="asset-size">{{.Download.Size}} bytes</p>
+      <a class="download" href="{{.Download.URL}}" download>Download</a>
+    </div>
+    {{- end}}
     <article class="content">{{.Body}}</article>
   </main>
 </div>

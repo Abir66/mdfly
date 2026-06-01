@@ -145,6 +145,39 @@ func TestRenderPage_DirectoryListingWithReadme(t *testing.T) {
 	}
 }
 
+func TestRenderPage_ImageCenter(t *testing.T) {
+	data := chromeData()
+	data.Image = &ssr.Asset{Name: "logo.png", URL: "https://cdn.mdfly.dev/documents/abc12345/ph.png"}
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<img class="asset-image" src="https://cdn.mdfly.dev/documents/abc12345/ph.png" alt="logo.png">`) {
+		t.Errorf("image center missing inline img:\n%s", out)
+	}
+}
+
+func TestRenderPage_DownloadCard(t *testing.T) {
+	data := chromeData()
+	data.Download = &ssr.Asset{Name: "report.pdf", URL: "https://cdn.mdfly.dev/documents/abc12345/dh.pdf", Size: 4096}
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `class="download-card"`) {
+		t.Errorf("download card missing:\n%s", out)
+	}
+	if !strings.Contains(out, "report.pdf") {
+		t.Errorf("download card missing file name:\n%s", out)
+	}
+	if !strings.Contains(out, "4096 bytes") {
+		t.Errorf("download card missing size:\n%s", out)
+	}
+	if !strings.Contains(out, `href="https://cdn.mdfly.dev/documents/abc12345/dh.pdf" download`) {
+		t.Errorf("download card missing CDN download link:\n%s", out)
+	}
+}
+
 func TestRenderPage_TitleInHead(t *testing.T) {
 	out, err := ssr.RenderPage(ssr.PageData{Title: "Hello World", Body: template.HTML("<p>body</p>")})
 	if err != nil {
