@@ -134,13 +134,14 @@ func (s *Service) renderMarkdown(ctx context.Context, slug string, mfst manifest
 func (s *Service) renderDirectory(ctx context.Context, slug string, mfst manifest.Manifest, prefix string) (string, *httpx.Error) {
 	data := ssr.PageData{Listing: filetree.ListDir(sizesByKey(mfst), prefix)}
 	if idxKey, ok := filetree.IndexFile(manifestKeys(mfst), prefix); ok {
-		rendered, meta, _, herr := s.renderBlob(ctx, slug, mfst, idxKey)
+		rendered, meta, resolve, herr := s.renderBlob(ctx, slug, mfst, idxKey)
 		if herr != nil {
 			return "", herr
 		}
 		data.Body = rendered
 		data.Title = meta.Title
 		data.Excerpt = meta.Excerpt
+		data.OGImageURL = resolveOGImage(meta.OGImagePath, resolve)
 		data.EnrichMermaid = meta.HasMermaid
 		data.EnrichMath = meta.HasMath
 	}
