@@ -89,6 +89,62 @@ func TestRenderPage_ChromeMobileAndRailSnippet(t *testing.T) {
 	}
 }
 
+func dirListingData() ssr.PageData {
+	keys := []string{"index.md", "docs/api/auth.md", "docs/guide.md", "assets/logo.png"}
+	const current = "docs"
+	return ssr.PageData{
+		Slug:       "abc12345",
+		Tree:       filetree.BuildTree(keys, current),
+		Breadcrumb: filetree.Breadcrumb(current),
+		Listing:    filetree.ListDir(map[string]int64{"docs/api/auth.md": 30, "docs/guide.md": 40}, current),
+		CSSURL:     "/_static/app.deadbeef12.css",
+		JSURL:      "/_static/app.cafebabe34.js",
+	}
+}
+
+func TestRenderPage_DirectoryListing(t *testing.T) {
+	out, err := ssr.RenderPage(dirListingData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `class="listing"`) {
+		t.Errorf("missing listing block:\n%s", out)
+	}
+	// Folder child is clickable and marked as a directory.
+	if !strings.Contains(out, `href="/abc12345/docs/api"`) {
+		t.Errorf("listing missing folder link:\n%s", out)
+	}
+	// File child is clickable and reports its size.
+	if !strings.Contains(out, `href="/abc12345/docs/guide.md"`) {
+		t.Errorf("listing missing file link:\n%s", out)
+	}
+	if !strings.Contains(out, "40") {
+		t.Errorf("listing missing file size:\n%s", out)
+	}
+	// Folders sort before files: api/ precedes guide.md in the rendered list.
+	if strings.Index(out, "docs/api") > strings.Index(out, "docs/guide.md") {
+		t.Errorf("folders must list before files:\n%s", out)
+	}
+}
+
+func TestRenderPage_DirectoryListingWithReadme(t *testing.T) {
+	data := dirListingData()
+	data.Body = template.HTML("<h1>Docs Readme</h1>")
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `class="listing"`) {
+		t.Errorf("missing listing block:\n%s", out)
+	}
+	if !strings.Contains(out, "<h1>Docs Readme</h1>") {
+		t.Errorf("rendered README must appear below listing:\n%s", out)
+	}
+	if strings.Index(out, `class="listing"`) > strings.Index(out, "Docs Readme") {
+		t.Errorf("listing must precede the README body:\n%s", out)
+	}
+}
+
 func TestRenderPage_TitleInHead(t *testing.T) {
 	out, err := ssr.RenderPage(ssr.PageData{Title: "Hello World", Body: template.HTML("<p>body</p>")})
 	if err != nil {

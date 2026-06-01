@@ -83,9 +83,9 @@ func (s *Service) loadManifest(ctx context.Context, slug string) (manifest.Manif
 }
 
 // render resolves key against the bundle manifest and dispatches on node type
-// (ADR-0024). An exact markdown key renders to HTML; a directory prefix and a
-// non-markdown file are placeholders until S23 (listing) and S24 (asset center);
-// anything else is a 404.
+// (ADR-0024). An exact markdown key renders to HTML; a directory prefix renders
+// a Directory Listing; a non-markdown file is a placeholder until S24 (asset
+// center); anything else is a 404.
 func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
 	res := filetree.Classify(manifestKeys(mfst), key)
 	switch res.Kind {
@@ -94,6 +94,8 @@ func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifes
 			return "", httpx.NotFound("not found")
 		}
 		return s.renderMarkdown(ctx, slug, mfst, res.Key)
+	case filetree.Dir:
+		return s.renderDirectory(ctx, slug, mfst, res.Key)
 	default:
 		return "", httpx.NotFound("not found")
 	}
@@ -109,39 +111,81 @@ func manifestKeys(mfst manifest.Manifest) []string {
 }
 
 // renderMarkdown fetches the markdown blob at key, rewrites in-bundle references,
-// and renders the full HTML page.
+// and renders the full HTML page with the document's chrome.
 func (s *Service) renderMarkdown(ctx context.Context, slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
-	f := mfst.FilesByPath[key]
+	rendered, meta, resolve, herr := s.renderBlob(ctx, slug, mfst, key)
+	if herr != nil {
+		return "", herr
+	}
+	return s.renderPage(slug, mfst, key, ssr.PageData{
+		Title:         meta.Title,
+		Excerpt:       meta.Excerpt,
+		OGImageURL:    resolveOGImage(meta.OGImagePath, resolve),
+		Body:          rendered,
+		EnrichMermaid: meta.HasMermaid,
+		EnrichMath:    meta.HasMath,
+	})
+}
 
+// renderDirectory renders a Directory Listing for prefix: its immediate folders
+// (first) and files (with sizes), each clickable. When the directory carries an
+// index document (README.md/index.md) it is rendered below the listing by
+// reusing the markdown render path.
+func (s *Service) renderDirectory(ctx context.Context, slug string, mfst manifest.Manifest, prefix string) (string, *httpx.Error) {
+	data := ssr.PageData{Listing: filetree.ListDir(sizesByKey(mfst), prefix)}
+	if idxKey, ok := filetree.IndexFile(manifestKeys(mfst), prefix); ok {
+		rendered, meta, _, herr := s.renderBlob(ctx, slug, mfst, idxKey)
+		if herr != nil {
+			return "", herr
+		}
+		data.Body = rendered
+		data.Title = meta.Title
+		data.Excerpt = meta.Excerpt
+		data.EnrichMermaid = meta.HasMermaid
+		data.EnrichMath = meta.HasMath
+	}
+	return s.renderPage(slug, mfst, prefix, data)
+}
+
+// renderBlob fetches the markdown blob at key and renders it to HTML, returning
+// the body, its metadata, and the resolver used (for OG-image resolution).
+func (s *Service) renderBlob(ctx context.Context, slug string, mfst manifest.Manifest, key string) (template.HTML, markdown.Meta, markdown.RefResolver, *httpx.Error) {
+	f := mfst.FilesByPath[key]
 	content, err := s.Storage.GetBlob(ctx, storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key)))
 	if err != nil {
 		slog.Error("storage.GetBlob failed", "slug", slug, "key", key, "hash", f.Hash, "err", err)
-		return "", httpx.Internal("internal error")
+		return "", markdown.Meta{}, nil, httpx.Internal("internal error")
 	}
-
 	resolve := pageResolver(s.Storage, slug, mfst, path.Dir(key))
 	rendered, meta, err := markdown.RenderRefsWithTimeout(content, resolve, markdownRenderTimeout)
 	if err != nil {
 		slog.Error("markdown render failed", "slug", slug, "key", key, "err", err)
-		return "", httpx.Internal("render error")
+		return "", markdown.Meta{}, nil, httpx.Internal("render error")
 	}
+	return template.HTML(rendered), meta, resolve, nil
+}
 
-	pageHTML, err := ssr.RenderPage(ssr.PageData{
-		Title:         meta.Title,
-		Excerpt:       meta.Excerpt,
-		OGImageURL:    resolveOGImage(meta.OGImagePath, resolve),
-		Body:          template.HTML(rendered),
-		EnrichMermaid: meta.HasMermaid,
-		EnrichMath:    meta.HasMath,
-		Slug:          slug,
-		Tree:          filetree.BuildTree(manifestKeys(mfst), key),
-		Breadcrumb:    filetree.Breadcrumb(key),
-		CSSURL:        s.Static.CSSURL(),
-		JSURL:         s.Static.JSURL(),
-	})
+// renderPage fills in the chrome fields (slug, tree, breadcrumb, static URLs) for
+// key and executes the page template.
+func (s *Service) renderPage(slug string, mfst manifest.Manifest, key string, data ssr.PageData) (string, *httpx.Error) {
+	data.Slug = slug
+	data.Tree = filetree.BuildTree(manifestKeys(mfst), key)
+	data.Breadcrumb = filetree.Breadcrumb(key)
+	data.CSSURL = s.Static.CSSURL()
+	data.JSURL = s.Static.JSURL()
+	pageHTML, err := ssr.RenderPage(data)
 	if err != nil {
 		slog.Error("ssr.RenderPage failed", "slug", slug, "key", key, "err", err)
 		return "", httpx.Internal("render error")
 	}
 	return pageHTML, nil
+}
+
+// sizesByKey maps every manifest key to its byte size for filetree.ListDir.
+func sizesByKey(mfst manifest.Manifest) map[string]int64 {
+	sizes := make(map[string]int64, len(mfst.FilesByPath))
+	for k, f := range mfst.FilesByPath {
+		sizes[k] = f.Size
+	}
+	return sizes
 }

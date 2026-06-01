@@ -68,6 +68,9 @@ func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, refer
 		}
 		f, ok := mfst.FilesByPath[key]
 		if !ok {
+			if isDirKey(mfst, key) {
+				return appendSuffix(slugPageURL(slug, key), suffix), true
+			}
 			return "", false
 		}
 		if isMarkdownKey(key) {
@@ -96,6 +99,18 @@ func slugPageURL(slug, key string) string {
 
 func isMarkdownKey(key string) bool {
 	return storage.ExtFromPath(key) == markdownExt
+}
+
+// isDirKey reports whether key names an in-bundle directory — a path prefix of
+// one or more manifest keys (no folders are stored, so this is the only test).
+func isDirKey(mfst manifest.Manifest, key string) bool {
+	prefix := key + "/"
+	for k := range mfst.FilesByPath {
+		if strings.HasPrefix(k, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // splitRefSuffix separates a markdown reference into the path portion and its

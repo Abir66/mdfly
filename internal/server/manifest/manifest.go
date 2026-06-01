@@ -25,21 +25,29 @@ type Manifest struct {
 	FilesByPath map[string]ManifestFile `json:"files_by_path"`
 }
 
-// FromDTO converts the wire BundleDTO into a path-keyed Manifest.
-// Returns ErrRootPathNotFound if dto.RootPath is not present in dto.Files.
+// FromDTO converts the wire BundleDTO into a path-keyed Manifest. An empty
+// dto.RootPath is tolerated (forward-compat for a folder-Document, whose root is
+// a Directory Listing). Returns ErrRootPathNotFound only when a non-empty
+// dto.RootPath is absent from dto.Files.
 func FromDTO(dto api.BundleDTO) (Manifest, error) {
 	files := make(map[string]ManifestFile, len(dto.Files))
 	for _, f := range dto.Files {
 		files[f.Path] = ManifestFile{Hash: f.Hash, Size: f.Size}
 	}
-	if _, ok := files[dto.RootPath]; !ok {
-		return Manifest{}, ErrRootPathNotFound
+	if dto.RootPath != "" {
+		if _, ok := files[dto.RootPath]; !ok {
+			return Manifest{}, ErrRootPathNotFound
+		}
 	}
 	return Manifest{RootPath: dto.RootPath, ProjectRoot: dto.ProjectRoot, FilesByPath: files}, nil
 }
 
-// RootFile returns the root file entry and whether it exists in FilesByPath.
+// RootFile returns the root file entry and whether it exists in FilesByPath. An
+// empty RootPath (folder-Document) returns ok=false: the root is a listing.
 func (m Manifest) RootFile() (ManifestFile, bool) {
+	if m.RootPath == "" {
+		return ManifestFile{}, false
+	}
 	f, ok := m.FilesByPath[m.RootPath]
 	return f, ok
 }

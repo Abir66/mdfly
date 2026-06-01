@@ -108,6 +108,37 @@ func TestSplitRefSuffix(t *testing.T) {
 	}
 }
 
+// TestPageResolver_directoryRef checks a link to an in-bundle directory rewrites
+// to that directory's listing URL rather than dead-ending.
+func TestPageResolver_directoryRef(t *testing.T) {
+	const slug = "s"
+	mfst := manifest.Manifest{
+		RootPath:    "index.md",
+		ProjectRoot: "/proj",
+		FilesByPath: map[string]manifest.ManifestFile{
+			"index.md":      {Hash: "rh", Size: 1},
+			"docs/guide.md": {Hash: "gh", Size: 1},
+		},
+	}
+	r2 := storage.New(storage.Config{PublicBaseURL: "https://cdn.test"})
+	resolve := pageResolver(r2, slug, mfst, "")
+
+	tests := []struct {
+		ref  string
+		want string
+	}{
+		{"docs", "/s/docs"},
+		{"./docs", "/s/docs"},
+		{"docs/", "/s/docs"},
+	}
+	for _, tt := range tests {
+		got, ok := resolve(tt.ref)
+		if !ok || got != tt.want {
+			t.Errorf("resolve(%q)=(%q,%v), want (%q,true)", tt.ref, got, ok, tt.want)
+		}
+	}
+}
+
 // TestPageResolver_preservesSuffix checks that a ref's query/fragment survives
 // rewriting for both markdown-page and asset targets.
 func TestPageResolver_preservesSuffix(t *testing.T) {
