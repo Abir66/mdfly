@@ -51,7 +51,7 @@ func TestGenerate_unique(t *testing.T) {
 }
 
 func TestIsReserved(t *testing.T) {
-	reserved := []string{"api", "cdn", "healthz", "llm", "mdfly", "login", "www"}
+	reserved := []string{"api", "cdn", "healthz", "llm", "mdfly", "login", "www", "landing", "static"}
 	for _, w := range reserved {
 		if !slug.IsReserved(w) {
 			t.Errorf("IsReserved(%q) = false, want true", w)

@@ -341,6 +341,78 @@ func TestView_nestedRoutingAndCrossMdRewrite(t *testing.T) {
 	}
 }
 
+func TestView_chromeAndStaticAssets(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	const projectRoot = "/proj"
+	files := map[string][]byte{
+		"index.md":         []byte("# Index\n\n[auth](./docs/api/auth.md)\n"),
+		"docs/api/auth.md": []byte("# Auth\n\nbody\n"),
+	}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee22", projectRoot, "index.md", files)
+
+	// Nested markdown page renders the full chrome.
+	status, body := getString(t, srv.URL+"/"+slug+"/docs/api/auth.md")
+	if status != http.StatusOK {
+		t.Fatalf("status=%d, want 200", status)
+	}
+	// Sidebar tree: file links keep their extension; current node highlighted.
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/index.md"`, slug)) {
+		t.Errorf("sidebar missing root file link:\n%s", body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/docs/api/auth.md"`, slug)) {
+		t.Errorf("sidebar missing nested file link:\n%s", body)
+	}
+	if !strings.Contains(body, "<details open") {
+		t.Errorf("current file's ancestor dirs must render <details open>:\n%s", body)
+	}
+	if !strings.Contains(body, `aria-current="page"`) {
+		t.Errorf("current node missing aria-current:\n%s", body)
+	}
+	// Breadcrumb with a home crumb → bundle root.
+	if !strings.Contains(body, `class="breadcrumb"`) || !strings.Contains(body, fmt.Sprintf(`href="/%s"`, slug)) {
+		t.Errorf("missing breadcrumb / home crumb:\n%s", body)
+	}
+
+	// The page references a hashed /_static stylesheet; it must be reachable with
+	// an immutable cache header.
+	cssURL := extractStaticURL(t, body, ".css")
+	resp, err := http.Get(srv.URL + cssURL)
+	if err != nil {
+		t.Fatalf("GET %s: %v", cssURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("%s status=%d, want 200", cssURL, resp.StatusCode)
+	}
+	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
+		t.Errorf("%s Cache-Control=%q, want immutable", cssURL, cc)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/css") {
+		t.Errorf("%s Content-Type=%q, want text/css", cssURL, ct)
+	}
+}
+
+// extractStaticURL pulls the first /_static/...<ext> URL out of an HTML page.
+func extractStaticURL(t *testing.T, html, ext string) string {
+	t.Helper()
+	i := strings.Index(html, "/_static/")
+	if i < 0 {
+		t.Fatalf("no /_static/ URL in page:\n%s", html)
+	}
+	end := strings.Index(html[i:], ext)
+	if end < 0 {
+		t.Fatalf("no %s asset in page:\n%s", ext, html)
+	}
+	return html[i : i+end+len(ext)]
+}
+
 // noRedirectClient returns an http.Client that does not follow redirects, so a
 // 301's status and Location can be asserted directly.
 func noRedirectClient() *http.Client {
@@ -444,7 +516,13 @@ func TestView_htmlEscaping(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
 
-	if strings.Contains(bodyStr, "<script") {
-		t.Error("body contains <script> tag — XSS risk")
+	// The chrome ships its own <script> tags (app.js + the inline rail snippet),
+	// so assert the user-authored payload specifically is stripped, not that the
+	// page has zero scripts.
+	if strings.Contains(bodyStr, "alert('xss')") {
+		t.Errorf("user <script> payload not sanitized — XSS risk:\n%s", bodyStr)
+	}
+	if strings.Contains(bodyStr, "<script>alert") {
+		t.Errorf("body contains live user <script> tag — XSS risk:\n%s", bodyStr)
 	}
 }

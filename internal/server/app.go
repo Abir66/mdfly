@@ -18,6 +18,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/view"
+	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -38,6 +39,7 @@ type App struct {
 	pool    *pgxpool.Pool
 	db      *db.Client
 	storage *storage.Client
+	static  *static.Assets
 	publish *publish.Service
 	view    *view.Service
 }
@@ -53,18 +55,20 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 
 	r2 := storage.New(cfg.R2)
 	pg := db.New(pool)
+	assets := static.New()
 
 	return &App{
 		cfg:     cfg,
 		pool:    pool,
 		db:      pg,
 		storage: r2,
+		static:  assets,
 		publish: &publish.Service{
 			Db:      pg,
 			Storage: r2,
 			BaseURL: cfg.BaseURL,
 		},
-		view: &view.Service{Db: pg, Storage: r2},
+		view: &view.Service{Db: pg, Storage: r2, Static: assets},
 	}, nil
 }
 

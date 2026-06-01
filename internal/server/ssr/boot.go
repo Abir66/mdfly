@@ -28,7 +28,13 @@ var ContentSecurityPolicy = "default-src 'self'; " +
 	"img-src 'self' https: data:; " +
 	"style-src 'self' 'unsafe-inline' " + cdnBase + "; " +
 	"font-src " + cdnBase + " data:; " +
-	"script-src 'self' " + bootScriptHashes() + " " + cdnBase
+	"script-src 'self' " + scriptHash(railSnippet) + " " + bootScriptHashes() + " " + cdnBase
+
+// scriptHash returns the CSP 'sha256-...' source for an inline script body.
+func scriptHash(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}
 
 // bootScriptHashes returns the space-separated CSP 'sha256-...' sources for
 // every bootScript variant (mermaid-only, math-only, both), so the inline
