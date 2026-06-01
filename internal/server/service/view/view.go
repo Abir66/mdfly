@@ -83,22 +83,80 @@ func (s *Service) loadManifest(ctx context.Context, slug string) (manifest.Manif
 }
 
 // render resolves key against the bundle manifest and dispatches on node type
-// (ADR-0024). An exact markdown key renders to HTML; a directory prefix renders
-// a Directory Listing; a non-markdown file is a placeholder until S24 (asset
-// center); anything else is a 404.
+// (ADR-0024). A markdown key renders to HTML; an image renders inline; another
+// file renders a text preview or download card (S24); a directory prefix renders
+// a Directory Listing; anything else is a 404.
 func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
 	res := filetree.Classify(manifestKeys(mfst), key)
 	switch res.Kind {
 	case filetree.File:
-		if !isMarkdownKey(res.Key) {
-			return "", httpx.NotFound("not found")
+		switch {
+		case isMarkdownKey(res.Key):
+			return s.renderMarkdown(ctx, slug, mfst, res.Key)
+		case isImageKey(res.Key):
+			return s.renderImage(slug, mfst, res.Key)
+		default:
+			return s.renderTextPreview(ctx, slug, mfst, res.Key)
 		}
-		return s.renderMarkdown(ctx, slug, mfst, res.Key)
 	case filetree.Dir:
 		return s.renderDirectory(ctx, slug, mfst, res.Key)
 	default:
 		return "", httpx.NotFound("not found")
 	}
+}
+
+// PreviewMaxBytes is the largest text/code file rendered inline as highlighted
+// source; larger files fall back to a download card without a blob fetch.
+const PreviewMaxBytes = 1 << 20
+
+// renderImage renders an image key as an inline <img> pointing at its CDN blob.
+// No blob is fetched — the browser loads it directly from the CDN.
+func (s *Service) renderImage(slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
+	return s.renderPage(slug, mfst, key, ssr.PageData{
+		Title: path.Base(key),
+		Image: &ssr.Asset{Name: path.Base(key), URL: s.blobURL(slug, mfst, key)},
+	})
+}
+
+// renderTextPreview renders a non-markdown, non-image file. Guards run in order:
+// a file larger than PreviewMaxBytes yields a download card with no fetch; else
+// the blob is fetched and, if it sniffs binary (a lying extension), a download
+// card; otherwise the source is highlighted inline.
+func (s *Service) renderTextPreview(ctx context.Context, slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
+	f := mfst.FilesByPath[key]
+	if f.Size > PreviewMaxBytes {
+		return s.renderDownload(slug, mfst, key)
+	}
+	content, err := s.Storage.GetBlob(ctx, storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key)))
+	if err != nil {
+		slog.Error("storage.GetBlob failed", "slug", slug, "key", key, "hash", f.Hash, "err", err)
+		return "", httpx.Internal("internal error")
+	}
+	if markdown.IsBinary(content) {
+		return s.renderDownload(slug, mfst, key)
+	}
+	highlighted, err := markdown.HighlightFile(path.Base(key), content)
+	if err != nil {
+		slog.Error("markdown highlight failed", "slug", slug, "key", key, "err", err)
+		return "", httpx.Internal("render error")
+	}
+	return s.renderPage(slug, mfst, key, ssr.PageData{Title: path.Base(key), Body: highlighted})
+}
+
+// renderDownload renders a metadata card (name, size, CDN Download link) for a
+// file that can't be previewed inline. Size comes from the manifest — no fetch.
+func (s *Service) renderDownload(slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {
+	f := mfst.FilesByPath[key]
+	return s.renderPage(slug, mfst, key, ssr.PageData{
+		Title:    path.Base(key),
+		Download: &ssr.Asset{Name: path.Base(key), URL: s.blobURL(slug, mfst, key), Size: f.Size},
+	})
+}
+
+// blobURL returns the public CDN URL for a file key's blob.
+func (s *Service) blobURL(slug string, mfst manifest.Manifest, key string) string {
+	f := mfst.FilesByPath[key]
+	return s.Storage.BlobPublicURL(storage.BlobKey(slug, f.Hash, storage.ExtFromPath(key)))
 }
 
 // manifestKeys returns the bundle's manifest keys as a slice for filetree.

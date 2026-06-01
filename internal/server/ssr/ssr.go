@@ -45,6 +45,20 @@ type PageData struct {
 	// the center renders a Directory Listing above Body; Body then carries the
 	// directory's rendered index document (README/index.md), or is empty.
 	Listing []filetree.Entry
+
+	// Image and Download are the non-markdown asset centers (S24); at most one is
+	// set. Image renders an inline <img> from the CDN; Download renders a card
+	// (name, size, Download link) for oversize/binary/other files.
+	Image    *Asset
+	Download *Asset
+}
+
+// Asset describes a non-markdown node's center: its display name, CDN blob URL,
+// and byte size. Image centers ignore Size; download cards use all three.
+type Asset struct {
+	Name string
+	URL  string
+	Size int64
 }
 
 // nodePair carries the slug alongside a tree node so the recursive tree template

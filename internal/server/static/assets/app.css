@@ -121,6 +121,25 @@ body {
   background: var(--sidebar-bg);
 }
 
+/* Asset centers (S24): inline image + download card */
+.asset-image { max-width: 100%; height: auto; }
+.download-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 24rem;
+}
+.download-card .asset-name { font-weight: 600; margin: 0 0 .25rem; }
+.download-card .asset-size { color: var(--border); margin: 0 0 1rem; }
+.download-card .download {
+  display: inline-block;
+  padding: .5rem 1rem;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+}
+
 /* Mobile top bar — hidden on desktop */
 .topbar { display: none; }
 
