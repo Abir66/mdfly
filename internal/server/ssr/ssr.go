@@ -41,6 +41,10 @@ type PageData struct {
 	Breadcrumb []filetree.Crumb
 	CSSURL     string
 	JSURL      string
+	// Listing is the addressed directory's immediate children (S23). When set,
+	// the center renders a Directory Listing above Body; Body then carries the
+	// directory's rendered index document (README/index.md), or is empty.
+	Listing []filetree.Entry
 }
 
 // nodePair carries the slug alongside a tree node so the recursive tree template

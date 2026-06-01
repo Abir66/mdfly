@@ -315,10 +315,16 @@ func TestView_nestedRoutingAndCrossMdRewrite(t *testing.T) {
 		t.Errorf("/%s/sub2/a.md: ../logo.png + /proj/logo.png must resolve to %q:\n%s", slug, logoSrc, body)
 	}
 
-	// Directory prefix is a placeholder 404 until S23 (Directory Listing).
-	status, _ = getString(t, srv.URL+"/"+slug+"/sub2")
-	if status != http.StatusNotFound {
-		t.Errorf("directory prefix /%s/sub2 status=%d, want 404 (S23 placeholder)", slug, status)
+	// Directory prefix renders a Directory Listing of its immediate children.
+	status, body = getString(t, srv.URL+"/"+slug+"/sub2")
+	if status != http.StatusOK {
+		t.Fatalf("directory prefix /%s/sub2 status=%d, want 200", slug, status)
+	}
+	if !strings.Contains(body, `class="listing"`) {
+		t.Errorf("/%s/sub2 missing Directory Listing:\n%s", slug, body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/sub2/a.md"`, slug)) {
+		t.Errorf("/%s/sub2 listing missing child link to a.md:\n%s", slug, body)
 	}
 
 	// Unknown nested path → 404.
@@ -339,6 +345,70 @@ func TestView_nestedRoutingAndCrossMdRewrite(t *testing.T) {
 	if loc := resp.Header.Get("Location"); loc != "/"+slug+"/y.md" {
 		t.Errorf("trailing-slash Location=%q, want /%s/y.md", loc, slug)
 	}
+}
+
+func TestView_directoryListingWithReadme(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	const projectRoot = "/proj"
+	files := map[string][]byte{
+		"index.md":         []byte("# Index\n\n[docs](./docs)\n"),
+		"docs/README.md":   []byte("# Docs Home\n\nWelcome.\n"),
+		"docs/guide.md":    []byte("# Guide\n"),
+		"docs/api/spec.md": []byte("# Spec\n"),
+	}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee33", projectRoot, "index.md", files)
+
+	// A link to the directory lands on its listing, not a dead end.
+	status, body := getString(t, srv.URL+"/"+slug)
+	if status != http.StatusOK {
+		t.Fatalf("root status=%d, want 200", status)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/docs"`, slug)) {
+		t.Errorf("root: ./docs link not rewritten to directory listing URL:\n%s", body)
+	}
+
+	// The directory listing: immediate folders (api/) first, then files, each
+	// clickable; the README renders below the listing.
+	status, body = getString(t, srv.URL+"/"+slug+"/docs")
+	if status != http.StatusOK {
+		t.Fatalf("/%s/docs status=%d, want 200", slug, status)
+	}
+	if cc := getString2Header(t, srv.URL+"/"+slug+"/docs", "Cache-Control"); cc != "public, max-age=300, s-maxage=86400" {
+		t.Errorf("directory Cache-Control=%q, want public, max-age=300, s-maxage=86400", cc)
+	}
+	if !strings.Contains(body, `class="listing"`) {
+		t.Errorf("/%s/docs missing Directory Listing:\n%s", slug, body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/docs/api"`, slug)) {
+		t.Errorf("listing missing folder child api/:\n%s", body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`href="/%s/docs/guide.md"`, slug)) {
+		t.Errorf("listing missing file child guide.md:\n%s", body)
+	}
+	if strings.Index(body, "docs/api") > strings.Index(body, "docs/guide.md") {
+		t.Errorf("folders must list before files:\n%s", body)
+	}
+	if !strings.Contains(body, "Docs Home") {
+		t.Errorf("/%s/docs missing rendered README below listing:\n%s", slug, body)
+	}
+}
+
+// getString2Header GETs url and returns one response header value.
+func getString2Header(t *testing.T, url, header string) string {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	return resp.Header.Get(header)
 }
 
 func TestView_chromeAndStaticAssets(t *testing.T) {

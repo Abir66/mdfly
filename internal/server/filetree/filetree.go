@@ -154,6 +154,86 @@ func markCurrent(root *TreeNode, key string) {
 	}
 }
 
+// indexCandidates are the filenames a directory listing renders inline below
+// itself, in precedence order, matched case-insensitively (PRD: Viewer Chrome).
+var indexCandidates = []string{"readme.md", "index.md"}
+
+// Entry is one immediate child in a Directory Listing. Name is the display name,
+// Path the key addressable at /{slug}/{Path}, Size the file's byte size from the
+// manifest (0 for directories).
+type Entry struct {
+	Name  string
+	IsDir bool
+	Size  int64
+	Path  string
+}
+
+// ListDir returns the immediate folder/file children of prefix, folders-first
+// then files, alphabetical within each group. files maps every manifest key to
+// its byte size; a folder exists because it is a path prefix of one or more
+// keys. Deeper descendants are collapsed into their first-segment folder.
+// Leading/trailing slashes on prefix are ignored; an unknown prefix yields nil.
+func ListDir(files map[string]int64, prefix string) []Entry {
+	prefix = strings.Trim(prefix, "/")
+	scope := ""
+	if prefix != "" {
+		scope = prefix + "/"
+	}
+	seenDir := make(map[string]bool)
+	var dirs, regular []Entry
+	for key, size := range files {
+		if !strings.HasPrefix(key, scope) {
+			continue
+		}
+		rest := key[len(scope):]
+		if rest == "" {
+			continue
+		}
+		if name, _, isDir := strings.Cut(rest, "/"); isDir {
+			if !seenDir[name] {
+				seenDir[name] = true
+				dirs = append(dirs, Entry{Name: name, IsDir: true, Path: scope + name})
+			}
+			continue
+		}
+		regular = append(regular, Entry{Name: rest, Size: size, Path: key})
+	}
+	sortEntries(dirs)
+	sortEntries(regular)
+	return append(dirs, regular...)
+}
+
+// sortEntries orders entries alphabetically by Name.
+func sortEntries(es []Entry) {
+	sort.SliceStable(es, func(i, j int) bool { return es[i].Name < es[j].Name })
+}
+
+// IndexFile returns the key of prefix's index document, if any: an immediate
+// child named README.md (case-insensitive) wins over index.md. The first match
+// in candidate-precedence order is returned. ok is false when neither exists.
+func IndexFile(keys []string, prefix string) (string, bool) {
+	prefix = strings.Trim(prefix, "/")
+	scope := ""
+	if prefix != "" {
+		scope = prefix + "/"
+	}
+	for _, want := range indexCandidates {
+		for _, key := range keys {
+			if !strings.HasPrefix(key, scope) {
+				continue
+			}
+			rest := key[len(scope):]
+			if rest == "" || strings.ContainsRune(rest, '/') {
+				continue
+			}
+			if strings.ToLower(rest) == want {
+				return key, true
+			}
+		}
+	}
+	return "", false
+}
+
 // Crumb is one segment of a Breadcrumb. Path addresses the segment at
 // /{slug}/{Path} (empty Path is the home crumb → bundle root). IsCurrent marks
 // the final segment (the addressed node), which renders unlinked.

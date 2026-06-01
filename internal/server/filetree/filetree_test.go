@@ -176,6 +176,87 @@ func TestBuildTree_singleFileBundle(t *testing.T) {
 	}
 }
 
+func TestListDir(t *testing.T) {
+	files := map[string]int64{
+		"index.md":         10,
+		"readme.md":        20,
+		"docs/api/auth.md": 30,
+		"docs/guide.md":    40,
+		"assets/logo.png":  99,
+	}
+	tests := []struct {
+		name   string
+		prefix string
+		want   []Entry
+	}{
+		{
+			name:   "root folders-first then files alpha",
+			prefix: "",
+			want: []Entry{
+				{Name: "assets", IsDir: true, Path: "assets"},
+				{Name: "docs", IsDir: true, Path: "docs"},
+				{Name: "index.md", Size: 10, Path: "index.md"},
+				{Name: "readme.md", Size: 20, Path: "readme.md"},
+			},
+		},
+		{
+			name:   "immediate children only",
+			prefix: "docs",
+			want: []Entry{
+				{Name: "api", IsDir: true, Path: "docs/api"},
+				{Name: "guide.md", Size: 40, Path: "docs/guide.md"},
+			},
+		},
+		{
+			name:   "leaf dir lists its file",
+			prefix: "docs/api",
+			want:   []Entry{{Name: "auth.md", Size: 30, Path: "docs/api/auth.md"}},
+		},
+		{
+			name:   "trailing slash tolerated",
+			prefix: "docs/",
+			want: []Entry{
+				{Name: "api", IsDir: true, Path: "docs/api"},
+				{Name: "guide.md", Size: 40, Path: "docs/guide.md"},
+			},
+		},
+		{name: "miss yields no entries", prefix: "nope", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ListDir(files, tt.prefix)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ListDir(%q) = %+v, want %+v", tt.prefix, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIndexFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		keys    []string
+		prefix  string
+		wantKey string
+		wantOK  bool
+	}{
+		{"readme precedence over index", []string{"docs/README.md", "docs/index.md"}, "docs", "docs/README.md", true},
+		{"case-insensitive readme", []string{"docs/ReadMe.md"}, "docs", "docs/ReadMe.md", true},
+		{"index when no readme", []string{"docs/INDEX.md", "docs/x.md"}, "docs", "docs/INDEX.md", true},
+		{"root prefix", []string{"README.md", "a.md"}, "", "README.md", true},
+		{"immediate children only", []string{"docs/sub/README.md"}, "docs", "", false},
+		{"no index miss", []string{"docs/a.md", "docs/b.md"}, "docs", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, ok := IndexFile(tt.keys, tt.prefix)
+			if ok != tt.wantOK || key != tt.wantKey {
+				t.Errorf("IndexFile(%q)=(%q,%v), want (%q,%v)", tt.prefix, key, ok, tt.wantKey, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestBreadcrumb_nested(t *testing.T) {
 	got := Breadcrumb("docs/api/auth.md")
 	want := []Crumb{

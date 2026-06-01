@@ -55,6 +55,13 @@
       {{- else}}<a href="{{href $.Slug $c.Path}}">{{if $c.Name}}{{$c.Name}}{{else}}&#8962;{{end}}</a>{{end}}
       {{- end}}
     </nav>
+    {{- if .Listing}}
+    <ul class="listing">
+      {{- range .Listing}}
+      <li><a class="{{if .IsDir}}dir{{else}}file{{end}}" href="{{href $.Slug .Path}}">{{.Name}}{{if .IsDir}}/{{end}}</a>{{if not .IsDir}}<span class="size">{{.Size}}</span>{{end}}</li>
+      {{- end}}
+    </ul>
+    {{- end}}
     <article class="content">{{.Body}}</article>
   </main>
 </div>

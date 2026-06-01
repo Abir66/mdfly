@@ -58,6 +58,19 @@ func TestFromDTO_rootPathNotInFiles(t *testing.T) {
 	}
 }
 
+func TestFromDTO_emptyRootPathTolerated(t *testing.T) {
+	m, err := manifest.FromDTO(api.BundleDTO{
+		RootPath: "",
+		Files:    []api.BundleFileDTO{{Path: "a.md", Hash: "ah", Size: 1}},
+	})
+	if err != nil {
+		t.Fatalf("FromDTO empty root_path: %v", err)
+	}
+	if _, ok := m.RootFile(); ok {
+		t.Error("RootFile: ok=true for empty root_path, want false")
+	}
+}
+
 func TestRootFile(t *testing.T) {
 	m, err := manifest.FromDTO(api.BundleDTO{
 		RootPath: "doc.md",
