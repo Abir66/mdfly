@@ -144,6 +144,28 @@ func TestBuildTree_deeplyNested(t *testing.T) {
 	}
 }
 
+func TestBuildTree_directoryCurrentKey(t *testing.T) {
+	keys := []string{"index.md", "docs/api/auth.md", "docs/guide.md", "assets/logo.png"}
+	root := BuildTree(keys, "docs/api")
+
+	api := find(root, "docs/api")
+	if api == nil || !api.IsDir {
+		t.Fatalf("docs/api dir node must exist: %+v", api)
+	}
+	if !api.Current || !api.Open {
+		t.Errorf("current dir must be Current and Open: Current=%v Open=%v", api.Current, api.Open)
+	}
+	if docs := find(root, "docs"); !docs.Open {
+		t.Errorf("ancestor dir 'docs' must be open")
+	}
+	if assets := find(root, "assets"); assets.Open {
+		t.Errorf("non-ancestor dir 'assets' must not be open")
+	}
+	if auth := find(root, "docs/api/auth.md"); auth.Current {
+		t.Errorf("file under current dir must not be marked Current")
+	}
+}
+
 func TestBuildTree_singleFileBundle(t *testing.T) {
 	root := BuildTree([]string{"only.md"}, "only.md")
 	if got, want := childNames(root), []string{"only.md"}; !reflect.DeepEqual(got, want) {

@@ -400,17 +400,35 @@ func TestView_chromeAndStaticAssets(t *testing.T) {
 }
 
 // extractStaticURL pulls the first /_static/...<ext> URL out of an HTML page.
+// Pages reference several asset types (.css, .js), so it scans every /_static/
+// occurrence and returns the first whose URL token actually ends in ext, rather
+// than blindly extending the first match to the next ext (which can span URLs).
 func extractStaticURL(t *testing.T, html, ext string) string {
 	t.Helper()
-	i := strings.Index(html, "/_static/")
-	if i < 0 {
+	const marker = "/_static/"
+	found := false
+	for start := 0; ; {
+		rel := strings.Index(html[start:], marker)
+		if rel < 0 {
+			break
+		}
+		i := start + rel
+		found = true
+		start = i + len(marker)
+		// The URL token runs until a quote, space, or angle bracket.
+		end := strings.IndexAny(html[i:], "\"' \t\n><")
+		if end < 0 {
+			end = len(html) - i
+		}
+		if url := html[i : i+end]; strings.HasSuffix(url, ext) {
+			return url
+		}
+	}
+	if !found {
 		t.Fatalf("no /_static/ URL in page:\n%s", html)
 	}
-	end := strings.Index(html[i:], ext)
-	if end < 0 {
-		t.Fatalf("no %s asset in page:\n%s", ext, html)
-	}
-	return html[i : i+end+len(ext)]
+	t.Fatalf("no %s asset in page:\n%s", ext, html)
+	return ""
 }
 
 // noRedirectClient returns an http.Client that does not follow redirects, so a

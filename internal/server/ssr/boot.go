@@ -43,8 +43,7 @@ func bootScriptHashes() string {
 	variants := [][2]bool{{true, false}, {false, true}, {true, true}}
 	hashes := make([]string, 0, len(variants))
 	for _, v := range variants {
-		sum := sha256.Sum256([]byte(scriptBody(v[0], v[1])))
-		hashes = append(hashes, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
+		hashes = append(hashes, scriptHash(scriptBody(v[0], v[1])))
 	}
 	return strings.Join(hashes, " ")
 }

@@ -123,7 +123,10 @@ func sortChildren(n *TreeNode) {
 }
 
 // markCurrent walks currentKey's segments, opening each ancestor directory and
-// marking the addressed leaf Current. A miss (key not in the tree) is a no-op.
+// marking the addressed leaf Current. The leaf may itself be a directory (e.g.
+// "docs/api"), so the final segment is resolved as a directory first and only
+// then as a file; a current directory is both Current and Open (auto-expanded).
+// A miss (key not in the tree) is a no-op.
 func markCurrent(root *TreeNode, key string) {
 	if key == "" {
 		return
@@ -131,16 +134,22 @@ func markCurrent(root *TreeNode, key string) {
 	segs := strings.Split(key, "/")
 	cur := root
 	for i, seg := range segs {
-		isDir := i < len(segs)-1
-		child := findChild(cur, seg, isDir)
+		if i == len(segs)-1 {
+			if child := findChild(cur, seg, true); child != nil {
+				child.Current = true
+				child.Open = true
+				return
+			}
+			if child := findChild(cur, seg, false); child != nil {
+				child.Current = true
+			}
+			return
+		}
+		child := findChild(cur, seg, true)
 		if child == nil {
 			return
 		}
-		if isDir {
-			child.Open = true
-		} else {
-			child.Current = true
-		}
+		child.Open = true
 		cur = child
 	}
 }
