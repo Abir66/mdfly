@@ -6,6 +6,7 @@
   "use strict";
 
   var RAIL_KEY = "mdfly:sidebar-rail";
+  var MOBILE = "(max-width: 768px)"; // matches the app.css drawer breakpoint
   var root = document.documentElement; // state classes live on <html>
   var viewer = document.querySelector(".viewer");
   if (!viewer) return;
@@ -15,9 +16,15 @@
     if (el) el.addEventListener("click", fn);
   }
 
-  // Desktop: collapse the sidebar to a rail, persisting the choice. The inline
-  // <head> snippet applies the persisted state before paint; this toggles it.
+  // The sidebar-header control. On desktop it collapses the sidebar to a rail,
+  // persisting the choice (the inline <head> snippet applies it before paint).
+  // On mobile the rail concept doesn't apply — the sidebar is a drawer, so the
+  // same control just closes it.
   on('[data-action="toggle-rail"]', function () {
+    if (window.matchMedia(MOBILE).matches) {
+      root.classList.remove("drawer-open");
+      return;
+    }
     var railed = root.classList.toggle("rail");
     try {
       localStorage.setItem(RAIL_KEY, railed ? "1" : "0");
