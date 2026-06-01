@@ -24,11 +24,59 @@
   {{- if .Excerpt}}
   <meta name="twitter:description" content="{{.Excerpt}}">
   {{- end}}
+  {{- if .CSSURL}}
+  <link rel="stylesheet" href="{{.CSSURL}}">
+  {{- end}}
+  {{- if .RailScript}}
+  {{.RailScript}}
+  {{- end}}
 </head>
 <body>
+{{- if .Tree}}
+<div class="viewer">
+  <header class="topbar">
+    <button class="icon-btn" data-action="toggle-drawer" aria-label="Open file tree">☰</button>
+    <span class="wordmark">mdFly</span>
+  </header>
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <a class="wordmark" href="/{{.Slug}}">mdFly</a>
+      <button class="icon-btn" data-action="toggle-rail" aria-label="Collapse sidebar">⇔</button>
+    </div>
+    <nav class="tree" aria-label="Files">
+      <ul>{{range .Tree.Children}}{{template "node" (node $.Slug .)}}{{end}}</ul>
+    </nav>
+  </aside>
+  <main class="center">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      {{- range $i, $c := .Breadcrumb}}
+      {{- if $i}}<span class="sep">/</span>{{end}}
+      {{- if $c.IsCurrent}}<span class="current">{{if $c.Name}}{{$c.Name}}{{else}}mdFly{{end}}</span>
+      {{- else}}<a href="{{href $.Slug $c.Path}}">{{if $c.Name}}{{$c.Name}}{{else}}&#8962;{{end}}</a>{{end}}
+      {{- end}}
+    </nav>
+    <article class="content">{{.Body}}</article>
+  </main>
+</div>
+{{- else}}
 {{.Body}}
+{{- end}}
 {{- if .BootScript}}
 {{.BootScript}}
 {{- end}}
+{{- if .JSURL}}
+<script src="{{.JSURL}}" defer></script>
+{{- end}}
 </body>
 </html>
+{{define "node"}}
+{{- $slug := .Slug}}{{with .Node}}
+{{- if .IsDir}}
+<li><details{{if .Open}} open{{end}}><summary{{if .Current}} aria-current="page"{{end}}>{{.Name}}</summary>
+<ul>{{range .Children}}{{template "node" (node $slug .)}}{{end}}</ul>
+</details></li>
+{{- else}}
+<li><a class="file" href="{{href $slug .Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Name}}</a></li>
+{{- end}}
+{{- end}}
+{{- end}}

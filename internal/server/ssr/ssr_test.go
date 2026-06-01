@@ -5,8 +5,89 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Abir66/mdfly/internal/server/filetree"
 	"github.com/Abir66/mdfly/internal/server/ssr"
 )
+
+func chromeData() ssr.PageData {
+	keys := []string{"index.md", "docs/api/auth.md", "assets/logo.png"}
+	const current = "docs/api/auth.md"
+	return ssr.PageData{
+		Title:      "Auth",
+		Body:       template.HTML("<h1>Auth</h1>"),
+		Slug:       "abc12345",
+		Tree:       filetree.BuildTree(keys, current),
+		Breadcrumb: filetree.Breadcrumb(current),
+		CSSURL:     "/_static/app.deadbeef12.css",
+		JSURL:      "/_static/app.cafebabe34.js",
+	}
+}
+
+func TestRenderPage_ChromeStaticLinks(t *testing.T) {
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `href="/_static/app.deadbeef12.css"`) {
+		t.Errorf("missing hashed CSS link:\n%s", out)
+	}
+	if !strings.Contains(out, `src="/_static/app.cafebabe34.js"`) {
+		t.Errorf("missing hashed JS script:\n%s", out)
+	}
+}
+
+func TestRenderPage_ChromeTree(t *testing.T) {
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// File links keep their extension and are addressed under the slug.
+	if !strings.Contains(out, `href="/abc12345/docs/api/auth.md"`) {
+		t.Errorf("tree missing extension-kept file link:\n%s", out)
+	}
+	if !strings.Contains(out, `href="/abc12345/index.md"`) {
+		t.Errorf("tree missing root file link:\n%s", out)
+	}
+	// The current file's ancestor folders auto-expand via native <details open>.
+	if c := strings.Count(out, "<details open"); c < 2 {
+		t.Errorf("expected ancestor dirs (docs, docs/api) open, got %d <details open>:\n%s", c, out)
+	}
+	// The current node is highlighted.
+	if !strings.Contains(out, `aria-current="page"`) {
+		t.Errorf("current node missing aria-current:\n%s", out)
+	}
+}
+
+func TestRenderPage_ChromeBreadcrumb(t *testing.T) {
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Home crumb first → bundle root.
+	if !strings.Contains(out, `class="breadcrumb"`) {
+		t.Errorf("missing breadcrumb:\n%s", out)
+	}
+	if !strings.Contains(out, `href="/abc12345"`) {
+		t.Errorf("breadcrumb missing home crumb → /slug:\n%s", out)
+	}
+	if !strings.Contains(out, `href="/abc12345/docs"`) {
+		t.Errorf("breadcrumb missing intermediate crumb:\n%s", out)
+	}
+}
+
+func TestRenderPage_ChromeMobileAndRailSnippet(t *testing.T) {
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `data-action="toggle-drawer"`) {
+		t.Errorf("missing mobile drawer toggle:\n%s", out)
+	}
+	// Inline <head> snippet applies persisted rail state before paint.
+	if !strings.Contains(out, "mdfly:sidebar-rail") {
+		t.Errorf("missing inline rail-state snippet:\n%s", out)
+	}
+}
 
 func TestRenderPage_TitleInHead(t *testing.T) {
 	out, err := ssr.RenderPage(ssr.PageData{Title: "Hello World", Body: template.HTML("<p>body</p>")})

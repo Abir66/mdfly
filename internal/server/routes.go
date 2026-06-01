@@ -14,6 +14,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(a.publish))
 	mux.HandleFunc("GET /healthz", handlers.Healthz())
 	mux.HandleFunc("GET /robots.txt", handlers.Robots())
+	mux.Handle("GET /_static/", a.static.Handler())
 	mux.HandleFunc("GET /{slug}", handlers.View(a.view))
 	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(a.view))
 	return middleware.Logger(middleware.Recover(mux))

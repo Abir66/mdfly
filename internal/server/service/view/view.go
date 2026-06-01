@@ -20,6 +20,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/httpx"
 	"github.com/Abir66/mdfly/internal/server/manifest"
 	"github.com/Abir66/mdfly/internal/server/ssr"
+	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -30,6 +31,7 @@ const markdownRenderTimeout = 2 * time.Second
 type Service struct {
 	Db      *db.Client
 	Storage *storage.Client
+	Static  *static.Assets
 }
 
 // RenderRoot renders the bundle's root document for GET /{slug}.
@@ -131,6 +133,11 @@ func (s *Service) renderMarkdown(ctx context.Context, slug string, mfst manifest
 		Body:          template.HTML(rendered),
 		EnrichMermaid: meta.HasMermaid,
 		EnrichMath:    meta.HasMath,
+		Slug:          slug,
+		Tree:          filetree.BuildTree(manifestKeys(mfst), key),
+		Breadcrumb:    filetree.Breadcrumb(key),
+		CSSURL:        s.Static.CSSURL(),
+		JSURL:         s.Static.JSURL(),
 	})
 	if err != nil {
 		slog.Error("ssr.RenderPage failed", "slug", slug, "key", key, "err", err)

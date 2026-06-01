@@ -33,6 +33,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/handlers"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/view"
+	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
@@ -188,7 +189,7 @@ func TestCLIPublish(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
-	viewSvc := &view.Service{Db: pg, Storage: r2}
+	viewSvc := &view.Service{Db: pg, Storage: r2, Static: static.New()}
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
 	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
@@ -262,7 +263,7 @@ func TestCLIPublish_withImage(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
-	viewSvc := &view.Service{Db: pg, Storage: r2}
+	viewSvc := &view.Service{Db: pg, Storage: r2, Static: static.New()}
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
 	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
@@ -412,7 +413,7 @@ func TestCLIPublish_retriesOnTransient503(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
-	viewSvc := &view.Service{Db: pg, Storage: r2}
+	viewSvc := &view.Service{Db: pg, Storage: r2, Static: static.New()}
 
 	const failures = 2
 	var initKeys, commitKeys keyRecorder
