@@ -4,11 +4,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/api"
 )
+
+// connectSrcAllowsHTTPS asserts the CSP's connect-src directive permits cross-origin
+// https: fetches, which the Raw toggle needs to pull the source blob from the CDN.
+var connectSrcAllowsHTTPS = regexp.MustCompile(`connect-src[^;]*https:`)
 
 func TestView_returnsRenderedMarkdown(t *testing.T) {
 	if testing.Short() {
@@ -656,8 +661,8 @@ func TestView_rawToggleEmbedsCDNBlobURL(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "connect-src") {
-		t.Errorf("Content-Security-Policy=%q, want connect-src for the raw fetch", csp)
+	if csp := resp.Header.Get("Content-Security-Policy"); !connectSrcAllowsHTTPS.MatchString(csp) {
+		t.Errorf("Content-Security-Policy=%q, want connect-src allowing https: for the raw fetch", csp)
 	}
 
 	body, _ := io.ReadAll(resp.Body)

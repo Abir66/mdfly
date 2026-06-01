@@ -37,6 +37,7 @@
       pre.dataset.loaded = "1"; // guard before fetch: at most one request
       fetch(btn.getAttribute("data-raw-url"))
         .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
           return r.text();
         })
         .then(function (text) {
