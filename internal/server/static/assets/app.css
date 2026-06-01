@@ -113,6 +113,36 @@ body {
 .breadcrumb .sep { color: var(--border); }
 .breadcrumb .current { color: var(--fg); }
 
+/* Raw toggle (S25): pushed to the top-right of the center, by the breadcrumb. */
+.raw-toggle {
+  margin-left: auto;
+  font: inherit;
+  font-size: .8rem;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: .15rem .55rem;
+  cursor: pointer;
+}
+.raw-toggle:hover { background: var(--hover); color: var(--fg); }
+.raw-toggle[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+
+/* The source view: hidden until the Raw toggle adds .raw to the center, which
+   then swaps the rendered content for the byte-identical markdown source. */
+.raw-source {
+  display: none;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+  padding: 1rem;
+  border-radius: 6px;
+  background: var(--sidebar-bg);
+}
+.center.raw .content { display: none; }
+.center.raw .raw-source { display: block; }
+
 .content img { max-width: 100%; }
 .content pre {
   overflow-x: auto;

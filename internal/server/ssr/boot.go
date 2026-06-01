@@ -21,11 +21,14 @@ const (
 )
 
 // ContentSecurityPolicy is the CSP for SSR view pages. It allows the jsdelivr
-// CDN for the Mermaid/KaTeX shims (script + style + fonts) and pins the inline
+// CDN for the Mermaid/KaTeX shims (script + style + fonts), pins the inline
 // boot snippet by SHA256 hash (one per deterministic variant) instead of
-// 'unsafe-inline', while keeping everything else same-origin.
+// 'unsafe-inline', and permits the Raw toggle's cross-origin fetch of the
+// source blob via connect-src (the asset CDN is reached over https, matching
+// img-src; ADR-0024), while keeping everything else same-origin.
 var ContentSecurityPolicy = "default-src 'self'; " +
 	"img-src 'self' https: data:; " +
+	"connect-src 'self' https:; " +
 	"style-src 'self' 'unsafe-inline' " + cdnBase + "; " +
 	"font-src " + cdnBase + " data:; " +
 	"script-src 'self' " + scriptHash(railSnippet) + " " + bootScriptHashes() + " " + cdnBase

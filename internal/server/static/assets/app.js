@@ -24,6 +24,31 @@
     } catch (e) {}
   });
 
+  // Raw toggle: swap the rendered HTML for the byte-identical source markdown,
+  // fetched once directly from the CDN (zero backend load) and cached client-side.
+  // Subsequent toggles are pure CSS class flips — no further network.
+  on('[data-action="toggle-raw"]', function () {
+    var btn = this;
+    var center = btn.closest(".center");
+    var pre = center.querySelector(".raw-source");
+    var showing = center.classList.toggle("raw");
+    btn.setAttribute("aria-pressed", showing ? "true" : "false");
+    if (showing && pre.dataset.loaded !== "1") {
+      pre.dataset.loaded = "1"; // guard before fetch: at most one request
+      fetch(btn.getAttribute("data-raw-url"))
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.text();
+        })
+        .then(function (text) {
+          pre.textContent = text;
+        })
+        .catch(function () {
+          pre.dataset.loaded = ""; // failed — allow a retry on next toggle
+        });
+    }
+  });
+
   // Mobile: open/close the file-tree drawer.
   on('[data-action="toggle-drawer"]', function () {
     root.classList.toggle("drawer-open");

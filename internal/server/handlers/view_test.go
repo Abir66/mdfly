@@ -4,11 +4,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/api"
 )
+
+// connectSrcAllowsHTTPS asserts the CSP's connect-src directive permits cross-origin
+// https: fetches, which the Raw toggle needs to pull the source blob from the CDN.
+var connectSrcAllowsHTTPS = regexp.MustCompile(`connect-src[^;]*https:`)
 
 func TestView_returnsRenderedMarkdown(t *testing.T) {
 	if testing.Short() {
@@ -624,6 +629,52 @@ func TestView_missingSlugReturns404(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "404 — not found") {
 		t.Errorf("body missing 404 marker: %q", body)
+	}
+}
+
+func TestView_rawToggleEmbedsCDNBlobURL(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	content := []byte("# Raw me\n\nByte-identical source.\n")
+	const rootPath = "raw.md"
+	bundle := singleFileBundle(rootPath, content)
+	idempKey := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee03"
+
+	initR := postJSON(t, srv.URL+"/v1/publish/init", api.InitRequest{
+		IdempotencyKey: idempKey, Bundle: bundle,
+	})
+	initBody := decodeInitResponse(t, initR)
+	putBlob(t, initBody.PresignedURLs[rootPath], content)
+
+	commitR := postJSON(t, srv.URL+"/v1/publish/commit", api.CommitRequest{IdempotencyKey: idempKey})
+	commitBody := decodeCommitResponse(t, commitR)
+
+	resp, err := http.Get(srv.URL + "/" + commitBody.Slug)
+	if err != nil {
+		t.Fatalf("GET /%s: %v", commitBody.Slug, err)
+	}
+	defer resp.Body.Close()
+
+	if csp := resp.Header.Get("Content-Security-Policy"); !connectSrcAllowsHTTPS.MatchString(csp) {
+		t.Errorf("Content-Security-Policy=%q, want connect-src allowing https: for the raw fetch", csp)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	wantURL := fmt.Sprintf("%s/%s/documents/%s/%s.md",
+		env.endpoint, env.bucket, commitBody.Slug, contentHash(content))
+	if !strings.Contains(bodyStr, `data-action="toggle-raw"`) {
+		t.Errorf("markdown page missing Raw toggle:\n%s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, fmt.Sprintf(`data-raw-url="%s"`, wantURL)) {
+		t.Errorf("Raw toggle missing CDN raw-blob URL %q:\n%s", wantURL, bodyStr)
 	}
 }
 
