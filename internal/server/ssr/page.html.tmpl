@@ -54,6 +54,9 @@
       {{- if $c.IsCurrent}}<span class="current">{{if $c.Name}}{{$c.Name}}{{else}}mdFly{{end}}</span>
       {{- else}}<a href="{{href $.Slug $c.Path}}">{{if $c.Name}}{{$c.Name}}{{else}}&#8962;{{end}}</a>{{end}}
       {{- end}}
+      {{- if .RawURL}}
+      <button class="raw-toggle" data-action="toggle-raw" data-raw-url="{{.RawURL}}" aria-pressed="false">Raw</button>
+      {{- end}}
     </nav>
     {{- if .Listing}}
     <ul class="listing">
@@ -73,6 +76,9 @@
     </div>
     {{- end}}
     <article class="content">{{.Body}}</article>
+    {{- if .RawURL}}
+    <pre class="raw-source"></pre>
+    {{- end}}
   </main>
 </div>
 {{- else}}

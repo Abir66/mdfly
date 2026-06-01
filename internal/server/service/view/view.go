@@ -182,6 +182,7 @@ func (s *Service) renderMarkdown(ctx context.Context, slug string, mfst manifest
 		Body:          rendered,
 		EnrichMermaid: meta.HasMermaid,
 		EnrichMath:    meta.HasMath,
+		RawURL:        s.blobURL(slug, mfst, key),
 	})
 }
 
