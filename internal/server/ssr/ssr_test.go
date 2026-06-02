@@ -48,9 +48,16 @@ func TestRenderPage_ChromeTree(t *testing.T) {
 	if !strings.Contains(out, `href="/abc12345/index.md"`) {
 		t.Errorf("tree missing root file link:\n%s", out)
 	}
-	// The current file's ancestor folders auto-expand via native <details open>.
-	if c := strings.Count(out, "<details open"); c < 2 {
-		t.Errorf("expected ancestor dirs (docs, docs/api) open, got %d <details open>:\n%s", c, out)
+	// The current file's ancestor folders auto-expand via the .open class.
+	if c := strings.Count(out, `class="tree-folder open"`); c < 2 {
+		t.Errorf("expected ancestor dirs (docs, docs/api) open, got %d open folders:\n%s", c, out)
+	}
+	// Folders are navigable links, with a separate chevron toggle.
+	if !strings.Contains(out, `data-action="toggle-folder"`) {
+		t.Errorf("tree missing folder chevron toggle:\n%s", out)
+	}
+	if !strings.Contains(out, `class="folder-link" href="/abc12345/docs"`) {
+		t.Errorf("tree missing navigable folder link:\n%s", out)
 	}
 	// The current node is highlighted.
 	if !strings.Contains(out, `aria-current="page"`) {
