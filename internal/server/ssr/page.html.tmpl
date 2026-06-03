@@ -36,15 +36,15 @@
 <div class="viewer">
   <header class="topbar">
     <button class="icon-btn" data-action="toggle-drawer" aria-label="Open file tree">☰</button>
-    <span class="wordmark">mdFly</span>
+    <span class="wordmark">MdFly</span>
   </header>
   <aside class="sidebar">
     <div class="sidebar-head">
-      <a class="wordmark" href="/{{.Slug}}">mdFly</a>
-      <button class="icon-btn" data-action="toggle-rail" aria-label="Collapse sidebar">☰</button>
+      <a class="wordmark" href="/">{{template "ic-logo"}}<span class="wordmark-text">MdFly</span></a>
+      <button class="icon-btn" data-action="toggle-rail" aria-label="Collapse sidebar">{{template "ic-sidebar"}}</button>
     </div>
     <nav class="tree" aria-label="Files">
-      <ul>{{range .Tree.Children}}{{template "node" (node $.Slug .)}}{{end}}</ul>
+      <ul>{{range .Tree.Children}}{{template "node" (node $.Slug 0 .)}}{{end}}</ul>
     </nav>
   </aside>
   <main class="center">
@@ -93,13 +93,33 @@
 </body>
 </html>
 {{define "node"}}
-{{- $slug := .Slug}}{{with .Node}}
+{{- $slug := .Slug}}{{$depth := .Depth}}{{with .Node}}
 {{- if .IsDir}}
-<li><details{{if .Open}} open{{end}}><summary{{if .Current}} aria-current="page"{{end}}>{{.Name}}</summary>
-<ul>{{range .Children}}{{template "node" (node $slug .)}}{{end}}</ul>
-</details></li>
+<li class="tree-folder{{if .Open}} open{{end}}" style="--depth:{{$depth}}">
+  <div class="tree-row folder-row">
+    <button class="chevron" type="button" data-action="toggle-folder" aria-label="Toggle folder {{.Name}}" aria-controls="children-{{.Path}}" aria-expanded="{{if .Open}}true{{else}}false{{end}}">{{template "ic-chevron"}}</button>
+    <a class="folder-link" href="{{href $slug .Path}}"{{if .Current}} aria-current="page"{{end}}>
+      <span class="ticon ticon-closed">{{template "ic-folder"}}</span>
+      <span class="ticon ticon-open">{{template "ic-folder-open"}}</span>
+      <span class="tname">{{.Name}}</span>
+    </a>
+  </div>
+  <ul class="tree-children" id="children-{{.Path}}">{{range .Children}}{{template "node" (node $slug (inc $depth) .)}}{{end}}</ul>
+</li>
 {{- else}}
-<li><a class="file" href="{{href $slug .Path}}"{{if .Current}} aria-current="page"{{end}}>{{.Name}}</a></li>
+<li class="tree-file" style="--depth:{{$depth}}">
+  <a class="file tree-row" href="{{href $slug .Path}}"{{if .Current}} aria-current="page"{{end}}>
+    <span class="chev-spacer" aria-hidden="true"></span>
+    <span class="ticon">{{template "ic-file"}}</span>
+    <span class="tname">{{.Name}}</span>
+  </a>
+</li>
 {{- end}}
 {{- end}}
 {{- end}}
+{{define "ic-logo"}}<svg class="logo" viewBox="0 0 34 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M1.06928 16.3323L7.24702 18.821L25.0501 9.88252L14.3124 21.4118L29.703 27.8616C29.9663 27.9677 30.2534 28.0139 30.5401 27.9963C30.8268 27.9788 31.1047 27.8979 31.3503 27.7606C31.5958 27.6232 31.8019 27.4335 31.9509 27.2074C32.1 26.9813 32.1877 26.7255 32.2067 26.4617L33.9963 1.75601C34.0163 1.47005 33.9549 1.18425 33.8184 0.926721C33.6819 0.669192 33.4749 0.448813 33.2178 0.28727C32.9606 0.125727 32.6622 0.0285869 32.3519 0.00540861C32.0415 -0.0177697 31.73 0.0338125 31.4479 0.15508L1.02454 13.3314C0.714203 13.4669 0.452685 13.6816 0.271087 13.95C0.0894901 14.2183 -0.00454387 14.529 0.000168839 14.8451C0.00488155 15.1612 0.108142 15.4694 0.297671 15.7331C0.4872 15.9967 0.75502 16.2047 1.06928 16.3323Z" fill="url(#mdfly_logo_grad)"/><defs><linearGradient id="mdfly_logo_grad" x1="17" y1="0" x2="17" y2="28" gradientUnits="userSpaceOnUse"><stop stop-color="#8363FD"/><stop offset="1" stop-color="#4C3FF8"/></linearGradient></defs></svg>{{end}}
+{{define "ic-sidebar"}}<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M6.416 4.767a2.65 2.65 0 0 0-2.65 2.65v8.832a2.65 2.65 0 0 0 2.65 2.65h1.461V4.767h-1.46Zm0-1.767A4.416 4.416 0 0 0 2 7.416v8.833a4.416 4.416 0 0 0 4.416 4.417h11.168A4.416 4.416 0 0 0 22 16.248V7.416A4.416 4.416 0 0 0 17.584 3zm3.228 1.767v14.132h7.94a2.65 2.65 0 0 0 2.65-2.65V7.416a2.65 2.65 0 0 0-2.65-2.65h-7.94Z" clip-rule="evenodd"/></svg>{{end}}
+{{define "ic-chevron"}}<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.6 12L8 7.4L9.4 6l6 6l-6 6L8 16.6z"/></svg>{{end}}
+{{define "ic-folder"}}<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 20q-.825 0-1.412-.587T2 18V6q0-.825.588-1.412T4 4h5.175q.4 0 .763.15t.637.425L12 6h8q.825 0 1.413.588T22 8v10q0 .825-.587 1.413T20 20z"/></svg>{{end}}
+{{define "ic-folder-open"}}<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 20q-.825 0-1.412-.587T2 18V6q0-.825.588-1.412T4 4h5.175q.4 0 .763.15t.637.425L12 6h9q.425 0 .713.288T22 7t-.288.713T21 8H7.85q-1.55 0-2.7.975T4 11.45V18l1.975-6.575q.2-.65.738-1.037T7.9 10h12.9q1.025 0 1.613.813t.312 1.762l-1.8 6q-.2.65-.737 1.038T19 20z"/></svg>{{end}}
+{{define "ic-file"}}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3l6 6v12h-14v-18h8"/><path stroke-width="1.5" d="M12.5 3v5.5h6.5"/></svg>{{end}}

@@ -56,6 +56,21 @@
     }
   });
 
+  // Folder expand/collapse: the chevron toggles its folder open/closed without
+  // navigating. The rest of the folder row is a plain link that navigates. The
+  // tree is recursive, so this is delegated from the nav rather than per-row.
+  var tree = document.querySelector(".tree");
+  if (tree) {
+    tree.addEventListener("click", function (e) {
+      var btn = e.target.closest('[data-action="toggle-folder"]');
+      if (!btn) return;
+      e.preventDefault();
+      var folder = btn.closest(".tree-folder");
+      var open = folder.classList.toggle("open");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  }
+
   // Mobile: open/close the file-tree drawer.
   on('[data-action="toggle-drawer"]', function () {
     root.classList.toggle("drawer-open");

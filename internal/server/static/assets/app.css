@@ -30,9 +30,9 @@ body {
   min-height: 100vh;
 }
 
-/* Sidebar */
+/* Sidebar — same white as the body, separated only by a hairline */
 .sidebar {
-  background: var(--sidebar-bg);
+  background: var(--bg);
   border-right: 1px solid var(--border);
   overflow-y: auto;
   position: sticky;
@@ -40,17 +40,28 @@ body {
   height: 100vh;
 }
 
+/* Top bar: logo + wordmark left, collapse button right. No bottom border. */
 .sidebar-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: .5rem;
-  padding: .75rem 1rem;
-  font-weight: 600;
-  border-bottom: 1px solid var(--border);
+  padding: .85rem 1rem .65rem;
 }
 
-.sidebar-head .wordmark { color: var(--fg); text-decoration: none; }
+.sidebar-head .wordmark {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+.sidebar-head .logo { width: 1.4rem; height: 1.4rem; display: block; }
+.sidebar-head .wordmark-text {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -.01em;
+}
 
 .icon-btn {
   appearance: none;
@@ -58,37 +69,137 @@ body {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 1.1rem;
-  padding: .25rem .4rem;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: .35rem;
+  border-radius: 7px;
 }
-.icon-btn:hover { background: var(--hover); }
+.icon-btn svg { width: 1.15rem; height: 1.15rem; display: block; }
+.icon-btn:hover { background: var(--hover); color: var(--fg); }
 
-/* File tree over native <details> */
-.tree { padding: .5rem 0; }
-.tree ul { list-style: none; margin: 0; padding-left: .9rem; }
-.tree > ul { padding-left: .25rem; }
+/* File tree. Rows span the full sidebar width edge-to-edge; indentation is
+   internal left-padding driven by --depth, so hover/selected highlight (and the
+   selected left bar) always reach both edges regardless of nesting. */
+.tree {
+  --row-pad-x: .5rem;
+  --indent: .85rem;
+  --chev-col: 1.2rem;
+  --icon-gap: .45rem;
+  padding: 1.25rem .5rem 1.5rem;
+  overflow-x: hidden;
+}
+.tree ul { list-style: none; margin: 0; padding: 0; }
+.tree li { margin: 1px 0; }
 
-.tree summary,
-.tree a.file {
-  display: block;
-  padding: .15rem .5rem;
-  border-radius: 6px;
+/* indent = base + depth steps; the chevron/spacer column keeps folder and file
+   icons on one vertical line. */
+.tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--icon-gap);
+  min-width: 0;
+  padding: .35rem var(--row-pad-x);
+  padding-left: calc(var(--row-pad-x) + var(--depth, 0) * var(--indent));
+  border-radius: 7px;
   color: var(--fg);
   text-decoration: none;
+  cursor: pointer;
+  line-height: 1.35;
+}
+.tree-row:hover { background: var(--hover); }
+
+.chev-spacer { flex: none; width: var(--chev-col); }
+
+.tname {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: pointer;
+  font-size: .9rem;
 }
-.tree summary::marker { color: var(--muted); }
-.tree summary:hover,
-.tree a.file:hover { background: var(--hover); }
 
-.tree [aria-current="page"] {
-  background: var(--current);
-  font-weight: 600;
+.ticon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
 }
+.ticon svg { width: 1.05rem; height: 1.05rem; display: block; }
+
+/* Folder rows pair a toggle chevron with the navigating link; the whole row is
+   one highlight surface (chevron toggles, link navigates). */
+.folder-row { padding-right: 0; }
+.folder-link {
+  display: flex;
+  align-items: center;
+  gap: var(--icon-gap);
+  flex: 1;
+  min-width: 0;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.chevron {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: none;
+  width: var(--chev-col);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.chevron svg {
+  width: .8rem;
+  height: .8rem;
+  display: block;
+  transition: transform .15s ease;
+}
+
+/* Open/closed: chevron points down, folder-open icon shows, children visible. */
+.tree-folder > .tree-children { display: none; }
+.tree-folder.open > .tree-children { display: block; }
+.tree-folder.open > .folder-row .chevron svg { transform: rotate(90deg); }
+.ticon-open { display: none; }
+.tree-folder.open > .folder-row .ticon-closed { display: none; }
+.tree-folder.open > .folder-row .ticon-open { display: inline-flex; }
+
+/* Indent guide: a hairline dropping from an open folder's chevron, aligned to
+   the chevron's centre at that depth. */
+.tree-folder.open > .tree-children { position: relative; }
+.tree-folder.open > .tree-children::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--row-pad-x) + var(--depth, 0) * var(--indent) + var(--chev-col) / 2);
+  width: 1px;
+  background: var(--border);
+}
+
+/* Selected node (GitHub-style): hover-grey fill + a straight accent bar pinned
+   to the row's left edge, never the loud blue block. */
+.tree [aria-current="page"] { font-weight: 600; }
+.tree-file > .tree-row[aria-current="page"],
+.tree-folder > .folder-row:has(> .folder-link[aria-current="page"]) {
+  background: var(--hover);
+}
+.tree-file > .tree-row[aria-current="page"]::before,
+.tree-folder > .folder-row:has(> .folder-link[aria-current="page"])::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+.tree [aria-current="page"] .ticon { color: var(--accent); }
 
 /* Center column */
 .center {

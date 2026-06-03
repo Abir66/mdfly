@@ -15,7 +15,8 @@ import (
 var pageTemplateText string
 
 var pageTmpl = template.Must(template.New("page").Funcs(template.FuncMap{
-	"node": func(slug string, n *filetree.TreeNode) nodePair { return nodePair{slug, n} },
+	"node": func(slug string, depth int, n *filetree.TreeNode) nodePair { return nodePair{slug, depth, n} },
+	"inc":  func(i int) int { return i + 1 },
 	"href": nodeHref,
 }).Parse(pageTemplateText))
 
@@ -69,8 +70,9 @@ type Asset struct {
 // nodePair carries the slug alongside a tree node so the recursive tree template
 // can build per-node hrefs (html/template can't pass two values to a sub-template).
 type nodePair struct {
-	Slug string
-	Node *filetree.TreeNode
+	Slug  string
+	Depth int
+	Node  *filetree.TreeNode
 }
 
 // pageView is PageData plus the computed boot + rail snippets passed to the

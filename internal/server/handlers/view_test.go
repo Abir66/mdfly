@@ -503,8 +503,8 @@ func TestView_chromeAndStaticAssets(t *testing.T) {
 	if !strings.Contains(body, fmt.Sprintf(`href="/%s/docs/api/auth.md"`, slug)) {
 		t.Errorf("sidebar missing nested file link:\n%s", body)
 	}
-	if !strings.Contains(body, "<details open") {
-		t.Errorf("current file's ancestor dirs must render <details open>:\n%s", body)
+	if !strings.Contains(body, `class="tree-folder open"`) {
+		t.Errorf("current file's ancestor dirs must render expanded (.tree-folder open):\n%s", body)
 	}
 	if !strings.Contains(body, `aria-current="page"`) {
 		t.Errorf("current node missing aria-current:\n%s", body)
