@@ -97,14 +97,14 @@
 {{- if .IsDir}}
 <li class="tree-folder{{if .Open}} open{{end}}" style="--depth:{{$depth}}">
   <div class="tree-row folder-row">
-    <button class="chevron" type="button" data-action="toggle-folder" aria-label="Toggle folder" aria-expanded="{{if .Open}}true{{else}}false{{end}}">{{template "ic-chevron"}}</button>
+    <button class="chevron" type="button" data-action="toggle-folder" aria-label="Toggle folder {{.Name}}" aria-controls="children-{{.Path}}" aria-expanded="{{if .Open}}true{{else}}false{{end}}">{{template "ic-chevron"}}</button>
     <a class="folder-link" href="{{href $slug .Path}}"{{if .Current}} aria-current="page"{{end}}>
       <span class="ticon ticon-closed">{{template "ic-folder"}}</span>
       <span class="ticon ticon-open">{{template "ic-folder-open"}}</span>
       <span class="tname">{{.Name}}</span>
     </a>
   </div>
-  <ul class="tree-children">{{range .Children}}{{template "node" (node $slug (inc $depth) .)}}{{end}}</ul>
+  <ul class="tree-children" id="children-{{.Path}}">{{range .Children}}{{template "node" (node $slug (inc $depth) .)}}{{end}}</ul>
 </li>
 {{- else}}
 <li class="tree-file" style="--depth:{{$depth}}">
