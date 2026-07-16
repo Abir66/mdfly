@@ -322,7 +322,10 @@ html.rail .sidebar-head { justify-content: center; padding: .75rem 0; }
     background: rgba(0,0,0,.35);
     z-index: 25;
   }
+  /* Rail is a desktop-only concept; neutralize any persisted rail state so the
+     mobile drawer always renders full, never as a centered stub. */
   html.rail .viewer { grid-template-columns: minmax(0, 1fr); }
   html.rail .sidebar .tree,
   html.rail .sidebar .wordmark { display: block; }
+  html.rail .sidebar-head { justify-content: space-between; padding: .75rem 1rem; }
 }

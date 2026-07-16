@@ -87,8 +87,19 @@ func TestRenderPage_ChromeMobileAndRailSnippet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Mobile top bar carries the drawer toggle and the wordmark.
+	if !strings.Contains(out, `<header class="topbar">`) {
+		t.Errorf("missing mobile top bar:\n%s", out)
+	}
 	if !strings.Contains(out, `data-action="toggle-drawer"`) {
 		t.Errorf("missing mobile drawer toggle:\n%s", out)
+	}
+	if !strings.Contains(out, `<span class="wordmark">MdFly</span>`) {
+		t.Errorf("top bar missing wordmark:\n%s", out)
+	}
+	// Desktop sidebar header owns the rail-collapse control (no global top bar).
+	if !strings.Contains(out, `data-action="toggle-rail"`) {
+		t.Errorf("missing sidebar rail-collapse toggle:\n%s", out)
 	}
 	// Inline <head> snippet applies persisted rail state before paint.
 	if !strings.Contains(out, "mdfly:sidebar-rail") {
