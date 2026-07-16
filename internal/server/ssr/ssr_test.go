@@ -16,10 +16,67 @@ func chromeData() ssr.PageData {
 		Title:      "Auth",
 		Body:       template.HTML("<h1>Auth</h1>"),
 		Slug:       "abc12345",
+		Sidebar:    true,
 		Tree:       filetree.BuildTree(keys, current),
 		Breadcrumb: filetree.Breadcrumb(current),
 		CSSURL:     "/_static/app.deadbeef12.css",
 		JSURL:      "/_static/app.cafebabe34.js",
+	}
+}
+
+func TestRenderPage_SinglePageHidesSidebar(t *testing.T) {
+	keys := []string{"foo.md"}
+	data := ssr.PageData{
+		Title:      "Foo",
+		Body:       template.HTML("<h1>Foo</h1>"),
+		Slug:       "abc12345",
+		Sidebar:    false,
+		Tree:       filetree.BuildTree(keys, "foo.md"),
+		Breadcrumb: filetree.Breadcrumb("foo.md"),
+		CSSURL:     "/_static/app.deadbeef12.css",
+		JSURL:      "/_static/app.cafebabe34.js",
+	}
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, `<aside class="sidebar">`) {
+		t.Errorf("single-page must omit the sidebar:\n%s", out)
+	}
+	if strings.Contains(out, `<header class="topbar">`) {
+		t.Errorf("single-page must omit the mobile drawer top bar:\n%s", out)
+	}
+	if !strings.Contains(out, "no-sidebar") {
+		t.Errorf("single-page viewer must carry the no-sidebar class:\n%s", out)
+	}
+	// Content still renders.
+	if !strings.Contains(out, "<h1>Foo</h1>") {
+		t.Errorf("single-page body missing:\n%s", out)
+	}
+}
+
+func TestRenderPage_Footer(t *testing.T) {
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<footer class="site-footer">`) {
+		t.Errorf("view chrome missing footer:\n%s", out)
+	}
+	if !strings.Contains(out, `class="footer-links"`) || !strings.Contains(out, "GitHub") {
+		t.Errorf("footer missing GitHub link:\n%s", out)
+	}
+}
+
+func TestRenderPage_FooterOnSinglePage(t *testing.T) {
+	data := chromeData()
+	data.Sidebar = false
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<footer class="site-footer">`) {
+		t.Errorf("single-page must still render the footer:\n%s", out)
 	}
 }
 

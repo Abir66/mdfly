@@ -37,7 +37,11 @@ type PageData struct {
 	// Viewer chrome (ADR-0024). Slug addresses tree/breadcrumb links; Tree and
 	// Breadcrumb come from the filetree package; CSSURL/JSURL are the hashed
 	// /_static asset URLs.
-	Slug       string
+	Slug string
+	// Sidebar gates the file-tree sidebar and its mobile drawer top bar. It is
+	// false for a single-file bundle, where the tree would list one entry —
+	// the page then renders full-width chrome (breadcrumb, content, footer).
+	Sidebar    bool
 	Tree       *filetree.TreeNode
 	Breadcrumb []filetree.Crumb
 	CSSURL     string

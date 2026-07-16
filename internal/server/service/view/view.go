@@ -228,6 +228,7 @@ func (s *Service) renderBlob(ctx context.Context, slug string, mfst manifest.Man
 // key and executes the page template.
 func (s *Service) renderPage(slug string, mfst manifest.Manifest, key string, data ssr.PageData) (string, *httpx.Error) {
 	data.Slug = slug
+	data.Sidebar = len(mfst.FilesByPath) > 1
 	data.Tree = filetree.BuildTree(manifestKeys(mfst), key)
 	data.Breadcrumb = filetree.Breadcrumb(key)
 	data.CSSURL = s.Static.CSSURL()

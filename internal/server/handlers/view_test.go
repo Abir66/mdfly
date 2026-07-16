@@ -73,6 +73,13 @@ func TestView_returnsRenderedMarkdown(t *testing.T) {
 	if !strings.Contains(bodyStr, "Hello") {
 		t.Errorf("body missing heading text: %s", bodyStr)
 	}
+	// A single-file bundle omits the sidebar but still renders the footer.
+	if strings.Contains(bodyStr, `<aside class="sidebar">`) {
+		t.Errorf("single-file bundle must omit the sidebar: %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, `<footer class="site-footer">`) {
+		t.Errorf("single-file bundle missing footer: %s", bodyStr)
+	}
 }
 
 func TestView_titleFromFrontmatter(t *testing.T) {
