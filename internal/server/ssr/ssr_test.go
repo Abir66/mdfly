@@ -107,34 +107,6 @@ func TestRenderPage_ChromeMobileAndRailSnippet(t *testing.T) {
 	}
 }
 
-func TestRenderPage_RawToggle(t *testing.T) {
-	data := chromeData()
-	data.RawURL = "https://cdn.mdfly.dev/documents/abc12345/rh.md"
-	out, err := ssr.RenderPage(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, `data-action="toggle-raw"`) {
-		t.Errorf("missing raw toggle button:\n%s", out)
-	}
-	if !strings.Contains(out, `data-raw-url="https://cdn.mdfly.dev/documents/abc12345/rh.md"`) {
-		t.Errorf("raw toggle missing CDN blob URL:\n%s", out)
-	}
-	if !strings.Contains(out, `class="raw-source"`) {
-		t.Errorf("missing raw-source container for the swapped-in markdown:\n%s", out)
-	}
-}
-
-func TestRenderPage_NoRawToggleWhenEmpty(t *testing.T) {
-	out, err := ssr.RenderPage(chromeData())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out, "toggle-raw") {
-		t.Errorf("raw toggle must be absent when RawURL is empty:\n%s", out)
-	}
-}
-
 func dirListingData() ssr.PageData {
 	keys := []string{"index.md", "docs/api/auth.md", "docs/guide.md", "assets/logo.png"}
 	const current = "docs"
@@ -309,17 +281,6 @@ func TestContentSecurityPolicy_NoUnsafeInlineScript(t *testing.T) {
 	}
 	if !strings.Contains(scriptSrc, "'sha256-") {
 		t.Errorf("script-src must pin the boot snippet by sha256 hash: %q", scriptSrc)
-	}
-}
-
-func TestContentSecurityPolicy_AllowsRawBlobFetch(t *testing.T) {
-	_, connectSrc, found := strings.Cut(ssr.ContentSecurityPolicy, "connect-src")
-	if !found {
-		t.Fatalf("CSP missing connect-src directive (Raw toggle fetch blocked): %q", ssr.ContentSecurityPolicy)
-	}
-	connectSrc, _, _ = strings.Cut(connectSrc, ";")
-	if !strings.Contains(connectSrc, "https:") {
-		t.Errorf("connect-src must permit the cross-origin CDN raw-blob fetch: %q", connectSrc)
 	}
 }
 

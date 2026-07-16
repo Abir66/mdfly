@@ -52,11 +52,6 @@ type PageData struct {
 	// (name, size, Download link) for oversize/binary/other files.
 	Image    *Asset
 	Download *Asset
-
-	// RawURL is the markdown file's byte-identical source blob on the CDN (S25).
-	// When set, the center gains a Raw toggle that lazy-fetches this URL once,
-	// client-side, and swaps it in for the rendered HTML (zero backend load).
-	RawURL string
 }
 
 // Asset describes a non-markdown node's center: its display name, CDN blob URL,

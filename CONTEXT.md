@@ -206,7 +206,7 @@ The entry point of a Bundle, identified by `root_path` in the [[Bundle Manifest]
 
 ### Viewer
 The human-facing read surface for a Document at `mdfly.dev/<slug>[/<key>]`: server-rendered chrome with a collapsible left **file-tree sidebar** (the whole Bundle; folders are native collapsible nodes, the current file is highlighted and its ancestors auto-expanded), a **center** that dispatches on the addressed node's type, and a **breadcrumb** of the logical path at the top of the center column. No client-side router — every navigation is a full page load (ADR-0018). The absolute `project_root` is never emitted; tree and breadcrumb are built only from project-root-relative keys (privacy). Center dispatch by node type:
-- markdown → rendered HTML, with a **Raw toggle** (top-right) that lazy-fetches the byte-identical source blob from `cdn.mdfly.dev` once, caches it client-side, and swaps it in;
+- markdown → rendered HTML;
 - image → shown inline;
 - text/code ≤ `PreviewMaxBytes` (1 MB) and verified non-binary (valid UTF-8, no NUL) → server-side chroma-highlighted source; oversize or binary → a download card;
 - any other type → a metadata card (name, size) + Download link to the CDN blob;
