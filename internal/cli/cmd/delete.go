@@ -128,9 +128,14 @@ func (app *appContext) confirmDelete(cmd *cobra.Command, slug string) (bool, err
 		return false, &output.UsageError{Err: fmt.Errorf("refusing to delete %q without confirmation; re-run with -y", slug)}
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "Delete %s? [y/N] ", slug)
-	line, _ := bufio.NewReader(in).ReadString('\n')
+	return readYes(in), nil
+}
+
+// readYes reports whether the next line on r is an affirmative (y/yes).
+func readYes(r io.Reader) bool {
+	line, _ := bufio.NewReader(r).ReadString('\n')
 	answer := strings.ToLower(strings.TrimSpace(line))
-	return answer == "y" || answer == "yes", nil
+	return answer == "y" || answer == "yes"
 }
 
 // readerIsTerminal reports whether r is an interactive terminal — an *os.File

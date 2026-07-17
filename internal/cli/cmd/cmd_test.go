@@ -116,7 +116,7 @@ func TestVersionPrints(t *testing.T) {
 }
 
 func TestStubVerbsReturnNotImplemented(t *testing.T) {
-	for _, verb := range []string{"update", "list", "remove", "open"} {
+	for _, verb := range []string{"update"} {
 		t.Run(verb, func(t *testing.T) {
 			_, _, err := execute(t, verb)
 			if !errors.Is(err, errNotImplemented) {
@@ -127,7 +127,7 @@ func TestStubVerbsReturnNotImplemented(t *testing.T) {
 }
 
 func TestGlobalFlagsParseOnEveryVerb(t *testing.T) {
-	for _, verb := range []string{"update", "list", "remove", "open"} {
+	for _, verb := range []string{"update"} {
 		t.Run(verb, func(t *testing.T) {
 			// Runtime error (not-implemented), but flag parsing must succeed.
 			_, _, err := execute(t, "--json", "-v", "-q", "-y", "--no-update-check", "--api", "https://x.example", verb)
@@ -159,9 +159,9 @@ func TestUsageShownOnParseErrorNotRuntimeError(t *testing.T) {
 	}
 
 	// A runtime RunE error runs after SilenceUsage is flipped, so no usage.
-	rOut, rErr, err := execute(t, "list")
+	rOut, rErr, err := execute(t, "update")
 	if !errors.Is(err, errNotImplemented) {
-		t.Fatalf("list err=%v, want errNotImplemented", err)
+		t.Fatalf("update err=%v, want errNotImplemented", err)
 	}
 	if strings.Contains(rOut+rErr, "Usage:") {
 		t.Errorf("runtime RunE error should not print usage; out=%q err=%q", rOut, rErr)
