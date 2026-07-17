@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/cli/input"
 	"github.com/Abir66/mdfly/internal/cli/publish"
 )
 
@@ -41,6 +42,10 @@ func ExitCode(err error) int {
 
 	var usageErr *UsageError
 	if errors.As(err, &usageErr) {
+		return ExitUsage
+	}
+	var contentErr *input.ContentError
+	if errors.As(err, &contentErr) {
 		return ExitUsage
 	}
 	var limitErr *publish.BundleLimitError
