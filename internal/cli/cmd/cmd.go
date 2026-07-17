@@ -68,10 +68,10 @@ func NewRootCmd(version string) *cobra.Command {
 	root.AddCommand(
 		newPublishCmd(app),
 		newStubCmd("update", "Update an already-published document"),
-		newStubCmd("list", "List documents you have published"),
+		newListCmd(app),
 		newDeleteCmd(app),
-		newStubCmd("remove", "Remove a document from local state only"),
-		newStubCmd("open", "Open a published document in the browser"),
+		newRemoveCmd(app),
+		newOpenCmd(app),
 	)
 	return root
 }
