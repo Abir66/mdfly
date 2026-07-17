@@ -23,6 +23,9 @@ func newRemoveCmd(app *appContext) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
+				if len(args) > 0 || slugFlag != "" {
+					return &output.UsageError{Err: fmt.Errorf("--all cannot be combined with a target or --slug")}
+				}
 				return app.runRemoveAll(cmd)
 			}
 			return app.runRemove(cmd, firstArg(args), slugFlag)

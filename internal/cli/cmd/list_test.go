@@ -51,7 +51,11 @@ func TestList_newestFirst_noNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if strings.Index(out, "new") > strings.Index(out, "old") {
+	iNew, iOld := strings.Index(out, "new"), strings.Index(out, "old")
+	if iNew < 0 || iOld < 0 {
+		t.Fatalf("both records must be present:\n%s", out)
+	}
+	if iNew > iOld {
 		t.Errorf("newest record must print first:\n%s", out)
 	}
 }

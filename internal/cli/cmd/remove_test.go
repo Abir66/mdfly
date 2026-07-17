@@ -80,6 +80,34 @@ func TestRemove_all_wipesLedger_yesSkipsPrompt(t *testing.T) {
 	}
 }
 
+func TestRemove_allWithSelector_usageError_noWipe(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"positional", []string{"remove", "--all", "-y", "s1"}},
+		{"slugFlag", []string{"remove", "--all", "-y", "--slug", "s1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			seedRecord(t, dir, "s1", "mftk_a", "mh1", nil)
+			seedRecord(t, dir, "s2", "mftk_b", "mh2", nil)
+			m := noNetMock(t)
+
+			_, _, err := executeIn(t, dir, append([]string{"--api", m.URL}, tc.args...)...)
+			if err == nil {
+				t.Fatal("--all with a selector should error")
+			}
+			if output.ExitCode(err) != output.ExitUsage {
+				t.Errorf("exit=%d, want usage", output.ExitCode(err))
+			}
+			if !recordExists(t, dir, "s1") || !recordExists(t, dir, "s2") {
+				t.Error("rejected --all must not wipe the ledger")
+			}
+		})
+	}
+}
+
 func TestRemove_allNonTTYWithoutYesRefuses(t *testing.T) {
 	dir := t.TempDir()
 	seedRecord(t, dir, "s1", "mftk_a", "mh1", nil)

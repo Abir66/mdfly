@@ -78,15 +78,15 @@ func openURL(w io.Writer, url string) {
 	}
 }
 
-// launchBrowser starts the platform's URL-opening command and reaps the child.
+// launchBrowser runs the platform's URL-opening command, reaping the child and
+// reporting a non-zero exit as a launch failure so callers can fall back.
 func launchBrowser(url string) error {
 	name, args := openCommand(url)
 	c := exec.Command(name, args...)
 	if err := c.Start(); err != nil {
 		return err
 	}
-	go c.Wait() //nolint:errcheck // reap the child so its resources are released
-	return nil
+	return c.Wait()
 }
 
 // openCommand returns the platform's URL-opening command.
