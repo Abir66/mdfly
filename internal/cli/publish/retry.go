@@ -21,29 +21,21 @@ const (
 	backoffJitterFraction = 0.5
 )
 
-// httpStatusError carries a non-2xx response so the retry layer can decide
-// whether the status is transient.
-type httpStatusError struct {
-	code int
-	msg  string
-}
-
-func (e *httpStatusError) Error() string { return e.msg }
-
-// transientError marks a network-level failure (timeout, DNS, EOF mid-response)
+// TransientError marks a network-level failure (timeout, DNS, EOF mid-response)
 // worth retrying.
-type transientError struct{ err error }
+type TransientError struct{ err error }
 
-func (e *transientError) Error() string { return e.err.Error() }
-func (e *transientError) Unwrap() error { return e.err }
+func (e *TransientError) Error() string { return e.err.Error() }
+func (e *TransientError) Unwrap() error { return e.err }
 
 // isRetryable reports whether err is a transient condition worth another attempt.
+// A 5xx APIError is retryable; 4xx (including 429) and other errors are not.
 func isRetryable(err error) bool {
-	var se *httpStatusError
-	if errors.As(err, &se) {
-		return se.code >= 500
+	var ae *APIError
+	if errors.As(err, &ae) {
+		return ae.Status >= 500
 	}
-	var te *transientError
+	var te *TransientError
 	return errors.As(err, &te)
 }
 

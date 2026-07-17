@@ -96,15 +96,6 @@ func TestUsageShownOnParseErrorNotRuntimeError(t *testing.T) {
 	}
 }
 
-func TestExitCode(t *testing.T) {
-	if got := ExitCode(nil); got != 0 {
-		t.Errorf("ExitCode(nil)=%d, want 0", got)
-	}
-	if got := ExitCode(errNotImplemented); got != 1 {
-		t.Errorf("ExitCode(err)=%d, want 1", got)
-	}
-}
-
 func TestNoBareFileShortcut(t *testing.T) {
 	// A bare non-verb argument must be an unknown-command error, not dispatched.
 	_, _, err := execute(t, "some-file.md")

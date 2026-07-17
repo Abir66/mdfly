@@ -24,22 +24,15 @@ func postJSON[T any](ctx context.Context, client *http.Client, url string, body 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return zero, &transientError{err: err}
+		return zero, &TransientError{err: err}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return zero, &transientError{err: fmt.Errorf("reading response body: %w", err)}
+		return zero, &TransientError{err: fmt.Errorf("reading response body: %w", err)}
 	}
 	if resp.StatusCode != http.StatusOK {
-		var apiErr api.ErrorResponse
-		if jerr := json.Unmarshal(data, &apiErr); jerr == nil && apiErr.Error.Code != "" {
-			if apiErr.Error.Code == api.CodeIdempotencyPayloadMismatch {
-				return zero, &IdempotencyMismatchError{}
-			}
-			return zero, &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("status %d (%s): %s", resp.StatusCode, apiErr.Error.Code, apiErr.Error.Message)}
-		}
-		return zero, &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("status %d: %s", resp.StatusCode, data)}
+		return zero, parseErrorEnvelope(resp.StatusCode, data)
 	}
 	var result T
 	if err := json.Unmarshal(data, &result); err != nil {
@@ -57,15 +50,31 @@ func putBlob(ctx context.Context, client *http.Client, presignedURL string, cont
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return &transientError{err: err}
+		return &TransientError{err: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return &transientError{err: fmt.Errorf("reading response body: %w", err)}
+			return &TransientError{err: fmt.Errorf("reading response body: %w", err)}
 		}
-		return &httpStatusError{code: resp.StatusCode, msg: fmt.Sprintf("PUT status %d: %s", resp.StatusCode, body)}
+		return &APIError{Status: resp.StatusCode, Message: fmt.Sprintf("PUT status %d: %s", resp.StatusCode, body)}
 	}
 	return nil
+}
+
+// parseErrorEnvelope turns a non-2xx response into an *APIError. When the body
+// carries the `{"error":{code,message,details?}}` envelope its fields are
+// preserved; otherwise the raw body becomes the message.
+func parseErrorEnvelope(status int, data []byte) error {
+	var env api.ErrorResponse
+	if err := json.Unmarshal(data, &env); err == nil && env.Error.Code != "" {
+		return &APIError{
+			Status:  status,
+			Code:    env.Error.Code,
+			Message: env.Error.Message,
+			Details: env.Error.Details,
+		}
+	}
+	return &APIError{Status: status, Message: fmt.Sprintf("status %d: %s", status, data)}
 }

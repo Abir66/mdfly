@@ -1,12 +1,20 @@
 package publish
 
-// idempotencyMismatchMsg is the user-facing explanation printed when the server
-// rejects init with 422 because the idempotency_key was reused with a different
-// payload (ADR-0013 / S15). The CLI exits with code 2 on this error.
-const idempotencyMismatchMsg = "idempotency key collision with a different payload — usually means a state.json or scripting bug"
+import "fmt"
 
-// IdempotencyMismatchError is returned when /v1/publish/init responds 422 with
-// the idempotency_key_payload_mismatch code. The CLI exits with code 2.
-type IdempotencyMismatchError struct{}
+// APIError is a parsed error envelope from the backend. It carries the HTTP
+// status alongside the machine-readable code, human message, and optional
+// details so the CLI can map on the code first and fall back to status class.
+type APIError struct {
+	Status  int
+	Code    string
+	Message string
+	Details any
+}
 
-func (e *IdempotencyMismatchError) Error() string { return idempotencyMismatchMsg }
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	return fmt.Sprintf("server returned status %d", e.Status)
+}

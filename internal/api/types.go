@@ -1,8 +1,28 @@
 package api
 
-// CodeIdempotencyPayloadMismatch is the error code returned by /v1/publish/init
-// (422) when an idempotency_key is reused with a different payload (ADR-0013).
-const CodeIdempotencyPayloadMismatch = "idempotency_key_payload_mismatch"
+// Machine-readable error codes carried in the error envelope's `code` field.
+// The enum is shared so the server's envelope and the CLI's exit-code mapping
+// cannot drift. The CLI maps on these codes first, falling back to HTTP status.
+const (
+	// CodeIdempotencyPayloadMismatch is returned by /v1/publish/init (422) when
+	// an idempotency_key is reused with a different payload (ADR-0013).
+	CodeIdempotencyPayloadMismatch = "idempotency_key_payload_mismatch"
+	// CodeBadBundle is returned (400) when the submitted bundle is malformed.
+	CodeBadBundle = "bad_bundle"
+	// CodeInvalidEditToken is returned (401/403) when the Edit Token is missing
+	// or does not match the document (ADR-0015).
+	CodeInvalidEditToken = "invalid_edit_token"
+	// CodeSlugTaken is returned (409) when the requested slug is already in use.
+	CodeSlugTaken = "slug_taken"
+	// CodeUpdateConflict is returned (409) when a concurrent update lost the
+	// optimistic-concurrency check (ADR-0012).
+	CodeUpdateConflict = "update_conflict"
+	// CodeBundleTooLarge is returned (413) when the bundle exceeds the server's
+	// tier quota.
+	CodeBundleTooLarge = "bundle_too_large"
+	// CodeRateLimited is returned (429) when the client is rate limited.
+	CodeRateLimited = "rate_limited"
+)
 
 // BundleFileDTO is one file entry in a BundleDTO, sent over the wire at init.
 type BundleFileDTO struct {
