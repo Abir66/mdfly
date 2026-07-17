@@ -384,10 +384,18 @@ body {
   padding: .4rem .25rem;
   border-bottom: 1px solid var(--border);
 }
-.listing a { color: var(--accent); text-decoration: none; }
+.listing a {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  text-decoration: none;
+}
 .listing a:hover { text-decoration: underline; }
 .listing a.dir { font-weight: 600; }
-.listing .size { margin-left: auto; color: var(--muted); font-size: .85rem; }
+.listing .size { flex: none; margin-left: auto; color: var(--muted); font-size: .85rem; }
 
 /* Footer — bottom of the main column only; the sidebar keeps its own height.
    Brand mark left, links right. */

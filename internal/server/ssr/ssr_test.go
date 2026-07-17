@@ -94,6 +94,26 @@ func TestRenderPage_LogoGradientIDsUnique(t *testing.T) {
 	if !strings.Contains(out, `class="footer-brand"`) {
 		t.Errorf("footer brand logo missing:\n%s", out)
 	}
+	_, footerSVG, found := strings.Cut(out, `class="footer-brand"`)
+	if !found {
+		t.Fatalf("footer-brand not found:\n%s", out)
+	}
+	fillStart := strings.Index(footerSVG, `fill="url(#`)
+	if fillStart == -1 {
+		t.Fatalf("footer logo missing gradient fill reference:\n%s", footerSVG)
+	}
+	idStart := fillStart + len(`fill="url(#`)
+	idEnd := strings.Index(footerSVG[idStart:], `)`)
+	if idEnd == -1 {
+		t.Fatalf("footer logo gradient fill reference malformed:\n%s", footerSVG)
+	}
+	footerGradID := footerSVG[idStart : idStart+idEnd]
+	if footerGradID == "mdfly_logo_grad" {
+		t.Errorf("footer logo must reference its own distinct gradient id, not the sidebar's:\n%s", footerSVG)
+	}
+	if !strings.Contains(footerSVG, `id="`+footerGradID+`"`) {
+		t.Errorf("footer logo references gradient id %q that is never defined:\n%s", footerGradID, footerSVG)
+	}
 }
 
 func TestRenderPage_CodeFileWide(t *testing.T) {
