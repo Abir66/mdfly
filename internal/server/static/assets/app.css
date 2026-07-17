@@ -1,14 +1,19 @@
 :root {
   --bg: #ffffff;
   --fg: #1f2328;
-  --muted: #656d76;
-  --border: #d0d7de;
-  --accent: #0969da;
-  --sidebar-bg: #f6f8fa;
-  --hover: #eaeef2;
-  --current: #ddf4ff;
+  --muted: #59636e;
+  --border: #d1d9e0;
+  --accent: #5b4bf0;
+  --accent-hover: #4433d6;
+  --accent-grad: linear-gradient(180deg, #8363fd, #4c3ff8);
+  --sidebar-bg: #ffffff;
+  --hover: #f3f4f6;
+  --code-bg: #f6f8fa;
+  --code-inline-bg: rgba(101, 75, 240, .1);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --sidebar-w: 17rem;
   --rail-w: 2.75rem;
+  --content-w: 56rem;
 }
 
 * { box-sizing: border-box; }
@@ -29,10 +34,11 @@ body {
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100vh;
 }
+.viewer.no-sidebar { grid-template-columns: minmax(0, 1fr); }
 
 /* Sidebar — same white as the body, separated only by a hairline */
 .sidebar {
-  background: var(--bg);
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   overflow-y: auto;
   position: sticky;
@@ -182,8 +188,8 @@ body {
   background: var(--border);
 }
 
-/* Selected node (GitHub-style): hover-grey fill + a straight accent bar pinned
-   to the row's left edge, never the loud blue block. */
+/* Selected node: hover-grey fill + the brand gradient bar pinned to the row's
+   left edge. */
 .tree [aria-current="page"] { font-weight: 600; }
 .tree-file > .tree-row[aria-current="page"],
 .tree-folder > .folder-row:has(> .folder-link[aria-current="page"]) {
@@ -197,40 +203,157 @@ body {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  background: var(--accent-grad);
 }
 .tree [aria-current="page"] .ticon { color: var(--accent); }
 
-/* Center column */
-.center {
+/* Main column: content grows, footer pinned to the bottom edge even when the
+   content is short. The sidebar owns its own full height independently. */
+.main-col {
   min-width: 0;
-  padding: 1.5rem 2rem 4rem;
-  max-width: 56rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.center {
+  flex: 1;
+  min-width: 0;
+  padding: 1.75rem 2rem 3.5rem;
+  max-width: var(--content-w);
   margin: 0 auto;
   width: 100%;
+}
+/* Whole-file source view spans the full column, GitHub-blob style. */
+.center-wide {
+  max-width: none;
+  padding: 1.5rem 1.5rem 3rem;
 }
 
 .breadcrumb {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: .25rem;
-  font-size: .9rem;
+  gap: .3rem;
+  font-size: .875rem;
   color: var(--muted);
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
 }
 .breadcrumb a { color: var(--accent); text-decoration: none; }
 .breadcrumb a:hover { text-decoration: underline; }
 .breadcrumb .sep { color: var(--border); }
-.breadcrumb .current { color: var(--fg); }
+.breadcrumb .current { color: var(--fg); font-weight: 500; }
 
+/* Prose — GitHub-like rhythm, brand-purple links. */
+.content { overflow-wrap: break-word; }
+.content > *:first-child { margin-top: 0; }
+.content h1, .content h2, .content h3,
+.content h4, .content h5, .content h6 {
+  margin: 1.75rem 0 1rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+}
+.content h1 { font-size: 1.9rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+.content h2 { font-size: 1.45rem; padding-bottom: .3rem; border-bottom: 1px solid var(--border); }
+.content h3 { font-size: 1.2rem; }
+.content h4 { font-size: 1rem; }
+.content h5 { font-size: .9rem; }
+.content h6 { font-size: .85rem; color: var(--muted); }
+.content p, .content ul, .content ol, .content blockquote, .content table {
+  margin: 0 0 1rem;
+}
+.content a { color: var(--accent); text-decoration: none; }
+.content a:hover { text-decoration: underline; }
 .content img { max-width: 100%; }
+.content hr {
+  height: 1px;
+  border: 0;
+  margin: 1.75rem 0;
+  background: var(--border);
+}
+.content blockquote {
+  padding: 0 1rem;
+  color: var(--muted);
+  border-left: .25rem solid var(--border);
+}
+.content blockquote > *:last-child { margin-bottom: 0; }
+.content ul, .content ol { padding-left: 1.5rem; }
+.content li + li { margin-top: .25rem; }
+.content table {
+  border-collapse: collapse;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.content th, .content td {
+  padding: .45rem .85rem;
+  border: 1px solid var(--border);
+}
+.content th { background: var(--code-bg); font-weight: 600; }
+
+/* Code — monospace, GitHub-scaled (85%), never the oversized default. Inline
+   code renders as a tinted chip; block code carries a bordered card. Chroma
+   emits its own inline colours, so we only own the box + type here. */
+.content code { font-family: var(--mono); }
+.content :not(pre) > code {
+  font-size: .85em;
+  padding: .2em .4em;
+  border-radius: 6px;
+  background: var(--code-inline-bg);
+}
 .content pre {
   overflow-x: auto;
+  margin: 0 0 1rem;
   padding: 1rem;
-  border-radius: 6px;
-  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+  font-size: .85em;
+  line-height: 1.5;
 }
+.content pre code {
+  padding: 0;
+  background: transparent;
+  font-size: inherit;
+}
+
+/* Whole-file source view (S24 text preview) — GitHub blob look: bordered box,
+   white code area, a muted line-number gutter with its own hairline, and code
+   that scrolls horizontally without dragging the gutter with it. Chroma emits
+   a <div><table> with two <pre> cells (numbers | code); the sanitizer strips its
+   structural inline styles, so the layout is owned here. */
+.code-file {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: .8125rem;
+  line-height: 1.5;
+  background: var(--bg);
+}
+.code-file table { width: 100%; border-collapse: collapse; }
+.code-file td { vertical-align: top; padding: 0; border: 0; }
+.code-file td:first-child {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  user-select: none;
+  background: var(--code-bg);
+  border-right: 1px solid var(--border);
+}
+.code-file td:last-child { width: 100%; max-width: 0; }
+.code-file pre {
+  margin: 0;
+  padding: .8rem 0;
+  background: transparent !important;
+  overflow: visible;
+}
+.code-file td:first-child pre { padding-left: .6rem; padding-right: .6rem; }
+.code-file td:last-child pre { padding-left: 1rem; padding-right: 1rem; overflow-x: auto; }
+.code-file td:first-child pre span { color: var(--muted) !important; margin: 0 !important; padding: 0 !important; }
 
 /* Asset centers (S24): inline image + download card */
 .asset-image { max-width: 100%; height: auto; }
@@ -250,6 +373,59 @@ body {
   color: #fff;
   text-decoration: none;
 }
+.download-card .download:hover { background: var(--accent-hover); }
+
+/* Directory listing */
+.listing { list-style: none; margin: 0 0 1.5rem; padding: 0; }
+.listing li {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .4rem .25rem;
+  border-bottom: 1px solid var(--border);
+}
+.listing a {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  text-decoration: none;
+}
+.listing a:hover { text-decoration: underline; }
+.listing a.dir { font-weight: 600; }
+.listing .size { flex: none; margin-left: auto; color: var(--muted); font-size: .85rem; }
+
+/* Footer — bottom of the main column only; the sidebar keeps its own height.
+   Brand mark left, links right. */
+.site-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.1rem 2rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .875rem;
+}
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--fg);
+  text-decoration: none;
+}
+.footer-brand .logo { width: 1.2rem; height: 1.2rem; display: block; }
+.footer-brand .wordmark-text { font-weight: 700; letter-spacing: -.01em; }
+.footer-links {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+.footer-links a { color: var(--muted); text-decoration: none; }
+.footer-links a:hover { color: var(--accent); }
 
 /* Mobile top bar — hidden on desktop */
 .topbar { display: none; }
@@ -257,6 +433,7 @@ body {
 /* Collapsed-to-rail state (desktop). The class lives on <html> so the inline
    <head> snippet can apply it before first paint, avoiding a re-expand flash. */
 html.rail .viewer { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
+html.rail .viewer.no-sidebar { grid-template-columns: minmax(0, 1fr); }
 html.rail .sidebar .tree,
 html.rail .sidebar .wordmark { display: none; }
 html.rail .sidebar-head { justify-content: center; padding: .75rem 0; }
@@ -264,6 +441,8 @@ html.rail .sidebar-head { justify-content: center; padding: .75rem 0; }
 /* Mobile: sidebar becomes a drawer behind the top bar */
 @media (max-width: 768px) {
   .viewer { grid-template-columns: minmax(0, 1fr); }
+  .center { padding: 1.25rem 1.15rem 2.5rem; }
+  .site-footer { padding: 1rem 1.15rem; }
   .topbar {
     display: flex;
     align-items: center;

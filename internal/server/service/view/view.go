@@ -140,7 +140,7 @@ func (s *Service) renderTextPreview(ctx context.Context, slug string, mfst manif
 		slog.Error("markdown highlight failed", "slug", slug, "key", key, "err", err)
 		return "", httpx.Internal("render error")
 	}
-	return s.renderPage(slug, mfst, key, ssr.PageData{Title: path.Base(key), Body: highlighted})
+	return s.renderPage(slug, mfst, key, ssr.PageData{Title: path.Base(key), Body: highlighted, CodeFile: true})
 }
 
 // renderDownload renders a metadata card (name, size, CDN Download link) for a
@@ -228,6 +228,7 @@ func (s *Service) renderBlob(ctx context.Context, slug string, mfst manifest.Man
 // key and executes the page template.
 func (s *Service) renderPage(slug string, mfst manifest.Manifest, key string, data ssr.PageData) (string, *httpx.Error) {
 	data.Slug = slug
+	data.Sidebar = len(mfst.FilesByPath) > 1
 	data.Tree = filetree.BuildTree(manifestKeys(mfst), key)
 	data.Breadcrumb = filetree.Breadcrumb(key)
 	data.CSSURL = s.Static.CSSURL()

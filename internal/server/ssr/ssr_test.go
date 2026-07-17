@@ -16,10 +16,137 @@ func chromeData() ssr.PageData {
 		Title:      "Auth",
 		Body:       template.HTML("<h1>Auth</h1>"),
 		Slug:       "abc12345",
+		Sidebar:    true,
 		Tree:       filetree.BuildTree(keys, current),
 		Breadcrumb: filetree.Breadcrumb(current),
 		CSSURL:     "/_static/app.deadbeef12.css",
 		JSURL:      "/_static/app.cafebabe34.js",
+	}
+}
+
+func TestRenderPage_SinglePageHidesSidebar(t *testing.T) {
+	keys := []string{"foo.md"}
+	data := ssr.PageData{
+		Title:      "Foo",
+		Body:       template.HTML("<h1>Foo</h1>"),
+		Slug:       "abc12345",
+		Sidebar:    false,
+		Tree:       filetree.BuildTree(keys, "foo.md"),
+		Breadcrumb: filetree.Breadcrumb("foo.md"),
+		CSSURL:     "/_static/app.deadbeef12.css",
+		JSURL:      "/_static/app.cafebabe34.js",
+	}
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, `<aside class="sidebar">`) {
+		t.Errorf("single-page must omit the sidebar:\n%s", out)
+	}
+	if strings.Contains(out, `<header class="topbar">`) {
+		t.Errorf("single-page must omit the mobile drawer top bar:\n%s", out)
+	}
+	if !strings.Contains(out, "no-sidebar") {
+		t.Errorf("single-page viewer must carry the no-sidebar class:\n%s", out)
+	}
+	// Content still renders.
+	if !strings.Contains(out, "<h1>Foo</h1>") {
+		t.Errorf("single-page body missing:\n%s", out)
+	}
+}
+
+func TestRenderPage_Footer(t *testing.T) {
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<footer class="site-footer">`) {
+		t.Errorf("view chrome missing footer:\n%s", out)
+	}
+	if !strings.Contains(out, `class="footer-links"`) || !strings.Contains(out, "GitHub") {
+		t.Errorf("footer missing GitHub link:\n%s", out)
+	}
+}
+
+func TestRenderPage_FooterOnSinglePage(t *testing.T) {
+	data := chromeData()
+	data.Sidebar = false
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<footer class="site-footer">`) {
+		t.Errorf("single-page must still render the footer:\n%s", out)
+	}
+}
+
+func TestRenderPage_LogoGradientIDsUnique(t *testing.T) {
+	// Sidebar and footer both render the logo; a shared SVG gradient id is
+	// invalid and breaks the footer logo's fill when the sidebar collapses to a
+	// rail (its def is display:none). Each instance must own a distinct id.
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(out, `id="mdfly_logo_grad"`); n != 1 {
+		t.Errorf("logo gradient id must be unique per instance, found %d of mdfly_logo_grad:\n%s", n, out)
+	}
+	if !strings.Contains(out, `class="footer-brand"`) {
+		t.Errorf("footer brand logo missing:\n%s", out)
+	}
+	_, footerSVG, found := strings.Cut(out, `class="footer-brand"`)
+	if !found {
+		t.Fatalf("footer-brand not found:\n%s", out)
+	}
+	fillStart := strings.Index(footerSVG, `fill="url(#`)
+	if fillStart == -1 {
+		t.Fatalf("footer logo missing gradient fill reference:\n%s", footerSVG)
+	}
+	idStart := fillStart + len(`fill="url(#`)
+	idEnd := strings.Index(footerSVG[idStart:], `)`)
+	if idEnd == -1 {
+		t.Fatalf("footer logo gradient fill reference malformed:\n%s", footerSVG)
+	}
+	footerGradID := footerSVG[idStart : idStart+idEnd]
+	if footerGradID == "mdfly_logo_grad" {
+		t.Errorf("footer logo must reference its own distinct gradient id, not the sidebar's:\n%s", footerSVG)
+	}
+	if !strings.Contains(footerSVG, `id="`+footerGradID+`"`) {
+		t.Errorf("footer logo references gradient id %q that is never defined:\n%s", footerGradID, footerSVG)
+	}
+}
+
+func TestRenderPage_CodeFileWide(t *testing.T) {
+	data := chromeData()
+	data.CodeFile = true
+	data.Body = template.HTML(`<div><table><tr><td><pre>1</pre></td><td><pre>x</pre></td></tr></table></div>`)
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A code file spans full width in a dedicated container, not the prose column.
+	if !strings.Contains(out, `class="code-file"`) {
+		t.Errorf("code file missing .code-file container:\n%s", out)
+	}
+	if !strings.Contains(out, "center center-wide") {
+		t.Errorf("code file must widen the center column:\n%s", out)
+	}
+	if strings.Contains(out, `<article class="content">`) {
+		t.Errorf("code file must not use the prose content article:\n%s", out)
+	}
+}
+
+func TestRenderPage_MarkdownUsesProseColumn(t *testing.T) {
+	data := chromeData()
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<article class="content">`) {
+		t.Errorf("markdown must render in the prose content article:\n%s", out)
+	}
+	if strings.Contains(out, "center-wide") {
+		t.Errorf("markdown must keep the reading-width column:\n%s", out)
 	}
 }
 
