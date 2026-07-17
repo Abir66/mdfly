@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sync/atomic"
+	"sync"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -31,7 +31,10 @@ func uploadBlobs(ctx context.Context, client *http.Client, bundle Bundle, presig
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(uploadConcurrency)
 
-	var done atomic.Int64
+	var (
+		progressMu sync.Mutex
+		done       int
+	)
 	for path, presignedURL := range presigned {
 		f := bundle.FilesByPath[path]
 		g.Go(func() error {
@@ -45,7 +48,10 @@ func uploadBlobs(ctx context.Context, client *http.Client, bundle Bundle, presig
 				return fmt.Errorf("upload blob %s: %w", f.Path, err)
 			}
 			if progress != nil {
-				fmt.Fprintf(progress, "uploaded %d/%d\n", done.Add(1), total)
+				progressMu.Lock()
+				done++
+				fmt.Fprintf(progress, "uploaded %d/%d\n", done, total)
+				progressMu.Unlock()
 			}
 			return nil
 		})

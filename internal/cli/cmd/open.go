@@ -12,9 +12,12 @@ import (
 // stdout for the user to copy.
 func openURL(w io.Writer, url string) {
 	name, args := openCommand(url)
-	if err := exec.Command(name, args...).Start(); err != nil {
+	c := exec.Command(name, args...)
+	if err := c.Start(); err != nil {
 		fmt.Fprintf(w, "could not open browser: %v\n", err)
+		return
 	}
+	go c.Wait() //nolint:errcheck // reap the child so its resources are released
 }
 
 // openCommand returns the platform's URL-opening command.

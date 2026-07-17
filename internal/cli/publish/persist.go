@@ -39,8 +39,14 @@ func persistPublish(stateDir string, src input.Source, bundle Bundle, commit api
 		Path:         path,
 		HasToken:     true,
 	}
-	if err := store.Upsert(rec); err != nil {
+	// Save the token before the record so a record with HasToken:true never
+	// exists without its token; roll the token back if the record fails.
+	if err := store.SaveToken(commit.Slug, editToken); err != nil {
 		return err
 	}
-	return store.SaveToken(commit.Slug, editToken)
+	if err := store.Upsert(rec); err != nil {
+		store.DeleteToken(commit.Slug) //nolint:errcheck // best-effort rollback
+		return err
+	}
+	return nil
 }

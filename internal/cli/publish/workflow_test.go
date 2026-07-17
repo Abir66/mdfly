@@ -24,11 +24,12 @@ import (
 // the peak number of concurrent uploads, so tests can assert the pool fans out
 // but stays within the cap. failPath, when set, makes that blob's PUT fail hard.
 type uploadTracker struct {
-	mu        sync.Mutex
-	uploaded  map[string]bool
-	inFlight  int
-	maxFlight int
-	failPath  string
+	mu           sync.Mutex
+	uploaded     map[string]bool
+	inFlight     int
+	maxFlight    int
+	failPath     string
+	commitCalled atomic.Bool
 }
 
 // multiBlobServer serves the 3-phase flow for a multi-file bundle, routing each
@@ -81,6 +82,7 @@ func multiBlobServer(t *testing.T, tr *uploadTracker) *httptest.Server {
 	})
 
 	mux.HandleFunc("POST /v1/publish/commit", func(w http.ResponseWriter, r *http.Request) {
+		tr.commitCalled.Store(true)
 		writeJSON(w, api.CommitResponse{URL: srv.URL + "/slugmulti", Slug: "slugmulti", ManifestHash: "mh1"})
 	})
 
@@ -192,13 +194,26 @@ func TestRun_firstUploadErrorFails(t *testing.T) {
 	tr := uploadTracker{failPath: "img3.png"}
 	srv := multiBlobServer(t, &tr)
 
-	_, err := publish.Run(publish.Options{
+	stateDir := t.TempDir()
+	res, err := publish.Run(publish.Options{
 		APIBase:  srv.URL,
-		StateDir: t.TempDir(),
+		StateDir: stateDir,
 		Source:   input.Source{Kind: input.KindFile, Path: root},
 	})
 	if err == nil {
 		t.Fatal("want error when a blob upload fails, got nil")
+	}
+	// A failed upload must abort before commit — no published output, no record.
+	if tr.commitCalled.Load() {
+		t.Error("commit was called despite an upload failure")
+	}
+	if res.URL != "" || res.Slug != "" {
+		t.Errorf("failed publish returned output: %+v", res)
+	}
+	if led, err := localstate.New(stateDir).Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	} else if n := len(led.All()); n != 0 {
+		t.Errorf("failed publish persisted %d records, want 0", n)
 	}
 }
 
