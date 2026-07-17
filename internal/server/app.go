@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Abir66/mdfly/internal/server/db"
+	"github.com/Abir66/mdfly/internal/server/service/document"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
@@ -35,13 +36,14 @@ const (
 // App holds the assembled server: infrastructure clients + domain services.
 // Build with New, run with Run, release resources with Close.
 type App struct {
-	cfg     Config
-	pool    *pgxpool.Pool
-	db      *db.Client
-	storage *storage.Client
-	static  *static.Assets
-	publish *publish.Service
-	view    *view.Service
+	cfg      Config
+	pool     *pgxpool.Pool
+	db       *db.Client
+	storage  *storage.Client
+	static   *static.Assets
+	publish  *publish.Service
+	view     *view.Service
+	document *document.Service
 }
 
 // New wires the App from cfg: opens the DB pool, pings it, builds the R2 client,
@@ -68,7 +70,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			Storage: r2,
 			BaseURL: cfg.BaseURL,
 		},
-		view: &view.Service{Db: pg, Storage: r2, Static: assets},
+		view:     &view.Service{Db: pg, Storage: r2, Static: assets},
+		document: &document.Service{Db: pg},
 	}, nil
 }
 

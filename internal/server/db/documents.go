@@ -17,12 +17,19 @@ import (
 // ErrNotFound is returned when a document row does not exist.
 var ErrNotFound = errors.New("document not found")
 
+// ErrGone is returned when a document row exists but has been soft-deleted.
+// Callers map it to 410 Gone, distinct from the 404 of ErrNotFound.
+var ErrGone = errors.New("document gone")
+
 // DocumentStatus is the lifecycle state of a document row.
 type DocumentStatus string
 
 const (
 	StatusPending   DocumentStatus = "pending"
 	StatusPublished DocumentStatus = "published"
+	// StatusDeleted is a soft-deleted row: the slug stays reserved (never
+	// re-mintable) but the document serves 410 (CONTEXT.md "Delete").
+	StatusDeleted DocumentStatus = "deleted"
 )
 
 // Document is a row from the documents table.
@@ -173,15 +180,35 @@ RETURNING id, slug, idempotency_key, status,
 	return nil, ErrNotFound
 }
 
-// GetBySlug returns the published document row for slug, or ErrNotFound.
+// GetBySlug returns the viewable document row for slug. A soft-deleted row
+// yields ErrGone (→ 410); a missing or still-pending row yields ErrNotFound
+// (→ 404). Only 'published' rows are served.
 func (c *Client) GetBySlug(ctx context.Context, sl string) (*Document, error) {
+	doc, err := c.GetBySlugAny(ctx, sl)
+	if err != nil {
+		return nil, err
+	}
+	switch doc.Status {
+	case StatusPublished:
+		return doc, nil
+	case StatusDeleted:
+		return nil, ErrGone
+	default:
+		return nil, ErrNotFound
+	}
+}
+
+// GetBySlugAny returns the document row for slug regardless of status (pending,
+// published, or deleted), or ErrNotFound if no row exists. Used by the delete
+// workflow, which must read a soft-deleted row to stay idempotent.
+func (c *Client) GetBySlugAny(ctx context.Context, sl string) (*Document, error) {
 	const q = `
 SELECT id, slug, idempotency_key, status,
        manifest, manifest_hash, edit_token_hash,
        bytes_total, file_count,
        expires_at, created_at, updated_at
 FROM documents
-WHERE slug = $1 AND status = 'published'`
+WHERE slug = $1`
 
 	row := c.pool.QueryRow(ctx, q, sl)
 	doc, err := scanDocument(row)
@@ -190,6 +217,32 @@ WHERE slug = $1 AND status = 'published'`
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get by slug: %w", err)
+	}
+	return doc, nil
+}
+
+// SoftDelete flips slug's row to 'deleted' and stamps deleted_at, keeping the
+// slug reserved (ADR-0002). Returns the updated row, or ErrNotFound if no row
+// exists. Re-deleting an already-deleted row is a no-op that returns it as-is.
+func (c *Client) SoftDelete(ctx context.Context, sl string) (*Document, error) {
+	const q = `
+UPDATE documents
+SET status = 'deleted',
+    deleted_at = COALESCE(deleted_at, now()),
+    updated_at = now()
+WHERE slug = $1
+RETURNING id, slug, idempotency_key, status,
+          manifest, manifest_hash, edit_token_hash,
+          bytes_total, file_count,
+          expires_at, created_at, updated_at`
+
+	row := c.pool.QueryRow(ctx, q, sl)
+	doc, err := scanDocument(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("soft delete: %w", err)
 	}
 	return doc, nil
 }

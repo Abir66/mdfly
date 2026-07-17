@@ -29,6 +29,7 @@ import (
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
+	"github.com/Abir66/mdfly/internal/server/service/document"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
@@ -173,10 +174,12 @@ func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *http
 	assets := static.New()
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: baseURL}
 	viewSvc := &view.Service{Db: pg, Storage: r2, Static: assets}
+	docSvc := &document.Service{Db: pg}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
+	mux.HandleFunc("DELETE /v1/documents/{slug}", handlers.DeleteDocument(docSvc))
 	mux.Handle("GET /_static/", assets.Handler())
 	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
 	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(viewSvc))

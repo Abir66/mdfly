@@ -31,6 +31,22 @@ func NotFound(msg string) *Error {
 	return &Error{Status: http.StatusNotFound, Code: "not_found", Msg: msg}
 }
 
+// Gone returns a 410 for a soft-deleted (or expired) document (CONTEXT.md
+// "Delete"): the slug existed but its content is permanently removed.
+func Gone(msg string) *Error {
+	return &Error{Status: http.StatusGone, Code: api.CodeGone, Msg: msg}
+}
+
+// Unauthorized returns a 401 for a missing credential.
+func Unauthorized(code, msg string) *Error {
+	return &Error{Status: http.StatusUnauthorized, Code: code, Msg: msg}
+}
+
+// Forbidden returns a 403 for a credential that does not match the resource.
+func Forbidden(code, msg string) *Error {
+	return &Error{Status: http.StatusForbidden, Code: code, Msg: msg}
+}
+
 func Conflict(code, msg string) *Error {
 	return &Error{Status: http.StatusConflict, Code: code, Msg: msg}
 }
