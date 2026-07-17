@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/cli/input"
 	"github.com/Abir66/mdfly/internal/cli/publish"
 )
 
@@ -19,6 +20,7 @@ func TestExitCode(t *testing.T) {
 	}{
 		{"success", nil, ExitOK},
 		{"usage error", &UsageError{Err: errors.New("missing arg")}, ExitUsage},
+		{"content error", &input.ContentError{Err: errors.New("nothing to publish")}, ExitUsage},
 		{"client-side too big", &publish.BundleLimitError{Limit: "total_bytes", Max: 1, Actual: 2}, ExitUsage},
 
 		{"400 bad bundle status", &publish.APIError{Status: http.StatusBadRequest}, ExitUsage},
