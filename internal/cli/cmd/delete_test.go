@@ -15,12 +15,13 @@ import (
 )
 
 // deleteMock serves DELETE /v1/documents/{slug}, recording each call so tests
-// can assert the auth header, parent-hash query, and call count.
+// can assert the auth header, the resolved {slug} path, and the call count.
 type deleteMock struct {
 	srv      *httptest.Server
 	mu       sync.Mutex
 	calls    int
 	lastAuth string
+	lastSlug string
 	status   int    // response status (default 204)
 	code     string // error-envelope code for non-2xx
 }
@@ -34,6 +35,7 @@ func newDeleteMock(t *testing.T) *deleteMock {
 		defer m.mu.Unlock()
 		m.calls++
 		m.lastAuth = r.Header.Get("Authorization")
+		m.lastSlug = r.PathValue("slug")
 		if m.status == http.StatusNoContent {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -110,6 +112,9 @@ func TestDelete_bySlug_prunesAndSendsAuthAndHash(t *testing.T) {
 	if m.lastAuth != "Bearer mftk_tok" {
 		t.Errorf("auth header=%q, want Bearer mftk_tok", m.lastAuth)
 	}
+	if m.lastSlug != "s1" {
+		t.Errorf("deleted slug=%q, want s1", m.lastSlug)
+	}
 	if recordExists(t, dir, "s1") {
 		t.Error("record must be pruned after delete")
 	}
@@ -131,6 +136,9 @@ func TestDelete_byFile_resolvesSingleSlug(t *testing.T) {
 	if m.calls != 1 {
 		t.Errorf("server calls=%d, want 1", m.calls)
 	}
+	if m.lastSlug != "s1" {
+		t.Errorf("deleted slug=%q, want s1", m.lastSlug)
+	}
 }
 
 func TestDelete_byFile_ambiguousNeedsSlug(t *testing.T) {
@@ -151,9 +159,18 @@ func TestDelete_byFile_ambiguousNeedsSlug(t *testing.T) {
 		t.Errorf("ambiguous delete must not call server; calls=%d", m.calls)
 	}
 
-	// --slug disambiguates.
+	// --slug disambiguates: the override picks s2, not s1.
 	if _, _, err := executeIn(t, dir, "--api", m.srv.URL, "delete", abs, "--slug", "s2", "-y"); err != nil {
 		t.Fatalf("delete --slug s2: %v", err)
+	}
+	if m.calls != 1 {
+		t.Errorf("server calls=%d, want 1 after --slug", m.calls)
+	}
+	if m.lastSlug != "s2" {
+		t.Errorf("deleted slug=%q, want s2 (--slug override)", m.lastSlug)
+	}
+	if m.lastAuth != "Bearer mftk_b" {
+		t.Errorf("auth header=%q, want Bearer mftk_b (s2 token)", m.lastAuth)
 	}
 }
 
@@ -200,7 +217,11 @@ func TestDelete_serverGonePrunesAndSucceeds(t *testing.T) {
 }
 
 func TestDelete_notInStateAttemptsServerDelete(t *testing.T) {
-	dir := t.TempDir() // empty state
+	dir := t.TempDir() // no ledger record...
+	// ...but the Edit Token survives in credentials, so recovery still authenticates.
+	if err := localstate.New(dir).SaveToken("orphan", "mftk_orphan"); err != nil {
+		t.Fatalf("seed token: %v", err)
+	}
 	m := newDeleteMock(t)
 
 	out, _, err := executeIn(t, dir, "--api", m.srv.URL, "delete", "orphan", "-y")
@@ -212,6 +233,12 @@ func TestDelete_notInStateAttemptsServerDelete(t *testing.T) {
 	}
 	if m.calls != 1 {
 		t.Errorf("recovery must attempt server delete; calls=%d", m.calls)
+	}
+	if m.lastSlug != "orphan" {
+		t.Errorf("deleted slug=%q, want orphan", m.lastSlug)
+	}
+	if m.lastAuth != "Bearer mftk_orphan" {
+		t.Errorf("auth header=%q, want Bearer mftk_orphan", m.lastAuth)
 	}
 }
 

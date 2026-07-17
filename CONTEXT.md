@@ -136,7 +136,7 @@ CLI-side record of every Document this machine has published, stored in `~/.mdfl
 The once-per-24h update-check cache lives in a **separate** `~/.mdfly/cache.json`, not in `state.json` — volatile cache must never race with or clobber durable publish tracking.
 
 ### Remove
-CLI verb `mdfly remove <slug-or-file>` deletes entries from [[Local State]] only — touches `~/.mdfly/state.json`, makes **no server call**, the Document at the URL is unaffected. Distinct from [[Delete]], which hard-deletes server-side. Use when a file was renamed/moved/discarded and you want a clean `mdfly list`, or when you want a slug you no longer track to stop resolving under its old path in `mdfly update <file>`.
+CLI verb `mdfly remove <slug-or-file>` deletes entries from [[Local State]] only — touches `~/.mdfly/state.json`, makes **no server call**, the Document at the URL is unaffected. Distinct from [[Delete]], which soft-deletes server-side (row flipped to `status='deleted'`, URL then serves 410, blobs reclaimed by a later GC). Use when a file was renamed/moved/discarded and you want a clean `mdfly list`, or when you want a slug you no longer track to stop resolving under its old path in `mdfly update <file>`.
 
 Resolution:
 - **Slug arg** (`mdfly remove abc12345`) — removes that slug from whichever path maps it; errors with exit `2` if the slug isn't in Local State.

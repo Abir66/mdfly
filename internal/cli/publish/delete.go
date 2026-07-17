@@ -44,7 +44,7 @@ func doDelete(ctx context.Context, client *http.Client, target, token string) er
 		return &TransientError{err: err}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK {
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
 	data, err := io.ReadAll(resp.Body)
