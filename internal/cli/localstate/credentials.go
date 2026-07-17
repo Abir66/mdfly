@@ -54,6 +54,9 @@ func (s *Store) readCredentials() (map[string]string, error) {
 	if err := json.Unmarshal(data, &creds); err != nil {
 		return nil, err
 	}
+	if creds == nil { // JSON null nils the map
+		creds = map[string]string{}
+	}
 	return creds, nil
 }
 

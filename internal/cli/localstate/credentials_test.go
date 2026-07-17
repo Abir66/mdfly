@@ -10,8 +10,8 @@ func TestToken_saveLoadDelete(t *testing.T) {
 	s := New(t.TempDir())
 	const slug, tok = "abc123", "mftk_secret"
 
-	if _, ok, _ := s.LoadToken(slug); ok {
-		t.Fatal("token present before save")
+	if _, ok, err := s.LoadToken(slug); err != nil || ok {
+		t.Fatalf("before save: ok=%v err=%v", ok, err)
 	}
 	if err := s.SaveToken(slug, tok); err != nil {
 		t.Fatalf("SaveToken: %v", err)
@@ -28,8 +28,22 @@ func TestToken_saveLoadDelete(t *testing.T) {
 	if err := s.DeleteToken(slug); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
-	if _, ok, _ := s.LoadToken(slug); ok {
-		t.Error("token present after delete")
+	if _, ok, err := s.LoadToken(slug); err != nil || ok {
+		t.Errorf("after delete: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestSaveToken_afterNullCredentialsFile(t *testing.T) {
+	s := New(t.TempDir())
+	if err := os.WriteFile(s.credentialsPath(), []byte("null"), FileMode); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveToken("abc", "mftk_x"); err != nil {
+		t.Fatalf("SaveToken over null file: %v", err)
+	}
+	got, ok, err := s.LoadToken("abc")
+	if err != nil || !ok || got != "mftk_x" {
+		t.Errorf("got=%q ok=%v err=%v", got, ok, err)
 	}
 }
 

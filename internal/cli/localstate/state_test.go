@@ -83,3 +83,26 @@ func TestSlugsForPath_resolution(t *testing.T) {
 		t.Errorf("many: got %v want [s1 s2]", got)
 	}
 }
+
+func TestLedger_returnedPathIsCopy(t *testing.T) {
+	s := New(t.TempDir())
+	p := "/home/u/notes.md"
+	if err := s.Upsert(sampleRecord("s1", &p)); err != nil {
+		t.Fatal(err)
+	}
+	led, err := s.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	rec, _ := led.Get("s1")
+	*rec.Path = "/tampered.md"
+
+	again, _ := led.Get("s1")
+	if *again.Path != p {
+		t.Errorf("ledger mutated via returned Path: got %q", *again.Path)
+	}
+	if got := led.SlugsForPath(p); len(got) != 1 {
+		t.Errorf("index desynced: SlugsForPath(%q)=%v", p, got)
+	}
+}
