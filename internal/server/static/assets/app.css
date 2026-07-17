@@ -225,6 +225,11 @@ body {
   margin: 0 auto;
   width: 100%;
 }
+/* Whole-file source view spans the full column, GitHub-blob style. */
+.center-wide {
+  max-width: none;
+  padding: 1.5rem 1.5rem 3rem;
+}
 
 .breadcrumb {
   display: flex;
@@ -314,6 +319,41 @@ body {
   background: transparent;
   font-size: inherit;
 }
+
+/* Whole-file source view (S24 text preview) — GitHub blob look: bordered box,
+   white code area, a muted line-number gutter with its own hairline, and code
+   that scrolls horizontally without dragging the gutter with it. Chroma emits
+   a <div><table> with two <pre> cells (numbers | code); the sanitizer strips its
+   structural inline styles, so the layout is owned here. */
+.code-file {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: .8125rem;
+  line-height: 1.5;
+  background: var(--bg);
+}
+.code-file table { width: 100%; border-collapse: collapse; }
+.code-file td { vertical-align: top; padding: 0; border: 0; }
+.code-file td:first-child {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  user-select: none;
+  background: var(--code-bg);
+  border-right: 1px solid var(--border);
+}
+.code-file td:last-child { width: 100%; max-width: 0; }
+.code-file pre {
+  margin: 0;
+  padding: .8rem 0;
+  background: transparent !important;
+  overflow: visible;
+}
+.code-file td:first-child pre { padding-left: .6rem; padding-right: .6rem; }
+.code-file td:last-child pre { padding-left: 1rem; padding-right: 1rem; overflow-x: auto; }
+.code-file td:first-child pre span { color: var(--muted) !important; margin: 0 !important; padding: 0 !important; }
 
 /* Asset centers (S24): inline image + download card */
 .asset-image { max-width: 100%; height: auto; }

@@ -16,7 +16,15 @@ import (
 // so a highlighted file needs no external stylesheet — zero client assets.
 const highlightStyle = "github"
 
-var fileFormatter = chromahtml.New(chromahtml.WithClasses(false))
+// fileFormatter renders a whole-file view (unlike a markdown code block): it adds
+// a line-number gutter in a two-column table, which the .code-file CSS styles
+// into the GitHub blob look. Numbers are non-selectable via inline styles chroma
+// emits, so copying the code skips them.
+var fileFormatter = chromahtml.New(
+	chromahtml.WithClasses(false),
+	chromahtml.WithLineNumbers(true),
+	chromahtml.LineNumbersInTable(true),
+)
 
 // IsBinary reports whether content looks binary: it holds a NUL byte or is not
 // valid UTF-8. Empty content is treated as text (false).

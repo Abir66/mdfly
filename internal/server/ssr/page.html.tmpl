@@ -50,7 +50,7 @@
   </aside>
   {{- end}}
   <main class="main-col">
-  <div class="center">
+  <div class="center{{if .CodeFile}} center-wide{{end}}">
     <nav class="breadcrumb" aria-label="Breadcrumb">
       {{- range $i, $c := .Breadcrumb}}
       {{- if $i}}<span class="sep">/</span>{{end}}
@@ -75,7 +75,11 @@
       <a class="download" href="{{.Download.URL}}" download>Download</a>
     </div>
     {{- end}}
+    {{- if .CodeFile}}
+    <div class="code-file">{{.Body}}</div>
+    {{- else}}
     <article class="content">{{.Body}}</article>
+    {{- end}}
   </div>
     <footer class="site-footer">
       <a class="footer-brand" href="/">{{template "ic-logo"}}<span class="wordmark-text">MdFly</span></a>

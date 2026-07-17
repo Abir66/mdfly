@@ -80,6 +80,40 @@ func TestRenderPage_FooterOnSinglePage(t *testing.T) {
 	}
 }
 
+func TestRenderPage_CodeFileWide(t *testing.T) {
+	data := chromeData()
+	data.CodeFile = true
+	data.Body = template.HTML(`<div><table><tr><td><pre>1</pre></td><td><pre>x</pre></td></tr></table></div>`)
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A code file spans full width in a dedicated container, not the prose column.
+	if !strings.Contains(out, `class="code-file"`) {
+		t.Errorf("code file missing .code-file container:\n%s", out)
+	}
+	if !strings.Contains(out, "center center-wide") {
+		t.Errorf("code file must widen the center column:\n%s", out)
+	}
+	if strings.Contains(out, `<article class="content">`) {
+		t.Errorf("code file must not use the prose content article:\n%s", out)
+	}
+}
+
+func TestRenderPage_MarkdownUsesProseColumn(t *testing.T) {
+	data := chromeData()
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `<article class="content">`) {
+		t.Errorf("markdown must render in the prose content article:\n%s", out)
+	}
+	if strings.Contains(out, "center-wide") {
+		t.Errorf("markdown must keep the reading-width column:\n%s", out)
+	}
+}
+
 func TestRenderPage_ChromeStaticLinks(t *testing.T) {
 	out, err := ssr.RenderPage(chromeData())
 	if err != nil {

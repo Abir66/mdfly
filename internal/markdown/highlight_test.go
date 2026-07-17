@@ -3,6 +3,7 @@ package markdown_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/markdown"
@@ -39,6 +40,22 @@ func TestHighlightFile_Golden(t *testing.T) {
 				t.Errorf("output mismatch for %s\ngot:\n%s\nwant:\n%s", tc.name, got, want)
 			}
 		})
+	}
+}
+
+func TestHighlightFile_LineNumbers(t *testing.T) {
+	content := []byte("package main\n\nfunc main() {}\n")
+	got, err := markdown.HighlightFile("main.go", content)
+	if err != nil {
+		t.Fatalf("HighlightFile: %v", err)
+	}
+	// File view carries a line-number gutter: one non-selectable cell per line.
+	const perLine = "white-space:pre;-webkit-user-select:none"
+	if n := strings.Count(string(got), perLine); n != 3 {
+		t.Errorf("expected 3 non-selectable line-number cells, got %d:\n%s", n, got)
+	}
+	if !strings.Contains(string(got), "<table") {
+		t.Errorf("file view must render line numbers in a table:\n%s", got)
 	}
 }
 
