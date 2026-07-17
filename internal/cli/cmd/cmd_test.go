@@ -2,10 +2,82 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Abir66/mdfly/internal/api"
 )
+
+// publishMock serves the 3-phase publish flow for a single-file bundle.
+func publishMock(t *testing.T, rootPath string) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/publish/init", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, api.InitResponse{Slug: "s1", PresignedURLs: map[string]string{rootPath: srv.URL + "/blob"}})
+	})
+	mux.HandleFunc("PUT /blob", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("POST /v1/publish/commit", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, api.CommitResponse{URL: srv.URL + "/s1", Slug: "s1", ManifestHash: "mh"})
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v) //nolint:errcheck
+}
+
+func TestPublishPrintsURL(t *testing.T) {
+	dir := t.TempDir()
+	mdFile := filepath.Join(dir, "hello.md")
+	if err := os.WriteFile(mdFile, []byte("# Hi\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	srv := publishMock(t, "hello.md")
+
+	out, errOut, err := execute(t, "--api", srv.URL, "publish", mdFile)
+	if err != nil {
+		t.Fatalf("publish: %v (stderr=%s)", err, errOut)
+	}
+	if strings.TrimSpace(out) != srv.URL+"/s1" {
+		t.Errorf("stdout=%q, want %s/s1", out, srv.URL)
+	}
+}
+
+func TestPublishJSONOutput(t *testing.T) {
+	dir := t.TempDir()
+	mdFile := filepath.Join(dir, "hello.md")
+	if err := os.WriteFile(mdFile, []byte("# Hi\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	srv := publishMock(t, "hello.md")
+
+	out, _, err := execute(t, "--json", "--api", srv.URL, "publish", mdFile)
+	if err != nil {
+		t.Fatalf("publish --json: %v", err)
+	}
+	var obj struct {
+		URL          string `json:"url"`
+		Slug         string `json:"slug"`
+		ManifestHash string `json:"manifest_hash"`
+		Tier         string `json:"tier"`
+	}
+	if err := json.Unmarshal([]byte(out), &obj); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
+	}
+	if obj.Slug != "s1" || obj.Tier != "anon" || obj.ManifestHash != "mh" {
+		t.Errorf("json object = %+v, want slug=s1 tier=anon mh=mh", obj)
+	}
+}
 
 // execute runs the root command with args, capturing stdout+stderr, isolating
 // state via a temp config dir so no real ~/.mdfly is touched.

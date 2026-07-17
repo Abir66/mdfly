@@ -68,6 +68,15 @@ func newBundleFile(logicalPath, diskPath string, content []byte) BundleFile {
 	return f
 }
 
+// TotalBytes is the summed size of every file in the bundle.
+func (b Bundle) TotalBytes() int64 {
+	var total int64
+	for _, f := range b.FilesByPath {
+		total += f.Size
+	}
+	return total
+}
+
 // ToDTO converts the Bundle into the wire BundleDTO, dropping local-only fields.
 // One DTO entry is emitted per path, so paths sharing content are preserved.
 func (b Bundle) ToDTO() api.BundleDTO {

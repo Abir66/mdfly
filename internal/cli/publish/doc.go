@@ -1,2 +1,3 @@
-// Package publish implements the 3-phase publish orchestrator (init → upload → commit).
+// Package publish implements the publish workflow: build Bundle → limits
+// preflight → init → parallel blob upload → commit → persist Local State.
 package publish

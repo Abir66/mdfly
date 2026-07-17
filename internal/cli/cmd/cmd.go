@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/Abir66/mdfly/internal/cli/config"
+	"github.com/Abir66/mdfly/internal/cli/input"
 	"github.com/Abir66/mdfly/internal/cli/output"
 	"github.com/Abir66/mdfly/internal/cli/publish"
 	"github.com/spf13/cobra"
@@ -82,22 +86,89 @@ func registerGlobalFlags(root *cobra.Command, app *appContext) {
 	pf.BoolVar(&app.noUpdateCheck, "no-update-check", false, "skip the background update check")
 }
 
-// newPublishCmd wires the only verb with real behavior in this slice. The
-// orchestrator is rewired in S32; here it keeps the existing single-file path.
+// newPublishCmd wires the publish verb: resolve the content source, run the
+// publish workflow, print the URL (or --json object), and optionally --open it.
 func newPublishCmd(app *appContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "publish <file>",
-		Short: "Publish markdown to a shareable URL",
-		Args:  cobra.ExactArgs(1),
+	var recursive, open bool
+	var message string
+
+	cmd := &cobra.Command{
+		Use:   "publish [file]",
+		Short: "Publish a file or inline text to a shareable URL",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			url, err := publish.Run(app.cfg.APIBase, args[0])
+			src, err := input.Resolve(input.Request{
+				File:       firstArg(args),
+				Message:    message,
+				MessageSet: cmd.Flags().Changed("message"),
+				Stdin:      cmd.InOrStdin(),
+				StdinIsTTY: input.IsTerminal(os.Stdin),
+			})
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), url)
+
+			res, err := publish.Run(publish.Options{
+				APIBase:   app.cfg.APIBase,
+				StateDir:  app.cfg.StateDir,
+				Source:    src,
+				Recursive: recursive,
+				Progress:  app.progressWriter(cmd),
+			})
+			if err != nil {
+				return err
+			}
+
+			if err := writePublishResult(cmd.OutOrStdout(), res, app.json); err != nil {
+				return err
+			}
+			if open {
+				openURL(cmd.ErrOrStderr(), res.URL)
+			}
 			return nil
 		},
 	}
+
+	f := cmd.Flags()
+	f.BoolVarP(&recursive, "recursive", "r", false, "follow linked .md files transitively")
+	f.StringVarP(&message, "message", "m", "", "publish inline text instead of a file")
+	f.BoolVar(&open, "open", false, "open the resulting URL in the browser after publishing")
+	return cmd
+}
+
+// writePublishResult writes the canonical artifact to stdout: the URL on one
+// line, or the machine-readable object under --json.
+func writePublishResult(stdout io.Writer, res publish.Result, asJSON bool) error {
+	if asJSON {
+		obj := struct {
+			URL          string `json:"url"`
+			Slug         string `json:"slug"`
+			ManifestHash string `json:"manifest_hash"`
+			Tier         string `json:"tier"`
+		}{res.URL, res.Slug, res.ManifestHash, res.Tier}
+		return json.NewEncoder(stdout).Encode(obj)
+	}
+	_, err := fmt.Fprintln(stdout, res.URL)
+	return err
+}
+
+func firstArg(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	return ""
+}
+
+// progressWriter returns the writer for the "uploaded N/M" counter, or nil to
+// suppress it: only when not quiet and stderr is an interactive terminal.
+func (app *appContext) progressWriter(cmd *cobra.Command) io.Writer {
+	if app.quiet {
+		return nil
+	}
+	if f, ok := cmd.ErrOrStderr().(*os.File); ok && input.IsTerminal(f) {
+		return cmd.ErrOrStderr()
+	}
+	return nil
 }
 
 func newStubCmd(use, short string) *cobra.Command {

@@ -29,6 +29,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/cli/localstate"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
@@ -503,6 +504,111 @@ func TestCLIPublish_noArgs(t *testing.T) {
 	}
 	if stderr.Len() == 0 {
 		t.Error("want usage on stderr when no args")
+	}
+}
+
+// TestCLIPublish_sourcesAndState drives publish from every content source
+// against one server and asserts each returns a URL and persists an independent
+// slug-keyed record: a file twice (two records), inline -m, and piped stdin.
+func TestCLIPublish_sourcesAndState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	pg := db.New(pool)
+	r2 := storage.New(storage.Config{
+		Endpoint:        env.endpoint,
+		AccessKeyID:     env.accessKey,
+		SecretAccessKey: env.secretKey,
+		Bucket:          env.bucket,
+		PublicBaseURL:   env.endpoint + "/" + env.bucket,
+	})
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
+	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
+	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
+
+	bin := buildCLI(t)
+	configDir := t.TempDir()
+	workDir := t.TempDir()
+
+	mdFile := filepath.Join(workDir, "notes.md")
+	if err := os.WriteFile(mdFile, []byte("# Notes\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(stdin string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = workDir
+		cmd.Env = append(os.Environ(), "MDFLY_API="+srv.URL, "MDFLY_CONFIG_DIR="+configDir)
+		if stdin != "" {
+			cmd.Stdin = strings.NewReader(stdin)
+		}
+		var out, errOut bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &errOut
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("publish %v: %v\nstderr: %s", args, err, errOut.String())
+		}
+		url := strings.TrimSpace(out.String())
+		if !strings.HasPrefix(url, srv.URL+"/") {
+			t.Fatalf("publish %v: stdout=%q, want URL", args, url)
+		}
+		return url
+	}
+
+	url1 := run("", "publish", mdFile)
+	url2 := run("", "publish", mdFile)
+	if url1 == url2 {
+		t.Errorf("repeated publish must mint independent URLs; both %s", url1)
+	}
+	run("", "publish", "-m", "# Inline note")
+	run("# Piped note\n", "publish")
+
+	led, err := localstate.New(configDir).Load()
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	recs := led.All()
+	if len(recs) != 4 {
+		t.Fatalf("state has %d records, want 4 (2 file + 1 -m + 1 stdin)", len(recs))
+	}
+
+	var fileRecs, textRecs int
+	for _, rec := range recs {
+		if !rec.HasToken {
+			t.Errorf("record %s missing token marker", rec.Slug)
+		}
+		if tok, ok, _ := localstate.New(configDir).LoadToken(rec.Slug); !ok || tok == "" {
+			t.Errorf("record %s: edit token not persisted", rec.Slug)
+		}
+		switch rec.Source {
+		case localstate.SourceFile:
+			fileRecs++
+			if rec.Path == nil || *rec.Path != mdFile {
+				t.Errorf("file record path=%v, want %q", rec.Path, mdFile)
+			}
+		case localstate.SourceText:
+			textRecs++
+			if rec.Path != nil {
+				t.Errorf("text record path=%v, want nil", rec.Path)
+			}
+		}
+	}
+	if fileRecs != 2 || textRecs != 2 {
+		t.Errorf("source split: file=%d text=%d, want 2/2", fileRecs, textRecs)
 	}
 }
 

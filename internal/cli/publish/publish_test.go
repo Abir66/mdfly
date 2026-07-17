@@ -13,8 +13,19 @@ import (
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/cli/input"
 	"github.com/Abir66/mdfly/internal/cli/publish"
 )
+
+// runFile publishes a file through the workflow with an isolated state dir.
+func runFile(t *testing.T, apiBase, path string) (publish.Result, error) {
+	t.Helper()
+	return publish.Run(publish.Options{
+		APIBase:  apiBase,
+		StateDir: t.TempDir(),
+		Source:   input.Source{Kind: input.KindFile, Path: path},
+	})
+}
 
 func sha256Hex(b []byte) string {
 	sum := sha256.Sum256(b)
@@ -95,17 +106,17 @@ func TestRun_happyPath(t *testing.T) {
 
 	srv := mockServer(t, "hello.md", content)
 
-	url, err := publish.Run(srv.URL, mdFile)
+	res, err := runFile(t, srv.URL, mdFile)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(url, "testslug1") {
-		t.Errorf("URL=%q, want it to contain testslug1", url)
+	if !strings.Contains(res.URL, "testslug1") {
+		t.Errorf("URL=%q, want it to contain testslug1", res.URL)
 	}
 }
 
 func TestRun_fileNotFound(t *testing.T) {
-	_, err := publish.Run("http://localhost:9999", "/nonexistent/file.md")
+	_, err := runFile(t, "http://localhost:9999", "/nonexistent/file.md")
 	if err == nil {
 		t.Error("want error for nonexistent file, got nil")
 	}
@@ -121,7 +132,7 @@ func TestRun_initError(t *testing.T) {
 	mdFile := filepath.Join(dir, "test.md")
 	os.WriteFile(mdFile, []byte("content"), 0644) //nolint:errcheck
 
-	_, err := publish.Run(srv.URL, mdFile)
+	_, err := runFile(t, srv.URL, mdFile)
 	if err == nil {
 		t.Error("want error on server 500, got nil")
 	}
@@ -159,7 +170,7 @@ func TestRun_sendsEditToken(t *testing.T) {
 	srv = httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	if _, err := publish.Run(srv.URL, mdFile); err != nil {
+	if _, err := runFile(t, srv.URL, mdFile); err != nil {
 		t.Fatalf("publish.Run failed: %v", err)
 	}
 
