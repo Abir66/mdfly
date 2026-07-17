@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Abir66/mdfly/internal/api"
 )
 
 func TestBackoffFor_growsAndJitters(t *testing.T) {
@@ -73,9 +75,15 @@ func TestPostJSON_payloadMismatch422(t *testing.T) {
 	_, err := withRetry(context.Background(), func() (map[string]any, error) {
 		return postJSON[map[string]any](context.Background(), srv.Client(), srv.URL, map[string]any{})
 	})
-	var mismatch *IdempotencyMismatchError
-	if !errors.As(err, &mismatch) {
-		t.Fatalf("err=%v, want *IdempotencyMismatchError", err)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("err=%v, want *APIError", err)
+	}
+	if apiErr.Code != api.CodeIdempotencyPayloadMismatch {
+		t.Errorf("code=%q, want %q", apiErr.Code, api.CodeIdempotencyPayloadMismatch)
+	}
+	if apiErr.Status != http.StatusUnprocessableEntity {
+		t.Errorf("status=%d, want 422", apiErr.Status)
 	}
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Errorf("calls=%d, want 1 (422 must not retry)", got)
@@ -88,11 +96,12 @@ func TestIsRetryable(t *testing.T) {
 		err  error
 		want bool
 	}{
-		{"5xx", &httpStatusError{code: http.StatusServiceUnavailable}, true},
-		{"500", &httpStatusError{code: http.StatusInternalServerError}, true},
-		{"4xx not retryable", &httpStatusError{code: http.StatusUnprocessableEntity}, false},
-		{"404 not retryable", &httpStatusError{code: http.StatusNotFound}, false},
-		{"transient network", &transientError{err: errors.New("EOF")}, true},
+		{"5xx", &APIError{Status: http.StatusServiceUnavailable}, true},
+		{"500", &APIError{Status: http.StatusInternalServerError}, true},
+		{"4xx not retryable", &APIError{Status: http.StatusUnprocessableEntity}, false},
+		{"404 not retryable", &APIError{Status: http.StatusNotFound}, false},
+		{"429 not retryable", &APIError{Status: http.StatusTooManyRequests}, false},
+		{"transient network", &TransientError{err: errors.New("EOF")}, true},
 		{"plain error not retryable", errors.New("boom"), false},
 	}
 	for _, c := range cases {

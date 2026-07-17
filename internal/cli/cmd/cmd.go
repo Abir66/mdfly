@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Abir66/mdfly/internal/cli/config"
+	"github.com/Abir66/mdfly/internal/cli/output"
 	"github.com/Abir66/mdfly/internal/cli/publish"
 	"github.com/spf13/cobra"
 )
@@ -51,9 +52,13 @@ func NewRootCmd(version string) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprint(cmd.ErrOrStderr(), cmd.UsageString())
-			return errNoCommand
+			return &output.UsageError{Err: errNoCommand}
 		},
 	}
+	// Flag-parse failures are input errors (exit 2).
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return &output.UsageError{Err: err}
+	})
 
 	registerGlobalFlags(root, app)
 	root.AddCommand(
