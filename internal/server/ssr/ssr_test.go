@@ -80,6 +80,22 @@ func TestRenderPage_FooterOnSinglePage(t *testing.T) {
 	}
 }
 
+func TestRenderPage_LogoGradientIDsUnique(t *testing.T) {
+	// Sidebar and footer both render the logo; a shared SVG gradient id is
+	// invalid and breaks the footer logo's fill when the sidebar collapses to a
+	// rail (its def is display:none). Each instance must own a distinct id.
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(out, `id="mdfly_logo_grad"`); n != 1 {
+		t.Errorf("logo gradient id must be unique per instance, found %d of mdfly_logo_grad:\n%s", n, out)
+	}
+	if !strings.Contains(out, `class="footer-brand"`) {
+		t.Errorf("footer brand logo missing:\n%s", out)
+	}
+}
+
 func TestRenderPage_CodeFileWide(t *testing.T) {
 	data := chromeData()
 	data.CodeFile = true
