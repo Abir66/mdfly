@@ -136,7 +136,7 @@ CLI-side record of every Document this machine has published, stored in `~/.mdfl
 The once-per-24h update-check cache lives in a **separate** `~/.mdfly/cache.json`, not in `state.json` — volatile cache must never race with or clobber durable publish tracking.
 
 ### Remove
-CLI verb `mdfly remove <slug-or-file>` deletes entries from [[Local State]] only — touches `~/.mdfly/state.json`, makes **no server call**, the Document at the URL is unaffected. Distinct from [[Delete]], which hard-deletes server-side. Use when a file was renamed/moved/discarded and you want a clean `mdfly list`, or when you want a slug you no longer track to stop resolving under its old path in `mdfly update <file>`.
+CLI verb `mdfly remove <slug-or-file>` deletes entries from [[Local State]] only — touches `~/.mdfly/state.json`, makes **no server call**, the Document at the URL is unaffected. Distinct from [[Delete]], which soft-deletes server-side (row flipped to `status='deleted'`, URL then serves 410, blobs reclaimed by a later GC). Use when a file was renamed/moved/discarded and you want a clean `mdfly list`, or when you want a slug you no longer track to stop resolving under its old path in `mdfly update <file>`.
 
 Resolution:
 - **Slug arg** (`mdfly remove abc12345`) — removes that slug from whichever path maps it; errors with exit `2` if the slug isn't in Local State.
@@ -178,7 +178,7 @@ CI scripts can `mdfly publish docs/ || case $? in 3) re-login;; 4) skip;; 6) ret
 - `--help` / `-h` — per-verb help
 - `--version` — print `mdfly vX.Y.Z (<git-sha>, built <date>)` and exit `0`
 
-Subcommand-local flags (NOT global): `-r`/`--recursive` and `-m`/`--message <text>` (`publish`/`update`), `--open` (`publish`/`update` — open the resulting URL in the browser after success), `--force` (`update`/`delete`), `--slug` (`update`/`delete`/`claim`), `--device`/`--label`/`--provider` (`login`), `--all`/`--wipe-local` (`logout`), `--all` (`remove`).
+Subcommand-local flags (NOT global): `-r`/`--recursive` and `-m`/`--message <text>` (`publish`/`update`), `--open` (`publish`/`update` — open the resulting URL in the browser after success), `--force` (`update` — overrides an optimistic-concurrency conflict; `delete` is unconditional and needs no such flag), `--slug` (`update`/`delete`/`claim`), `--device`/`--label`/`--provider` (`login`), `--all`/`--wipe-local` (`logout`), `--all` (`remove`).
 
 **Config precedence**, highest wins:
 1. explicit flag (`--api https://...`)
@@ -244,7 +244,7 @@ Concurrency: server tracks a `manifest_hash` per slug; commit carries `parent_ma
 (Asset garbage collection — deleting blobs whose refcount drops to 0 after an Update — is deferred to a later milestone. In v1, orphaned Assets remain in R2 and are paid for; this is an accepted leak.)
 
 ### Delete
-Owner-triggered removal of a Document via `mdfly delete <slug-or-file>` (a file arg resolves through [[Local State]], same slug-disambiguation rule as [[Update]]). Soft-deletes the Postgres row (sets `deleted_at`, slug stays reserved and not reusable) and immediately hard-deletes the Bundle's blobs from R2. The URL responds **410 Gone** thereafter — distinct from 404 (never existed). On success — or on a `404`/`410` meaning the slug was already gone — the CLI prunes the local [[Local State]] record (distinct from [[Remove]], which only touches local state and never calls the server). Expiration of an Anonymous Document follows the same code path as a Delete.
+Owner-triggered removal of a Document via `mdfly delete <slug-or-file>` (a file arg resolves through [[Local State]], same slug-disambiguation rule as [[Update]]). Soft-deletes the Postgres row (flips `status` to `'deleted'` and stamps `deleted_at`, slug stays reserved and not reusable); R2 blob cleanup is deferred to a server-side GC (out of the delete request's path). The URL responds **410 Gone** thereafter — distinct from 404 (never existed). On success — or on a `404`/`410` meaning the slug was already gone — the CLI prunes the local [[Local State]] record (distinct from [[Remove]], which only touches local state and never calls the server). Expiration of an Anonymous Document follows the same code path as a Delete.
 
 ### Preview Metadata
 Server-extracted OpenGraph tags emitted in the SSR'd HTML at view time (ADR-0018). Resolution order: frontmatter `title` / `description` / `image` if present; otherwise inferred — title from first H1, description from first paragraph (truncated), image from first referenced image Asset. Enables link unfurl in chat clients.
@@ -266,10 +266,10 @@ Optional YAML block at the top of the Root markdown. Recognized keys: `title`, `
 The canonical relational layout backing every term in this glossary. v1 ships five tables: `documents`, `users`, `identities`, `sessions`, `exchange_codes`. The full DDL — column types, constraints, indexes, GC strategy — lives in ADR-0019; the rules below are the load-bearing decisions every other CONTEXT.md term assumes.
 
 - **PK style: `BIGSERIAL`** across all tables. Slug is the public handle; internal IDs are never exposed in URLs or API responses, so unguessability of IDs is not a property we need. 8-byte integers keep indexes tight and joins cheap.
-- **Soft-delete by `deleted_at TIMESTAMPTZ` column**, not by status enum or row removal. `documents.deleted_at IS NOT NULL` means the Bundle's R2 blobs are gone but the slug stays reserved forever per ADR-0002. `users.deleted_at IS NOT NULL` is the manual user-delete tombstone; under ADR-0017 this is a ticket-driven process, not self-service.
+- **Soft-delete by `status='deleted'` + `deleted_at TIMESTAMPTZ` stamp**, never row removal. A `'deleted'` row serves 410 and the slug stays reserved forever per ADR-0002; its R2 blobs are reclaimed later by a server-side GC (not on the delete request path). `users.deleted_at IS NOT NULL` is the manual user-delete tombstone; under ADR-0017 this is a ticket-driven process, not self-service.
 - **Cascade policy on user delete**: `identities`, `sessions`, `exchange_codes` all `ON DELETE CASCADE` (their existence is bound to the user); `documents.owner_user_id` is `ON DELETE SET NULL` so the user's docs orphan into Anonymous tier rather than getting silently swept.
 - **Tier derived from `documents.owner_user_id IS NULL`**, not stored. Single source of truth; impossible to drift; Bundle Limits enforced in application code from this check.
-- **`documents.status`** carries only `'pending'` and `'published'` — soft-delete is orthogonal via `deleted_at`. Stored as `TEXT` with `CHECK` constraint, not native `ENUM`, because extending `TEXT + CHECK` is a trivial migration whereas `ALTER TYPE ... ADD VALUE` on an enum is fiddly.
+- **`documents.status`** carries `'pending'`, `'published'`, and `'deleted'` — a delete flips `status` to `'deleted'` and also stamps `deleted_at`. Stored as `TEXT` with a `CHECK` constraint, not native `ENUM`, because extending `TEXT + CHECK` is a trivial migration (S34's `0002` does exactly this) whereas `ALTER TYPE ... ADD VALUE` on an enum is fiddly.
 - **`documents.manifest JSONB`** stored on the row, not in a child `document_files` table. Bundle Limits cap manifest size well under TOAST threshold; the manifest is only ever read whole (at view time, server-side per [[Bundle Manifest]] / ADR-0018), never queried by inner key.
 - **`documents.manifest_hash BYTEA`** denormalized alongside the JSONB for ADR-0012 optimistic concurrency lookup and for cache-keying ADR-0018's resolved-markdown render. Not unique (two slugs could coincidentally share a manifest); no index.
 - **`documents.title`, `documents.excerpt`, `documents.og_image_hash`** computed at commit and cached on the row (per [[Preview Metadata]] / ADR-0018) so HTML render does not re-parse markdown to fill `<head>`.

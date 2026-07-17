@@ -116,7 +116,7 @@ func TestVersionPrints(t *testing.T) {
 }
 
 func TestStubVerbsReturnNotImplemented(t *testing.T) {
-	for _, verb := range []string{"update", "list", "delete", "remove", "open"} {
+	for _, verb := range []string{"update", "list", "remove", "open"} {
 		t.Run(verb, func(t *testing.T) {
 			_, _, err := execute(t, verb)
 			if !errors.Is(err, errNotImplemented) {
@@ -127,7 +127,7 @@ func TestStubVerbsReturnNotImplemented(t *testing.T) {
 }
 
 func TestGlobalFlagsParseOnEveryVerb(t *testing.T) {
-	for _, verb := range []string{"update", "list", "delete", "remove", "open"} {
+	for _, verb := range []string{"update", "list", "remove", "open"} {
 		t.Run(verb, func(t *testing.T) {
 			// Runtime error (not-implemented), but flag parsing must succeed.
 			_, _, err := execute(t, "--json", "-v", "-q", "-y", "--no-update-check", "--api", "https://x.example", verb)

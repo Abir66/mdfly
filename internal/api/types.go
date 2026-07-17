@@ -22,6 +22,9 @@ const (
 	CodeBundleTooLarge = "bundle_too_large"
 	// CodeRateLimited is returned (429) when the client is rate limited.
 	CodeRateLimited = "rate_limited"
+	// CodeGone is returned (410) when a document has been deleted or expired
+	// (soft-deleted row; slug stays reserved).
+	CodeGone = "gone"
 )
 
 // BundleFileDTO is one file entry in a BundleDTO, sent over the wire at init.

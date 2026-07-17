@@ -71,6 +71,9 @@ func (s *Service) loadManifest(ctx context.Context, slug string) (manifest.Manif
 		if errors.Is(err, db.ErrNotFound) {
 			return manifest.Manifest{}, httpx.NotFound("not found")
 		}
+		if errors.Is(err, db.ErrGone) {
+			return manifest.Manifest{}, httpx.Gone("gone")
+		}
 		slog.Error("db.GetBySlug failed", "slug", slug, "err", err)
 		return manifest.Manifest{}, httpx.Internal("internal error")
 	}
