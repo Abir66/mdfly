@@ -102,7 +102,7 @@ A coherent anon-tier CLI built on a cobra command tree with a consistent global-
 ### `walk` module (deep — refactor of existing `publish` walk)
 - Reference walk producing project-root-relative logical keys, resolving the project root as the Root file's directory (file publish) or the **cwd** (Text Publish).
 - **`-r` gating:** non-`.md` assets directly referenced by an included file are always uploaded; linked `.md` files are followed transitively **only under `-r`**.
-- **Any-file Root (ADR-0025):** a binary Root has no parseable links → **no walk**, single-blob Bundle. Text/markdown/code Roots are walked for refs.
+- **Any-file Root (ADR-0025):** only a **markdown** Root is walked for refs; every non-markdown Root (text, code, binary) → **no walk**, single-blob Bundle.
 - **Symlink safety:** resolve symlinks (`filepath.EvalSymlinks`) **before** the inside-root boundary check; a symlink whose resolved target escapes the root is skipped with a warning (never read/uploaded).
 - **Boundary rules:** targets that escape the root (`../` beyond root, absolute paths, `file://`) are skipped with a warning and left verbatim; `http`/`https`/`data:` references are left untouched and never fetched.
 - **Text mode:** synthesize the Root as `index.md`; if the walk finds an existing `index.md` in the cwd (or linked), auto-rename the synthetic root to the first free name the walk does not already contain.
@@ -162,7 +162,7 @@ A coherent anon-tier CLI built on a cobra command tree with a consistent global-
 **Modules to test in isolation (confirmed with developer):**
 
 1. **`localstate`** — save→load round-trips; slug-keyed record retrieval; derived path→slugs index resolution (0/1/many slugs per path); atomic write survives; **corrupt `state.json` → backup + empty-ledger recovery**; concurrent-write safety (lock); self-heal prune on simulated 404/410; credentials kept separate from state.
-2. **`walk`** — no-asset single file; image asset pulled in; **`-r` on/off gating of linked `.md`**; binary Root → no walk / single-file Bundle; **symlink escaping root → skipped, target bytes never read**; absolute/`file://` skipped; `http`/`data:` left untouched; **Text mode cwd anchoring + `index.md` auto-rename on collision**; escape-root boundary (`../`).
+2. **`walk`** — no-asset single file; image asset pulled in; **`-r` on/off gating of linked `.md`**; non-markdown Root (text/code/binary) → no walk / single-file Bundle; **symlink escaping root → skipped, target bytes never read**; absolute/`file://` skipped; `http`/`data:` left untouched; **Text mode cwd anchoring + `index.md` auto-rename on collision**; escape-root boundary (`../`).
 3. **`output` / error-mapping** — table-driven: each error kind (typed local error, each server `code`/status) → expected exit code; message + hint rendering; `-v` reveals machine detail; `--json` error shape; client-side-too-big=2 vs server-413=5 split; 429=5 (no retry).
 4. **`config` + `input`** — precedence resolution (flag > env > `config.toml` > default); `MDFLY_CONFIG_DIR` relocation; content-source selection across file/`-m`/piped-stdin/`<`; `-m`+file mutual-exclusion error; empty-content rejection; stdin-TTY detection.
 
