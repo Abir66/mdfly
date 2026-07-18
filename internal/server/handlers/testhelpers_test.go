@@ -179,6 +179,8 @@ func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *http
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
+	mux.HandleFunc("POST /v1/update/init", handlers.UpdateInit(pubSvc))
+	mux.HandleFunc("POST /v1/update/commit", handlers.UpdateCommit(pubSvc))
 	mux.HandleFunc("DELETE /v1/documents/{slug}", handlers.DeleteDocument(docSvc))
 	mux.Handle("GET /_static/", assets.Handler())
 	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
@@ -199,6 +201,58 @@ func postJSON(t *testing.T, url string, body any) *http.Response {
 		t.Fatalf("POST %s: %v", url, err)
 	}
 	return resp
+}
+
+// postJSONAuth POSTs body as JSON with an optional "Authorization: Bearer"
+// header, mirroring how the CLI authenticates update requests.
+func postJSONAuth(t *testing.T, url, token string, body any) *http.Response {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("build POST %s: %v", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", url, err)
+	}
+	return resp
+}
+
+func decodeUpdateInit(t *testing.T, resp *http.Response) api.UpdateInitResponse {
+	t.Helper()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update/init: status=%d body=%s", resp.StatusCode, body)
+	}
+	var v api.UpdateInitResponse
+	if err := json.Unmarshal(body, &v); err != nil {
+		t.Fatalf("decode UpdateInitResponse: %v", err)
+	}
+	return v
+}
+
+func decodeUpdateCommit(t *testing.T, resp *http.Response) api.UpdateCommitResponse {
+	t.Helper()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update/commit: status=%d body=%s", resp.StatusCode, body)
+	}
+	var v api.UpdateCommitResponse
+	if err := json.Unmarshal(body, &v); err != nil {
+		t.Fatalf("decode UpdateCommitResponse: %v", err)
+	}
+	return v
+}
+
+func containsStr(haystack, needle string) bool {
+	return strings.Contains(haystack, needle)
 }
 
 func readAll(t *testing.T, r io.Reader) []byte {

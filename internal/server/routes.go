@@ -12,6 +12,8 @@ func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(a.publish))
 	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(a.publish))
+	mux.HandleFunc("POST /v1/update/init", handlers.UpdateInit(a.publish))
+	mux.HandleFunc("POST /v1/update/commit", handlers.UpdateCommit(a.publish))
 	mux.HandleFunc("DELETE /v1/documents/{slug}", handlers.DeleteDocument(a.document))
 	mux.HandleFunc("GET /healthz", handlers.Healthz())
 	mux.HandleFunc("GET /robots.txt", handlers.Robots())

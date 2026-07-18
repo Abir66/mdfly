@@ -14,9 +14,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// errNotImplemented is returned by verb stubs that have no behavior yet.
-var errNotImplemented = errors.New("not implemented")
-
 // errNoCommand is returned when mdfly is invoked without a valid subcommand.
 var errNoCommand = errors.New("a subcommand is required")
 
@@ -67,7 +64,7 @@ func NewRootCmd(version string) *cobra.Command {
 	registerGlobalFlags(root, app)
 	root.AddCommand(
 		newPublishCmd(app),
-		newStubCmd("update", "Update an already-published document"),
+		newUpdateCmd(app),
 		newListCmd(app),
 		newDeleteCmd(app),
 		newRemoveCmd(app),
@@ -169,14 +166,4 @@ func (app *appContext) progressWriter(cmd *cobra.Command) io.Writer {
 		return cmd.ErrOrStderr()
 	}
 	return nil
-}
-
-func newStubCmd(use, short string) *cobra.Command {
-	return &cobra.Command{
-		Use:   use,
-		Short: short,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return errNotImplemented
-		},
-	}
 }

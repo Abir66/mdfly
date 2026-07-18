@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/cli/output"
 )
 
 // publishMock serves the 3-phase publish flow for a single-file bundle.
@@ -115,24 +116,15 @@ func TestVersionPrints(t *testing.T) {
 	}
 }
 
-func TestStubVerbsReturnNotImplemented(t *testing.T) {
-	for _, verb := range []string{"update"} {
-		t.Run(verb, func(t *testing.T) {
-			_, _, err := execute(t, verb)
-			if !errors.Is(err, errNotImplemented) {
-				t.Errorf("%s err = %v, want errNotImplemented", verb, err)
-			}
-		})
-	}
-}
-
 func TestGlobalFlagsParseOnEveryVerb(t *testing.T) {
 	for _, verb := range []string{"update"} {
 		t.Run(verb, func(t *testing.T) {
-			// Runtime error (not-implemented), but flag parsing must succeed.
+			// With no file/--slug the verb fails at RunE (a usage error), which
+			// proves every global flag parsed and PersistentPreRunE ran.
 			_, _, err := execute(t, "--json", "-v", "-q", "-y", "--no-update-check", "--api", "https://x.example", verb)
-			if !errors.Is(err, errNotImplemented) {
-				t.Errorf("%s with global flags err = %v, want errNotImplemented (flags should parse)", verb, err)
+			var usageErr *output.UsageError
+			if !errors.As(err, &usageErr) {
+				t.Errorf("%s with global flags err = %v, want a UsageError (flags should parse)", verb, err)
 			}
 		})
 	}
@@ -142,9 +134,6 @@ func TestUnknownFlagIsParseError(t *testing.T) {
 	_, _, err := execute(t, "list", "--nope")
 	if err == nil {
 		t.Fatal("unknown flag should error")
-	}
-	if errors.Is(err, errNotImplemented) {
-		t.Fatal("unknown flag should fail at parse, not reach RunE")
 	}
 }
 
@@ -160,8 +149,9 @@ func TestUsageShownOnParseErrorNotRuntimeError(t *testing.T) {
 
 	// A runtime RunE error runs after SilenceUsage is flipped, so no usage.
 	rOut, rErr, err := execute(t, "update")
-	if !errors.Is(err, errNotImplemented) {
-		t.Fatalf("update err=%v, want errNotImplemented", err)
+	var usageErr *output.UsageError
+	if !errors.As(err, &usageErr) {
+		t.Fatalf("update err=%v, want a UsageError", err)
 	}
 	if strings.Contains(rOut+rErr, "Usage:") {
 		t.Errorf("runtime RunE error should not print usage; out=%q err=%q", rOut, rErr)
@@ -173,8 +163,5 @@ func TestNoBareFileShortcut(t *testing.T) {
 	_, _, err := execute(t, "some-file.md")
 	if err == nil {
 		t.Fatal("bare file arg should error (no bare-command shortcut)")
-	}
-	if errors.Is(err, errNotImplemented) {
-		t.Fatal("bare file arg should not reach a verb RunE")
 	}
 }
