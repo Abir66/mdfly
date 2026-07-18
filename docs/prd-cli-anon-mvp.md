@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent
 **Scope:** anonymous-tier CLI only — no `login`/`logout`/`whoami`/`claim`/session work.
-**Domain:** see [CONTEXT.md](CONTEXT.md). Governed by ADR-0011 (wire protocol), ADR-0012 (optimistic concurrency), ADR-0013 (idempotency), ADR-0014 (publish/update verb separation, amended), ADR-0015 (Edit Token), ADR-0025 (any-file Root), ADR-0026 (slug-keyed Local State).
+**Domain:** see [CONTEXT.md](CONTEXT.md). Governed by ADR-0011 (wire protocol), ADR-0012 (optimistic concurrency), ADR-0013 (idempotency), ADR-0014 (publish/update verb separation, amended), ADR-0015 (Edit Token), ADR-0025 (any-file Root), ADR-0026 (slug-keyed Local State), ADR-0027 (separate stateless update wire).
 
 ---
 
@@ -183,7 +183,7 @@ A coherent anon-tier CLI built on a cobra command tree with a consistent global-
 - **Asset garbage collection** on update (orphaned R2 blobs) — server-side concern, deferred per [[Update]].
 - **`mdfly preview`** (local render) — deferred to v2 per ADR-0017.
 - **OS-keychain credential storage** — rejected for v1 per ADR-0020; mode-`0600` files stand.
-- **Server/backend changes** are out of scope **for `publish`** — the any-file-Root render path (ADR-0025) already exists server-side (`internal/server/service/view`), no wire change required. **`update` and `delete` are the exception:** the server has no overwrite path (`Init` always mints a fresh slug), no mutation token-check, no `parent_manifest_hash`, no DELETE route, and no `gone` status — so those two slices (S33/S34) are full-stack and build the server endpoint + auth + 409/410 + migration alongside the CLI verb.
+- **Server/backend changes** are out of scope **for `publish`** — the any-file-Root render path (ADR-0025) already exists server-side (`internal/server/service/view`), no wire change required. **`update` and `delete` are the exception:** the server has no overwrite path (`Init` always mints a fresh slug), no mutation token-check, no `parent_manifest_hash`, no DELETE route, and no `gone` status — so those two slices (S33/S34) are full-stack and build the server endpoint + auth + 409/410 alongside the CLI verb. **`update` (S33, ADR-0027)** adds its own stateless `/v1/update/init` + `/v1/update/commit` endpoints (Edit-Token auth, manifest diff, atomic optimistic overwrite) and needs **no migration** — content-addressing stages new blobs in R2 and the manifest hash is the idempotency token, so no schema change, no staging state, no `idempotency_key`. **`delete` (S34)** added the `'deleted'` status via migration `0002`.
 
 ## Further Notes
 
