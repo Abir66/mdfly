@@ -126,11 +126,31 @@ func (s *Service) applyUpdate(ctx context.Context, slug string, mfst manifest.Ma
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
-			return nil, conflictErr()
+			return s.reconcileConcurrentUpdate(ctx, slug, mfst)
 		}
 		return nil, httpx.Internal("failed to update document")
 	}
 	return updated, nil
+}
+
+// reconcileConcurrentUpdate handles a lost guarded UPDATE: a concurrent writer
+// moved manifest_hash off the parent between our read and the write. If that
+// writer landed the identical manifest we wanted, the desired state is already
+// live, so re-read and return it as success; any other live hash is a genuine
+// 409 conflict.
+func (s *Service) reconcileConcurrentUpdate(ctx context.Context, slug string, mfst manifest.Manifest) (*db.Document, *httpx.Error) {
+	nextHash, herr := manifestHashHex(mfst)
+	if herr != nil {
+		return nil, herr
+	}
+	doc, err := s.Db.GetBySlug(ctx, slug)
+	if err != nil {
+		return nil, conflictErr()
+	}
+	if doc.ManifestHashHex() == nextHash {
+		return doc, nil
+	}
+	return nil, conflictErr()
 }
 
 // loadEditable loads the published row for slug, authenticates the Edit Token,

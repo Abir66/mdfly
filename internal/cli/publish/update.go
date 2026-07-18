@@ -127,6 +127,8 @@ func persistUpdate(stateDir string, src input.Source, token string, bundle Bundl
 		rec.Source = localstate.SourceFile
 		if abs, err := filepath.Abs(src.Path); err == nil {
 			rec.Path = &abs
+		} else {
+			rec.Path = nil
 		}
 	} else {
 		rec.Source = localstate.SourceText
