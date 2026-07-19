@@ -75,6 +75,40 @@ type CommitResponse struct {
 	ManifestHash string `json:"manifest_hash"` // hex-encoded SHA256 of manifest JSON
 }
 
+// UpdateInitRequest is the request body for POST /v1/update/init. TargetSlug
+// names the live document to overwrite; ParentManifestHash is the record's
+// last-known manifest hash for the optimistic-concurrency check ("" when
+// --force). The Edit Token travels in the Authorization header, not the body.
+type UpdateInitRequest struct {
+	TargetSlug         string    `json:"target_slug"`
+	ParentManifestHash string    `json:"parent_manifest_hash"`
+	Bundle             BundleDTO `json:"bundle"`
+}
+
+// UpdateInitResponse is the body of a successful POST /v1/update/init. It carries
+// presigned PUTs only for blobs whose (hash, ext) is absent from the stored
+// manifest (ADR-0027); an unchanged file or identical-bytes rename yields none.
+type UpdateInitResponse struct {
+	PresignedURLs map[string]string `json:"presigned_urls"`
+}
+
+// UpdateCommitRequest is the request body for POST /v1/update/commit. It resends
+// the same target, parent hash, and bundle as init so the server can HEAD-verify
+// blobs and run the three-way idempotency compare without any staging state.
+type UpdateCommitRequest struct {
+	TargetSlug         string    `json:"target_slug"`
+	ParentManifestHash string    `json:"parent_manifest_hash"`
+	Bundle             BundleDTO `json:"bundle"`
+}
+
+// UpdateCommitResponse is the body of a successful POST /v1/update/commit. Slug
+// and URL are unchanged from the original publish (update is in-place).
+type UpdateCommitResponse struct {
+	URL          string `json:"url"`
+	Slug         string `json:"slug"`
+	ManifestHash string `json:"manifest_hash"` // hex-encoded SHA256 of manifest JSON
+}
+
 // ErrorResponse is the error envelope for all 4xx/5xx responses.
 type ErrorResponse struct {
 	Error ErrorBody `json:"error"`

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -51,6 +52,17 @@ type Document struct {
 // ManifestHashHex returns ManifestHash as a lowercase hex string.
 func (d *Document) ManifestHashHex() string {
 	return hex.EncodeToString(d.ManifestHash)
+}
+
+// MatchesEditToken reports whether the plaintext token matches the row's stored
+// edit_token_hash via a constant-time compare (ADR-0015). Returns false when the
+// row has no stored hash or the token is empty; callers map those to 401/403.
+func (d *Document) MatchesEditToken(token string) bool {
+	if token == "" || len(d.EditTokenHash) == 0 {
+		return false
+	}
+	presented := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(presented[:], d.EditTokenHash) == 1
 }
 
 // ManifestHash returns sha256(json.Marshal(m)), the canonical content hash
@@ -178,6 +190,63 @@ RETURNING id, slug, idempotency_key, status,
 		return doc, nil
 	}
 	return nil, ErrNotFound
+}
+
+// UpdateManifestParams holds the values for UpdateManifest.
+type UpdateManifestParams struct {
+	Slug               string
+	Manifest           manifest.Manifest
+	ParentManifestHash []byte // nil skips the optimistic guard (--force)
+	ExpiresAt          time.Time
+}
+
+// UpdateManifest atomically overwrites a published row's manifest and derived
+// counters (bytes_total, file_count), refreshing updated_at and expires_at;
+// slug and URL are unchanged (ADR-0027). When ParentManifestHash is non-nil the
+// UPDATE is guarded by manifest_hash = parent (optimistic concurrency, ADR-0012);
+// a nil parent (--force) drops the guard. Returns ErrNotFound when no published
+// row matches — the slug is gone, or a concurrent write moved manifest_hash off
+// the parent (which the caller maps to a 409 conflict).
+func (c *Client) UpdateManifest(ctx context.Context, p UpdateManifestParams) (*Document, error) {
+	manifestJSON, manifestHash, err := marshalManifest(p.Manifest)
+	if err != nil {
+		return nil, fmt.Errorf("marshal manifest: %w", err)
+	}
+
+	var bytesTotal int64
+	for _, f := range p.Manifest.FilesByPath {
+		bytesTotal += f.Size
+	}
+	fileCount := len(p.Manifest.FilesByPath)
+
+	const q = `
+UPDATE documents
+SET manifest = $2,
+    manifest_hash = $3,
+    bytes_total = $4,
+    file_count = $5,
+    expires_at = $6,
+    updated_at = now()
+WHERE slug = $1
+  AND status = 'published'
+  AND ($7::bytea IS NULL OR manifest_hash = $7)
+RETURNING id, slug, idempotency_key, status,
+          manifest, manifest_hash, edit_token_hash,
+          bytes_total, file_count,
+          expires_at, created_at, updated_at`
+
+	row := c.pool.QueryRow(ctx, q,
+		p.Slug, manifestJSON, manifestHash, bytesTotal, fileCount,
+		p.ExpiresAt, p.ParentManifestHash,
+	)
+	doc, err := scanDocument(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update manifest: %w", err)
+	}
+	return doc, nil
 }
 
 // GetBySlug returns the viewable document row for slug. A soft-deleted row

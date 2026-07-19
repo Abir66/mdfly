@@ -7,8 +7,6 @@ package document
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"errors"
 
 	"github.com/Abir66/mdfly/internal/api"
@@ -61,8 +59,7 @@ func verifyEditToken(doc *db.Document, token string) *httpx.Error {
 	if len(doc.EditTokenHash) == 0 {
 		return httpx.Forbidden(api.CodeInvalidEditToken, "document is not editable with an edit token")
 	}
-	presented := sha256.Sum256([]byte(token))
-	if subtle.ConstantTimeCompare(presented[:], doc.EditTokenHash) != 1 {
+	if !doc.MatchesEditToken(token) {
 		return httpx.Forbidden(api.CodeInvalidEditToken, "edit token does not match")
 	}
 	return nil
