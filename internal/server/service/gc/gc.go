@@ -46,9 +46,14 @@ var ErrInvalidAbandonGrace = errors.New("abandon grace must be positive")
 // to be caught.
 var ErrInvalidBlobDeleteGrace = errors.New("blob delete grace must be positive")
 
-// Service executes lifecycle sweeps. AbandonGrace and BlobDeleteGrace are
-// required and must be positive — wiring supplies them from JobsConfig.
-// BatchSize defaults to DefaultBatchSize and Now to time.Now.
+// ErrMissingBlobs is returned by Sweep when Blobs is nil. The blob step only
+// touches it once a candidate turns up, so an unwired deleter would otherwise
+// sweep quietly for hours and then panic on the first terminal row.
+var ErrMissingBlobs = errors.New("blob deleter is required")
+
+// Service executes lifecycle sweeps. Db and Blobs are required, and AbandonGrace
+// and BlobDeleteGrace must be positive — wiring supplies the graces from
+// JobsConfig. BatchSize defaults to DefaultBatchSize and Now to time.Now.
 type Service struct {
 	Db              Store
 	Blobs           Blobs
@@ -68,10 +73,10 @@ type Result struct {
 // Sweep runs one pass of the two status transitions and the blob deletion, and
 // returns what moved. Every step is attempted even if an earlier one fails, so a
 // broken expiry cannot stall abandonment or blob cleanup; the returned error
-// joins the failures. An invalid grace fails the whole pass before any step
-// runs.
+// joins the failures. An invalid grace or a missing dependency fails the whole
+// pass before any step runs.
 func (s *Service) Sweep(ctx context.Context) (Result, error) {
-	if err := s.validateGraces(); err != nil {
+	if err := s.validateConfig(); err != nil {
 		return Result{}, err
 	}
 
@@ -141,12 +146,15 @@ func (s *Service) Job(ctx context.Context) {
 		"expired", res.Expired, "abandoned", res.Abandoned, "blobs_deleted", res.BlobsDeleted)
 }
 
-func (s *Service) validateGraces() error {
+func (s *Service) validateConfig() error {
 	if s.AbandonGrace <= 0 {
 		return fmt.Errorf("%w, got %s", ErrInvalidAbandonGrace, s.AbandonGrace)
 	}
 	if s.BlobDeleteGrace <= 0 {
 		return fmt.Errorf("%w, got %s", ErrInvalidBlobDeleteGrace, s.BlobDeleteGrace)
+	}
+	if s.Blobs == nil {
+		return ErrMissingBlobs
 	}
 	return nil
 }

@@ -330,3 +330,21 @@ func TestSweep_rejectsNonPositiveBlobDeleteGrace(t *testing.T) {
 		})
 	}
 }
+
+// An unwired Blobs deleter must fail the pass up front, not panic later on the
+// first terminal row the work-list happens to return.
+func TestSweep_rejectsMissingBlobDeleter(t *testing.T) {
+	store := &fakeStore{candidates: []db.BlobGCCandidate{{ID: 1, Slug: "aaa", Status: db.StatusDeleted}}}
+	svc := newService(store, nil)
+
+	res, err := svc.Sweep(context.Background())
+	if !errors.Is(err, gc.ErrMissingBlobs) {
+		t.Fatalf("err = %v, want ErrMissingBlobs", err)
+	}
+	if res != (gc.Result{}) {
+		t.Errorf("result = %+v, want zero", res)
+	}
+	if store.expiredLimit != 0 || store.blobLimit != 0 {
+		t.Error("a step ran despite the missing blob deleter")
+	}
+}
