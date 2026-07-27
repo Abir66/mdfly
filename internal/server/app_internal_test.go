@@ -24,6 +24,8 @@ func TestRunStartsAndStopsJobs(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	done := make(chan error, 1)
 	go func() { done <- app.Run(ctx) }()
 

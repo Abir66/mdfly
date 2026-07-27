@@ -7,18 +7,23 @@ import (
 	"github.com/Abir66/mdfly/internal/server"
 )
 
-// setRequiredEnv sets the env vars LoadConfig demands, so each test only varies
-// the ones it cares about.
+// setRequiredEnv sets the env vars LoadConfig demands and clears the optional
+// job ones, so each test only varies what it cares about and defaults are not
+// inherited from the ambient environment.
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
 	for k, v := range map[string]string{
-		"DATABASE_URL":         "postgres://localhost/mdfly",
-		"BASE_URL":             "https://mdfly.dev",
-		"R2_ENDPOINT":          "https://r2.example.com",
-		"R2_ACCESS_KEY_ID":     "key",
-		"R2_SECRET_ACCESS_KEY": "secret",
-		"R2_BUCKET":            "mdfly",
-		"CDN_BASE_URL":         "https://cdn.mdfly.dev",
+		"DATABASE_URL":          "postgres://localhost/mdfly",
+		"BASE_URL":              "https://mdfly.dev",
+		"R2_ENDPOINT":           "https://r2.example.com",
+		"R2_ACCESS_KEY_ID":      "key",
+		"R2_SECRET_ACCESS_KEY":  "secret",
+		"R2_BUCKET":             "mdfly",
+		"CDN_BASE_URL":          "https://cdn.mdfly.dev",
+		"PURGE_DRAIN_INTERVAL":  "",
+		"LIFECYCLE_GC_INTERVAL": "",
+		"ABANDON_GRACE":         "",
+		"BLOB_DELETE_GRACE":     "",
 	} {
 		t.Setenv(k, v)
 	}

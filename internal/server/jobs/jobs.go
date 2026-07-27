@@ -5,6 +5,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"sync"
@@ -54,8 +55,13 @@ func New(clock Clock) *Runner {
 	return &Runner{clock: clock, quit: make(chan struct{})}
 }
 
-// Register adds a job to run every interval. Call before Start.
+// Register adds a job to run every interval. Call before Start. Panics on a
+// non-positive interval, which would otherwise panic later inside the job's
+// goroutine when its ticker is created.
 func (r *Runner) Register(name string, interval time.Duration, fn func(context.Context)) {
+	if interval <= 0 {
+		panic(fmt.Sprintf("jobs: interval for %q must be positive, got %s", name, interval))
+	}
 	r.jobs = append(r.jobs, job{name: name, interval: interval, fn: fn})
 }
 

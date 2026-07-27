@@ -122,18 +122,20 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 // shutdown drains in-flight requests, then stops the job runner, both bounded
-// by cfg.ShutdownTimeout.
+// by cfg.ShutdownTimeout. The runner is always stopped, even if draining
+// requests fails; the HTTP error wins when both fail.
 func (a *App) shutdown(server *http.Server) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), a.cfg.ShutdownTimeout)
 	defer cancel()
 
+	var serverErr error
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
+		serverErr = fmt.Errorf("shutdown: %w", err)
 	}
-	if err := a.jobs.Stop(shutdownCtx); err != nil {
+	if err := a.jobs.Stop(shutdownCtx); err != nil && serverErr == nil {
 		return fmt.Errorf("stop jobs: %w", err)
 	}
-	return nil
+	return serverErr
 }
 
 // Close releases infrastructure resources. Safe to call after Run returns.

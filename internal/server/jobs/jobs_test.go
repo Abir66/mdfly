@@ -95,6 +95,19 @@ func TestJobFiresOnEveryTick(t *testing.T) {
 	}
 }
 
+func TestRegisterRejectsNonPositiveInterval(t *testing.T) {
+	for _, interval := range []time.Duration{0, -time.Minute} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("Register accepted interval %s", interval)
+				}
+			}()
+			jobs.New(newFakeClock()).Register("bad", interval, func(context.Context) {})
+		}()
+	}
+}
+
 func TestJobsTickIndependently(t *testing.T) {
 	clock := newFakeClock()
 	runner := jobs.New(clock)
