@@ -31,6 +31,12 @@ const (
 	// StatusDeleted is a soft-deleted row: the slug stays reserved (never
 	// re-mintable) but the document serves 410 (CONTEXT.md "Delete").
 	StatusDeleted DocumentStatus = "deleted"
+	// StatusExpired is an anonymous row past its expires_at, flipped by the
+	// lifecycle GC. Serves 410 like StatusDeleted (ADR-0030).
+	StatusExpired DocumentStatus = "expired"
+	// StatusAbandoned is a pending row that never committed within the abandon
+	// grace. Serves 404 — no URL ever resolved it (ADR-0030).
+	StatusAbandoned DocumentStatus = "abandoned"
 )
 
 // Document is a row from the documents table.
@@ -249,9 +255,10 @@ RETURNING id, slug, idempotency_key, status,
 	return doc, nil
 }
 
-// GetBySlug returns the viewable document row for slug. A soft-deleted row
-// yields ErrGone (→ 410); a missing or still-pending row yields ErrNotFound
-// (→ 404). Only 'published' rows are served.
+// GetBySlug returns the viewable document row for slug. A row that was once
+// public but is gone — 'deleted' or 'expired' — yields ErrGone (→ 410); a
+// missing row, or one that was never public ('pending', 'abandoned'), yields
+// ErrNotFound (→ 404). Only 'published' rows are served (ADR-0030).
 func (c *Client) GetBySlug(ctx context.Context, sl string) (*Document, error) {
 	doc, err := c.GetBySlugAny(ctx, sl)
 	if err != nil {
@@ -260,16 +267,18 @@ func (c *Client) GetBySlug(ctx context.Context, sl string) (*Document, error) {
 	switch doc.Status {
 	case StatusPublished:
 		return doc, nil
-	case StatusDeleted:
+	case StatusDeleted, StatusExpired:
 		return nil, ErrGone
+	case StatusPending, StatusAbandoned:
+		return nil, ErrNotFound
 	default:
 		return nil, ErrNotFound
 	}
 }
 
-// GetBySlugAny returns the document row for slug regardless of status (pending,
-// published, or deleted), or ErrNotFound if no row exists. Used by the delete
-// workflow, which must read a soft-deleted row to stay idempotent.
+// GetBySlugAny returns the document row for slug regardless of status, or
+// ErrNotFound if no row exists. Used by the delete workflow, which must read a
+// terminal row to stay idempotent.
 func (c *Client) GetBySlugAny(ctx context.Context, sl string) (*Document, error) {
 	const q = `
 SELECT id, slug, idempotency_key, status,

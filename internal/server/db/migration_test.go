@@ -133,6 +133,96 @@ func TestDocumentsMigrationRoundTrip(t *testing.T) {
 	}
 }
 
+// TestLifecycleStatusMigration verifies migration 0003: the status CHECK admits
+// all five lifecycle values, blobs_deleted_at and its partial blob-GC index
+// exist, and stepping down reverts the CHECK after relocating the rows that the
+// narrower vocabulary can no longer hold.
+func TestLifecycleStatusMigration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn, cleanup := startPostgres(t)
+	t.Cleanup(cleanup)
+
+	migrateDSN := strings.Replace(dsn, "postgres://", "pgx5://", 1)
+	m, err := migrate.New("file://"+migrationsDir(), migrateDSN)
+	if err != nil {
+		t.Fatalf("create migrator: %v", err)
+	}
+	defer m.Close()
+
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	defer pool.Close()
+
+	for _, status := range []string{"pending", "published", "deleted", "expired", "abandoned"} {
+		if err := insertDocument(ctx, pool, status+"-slug", status); err != nil {
+			t.Fatalf("insert %s row: %v", status, err)
+		}
+	}
+
+	var hasColumn bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM information_schema.columns
+			WHERE table_name = 'documents' AND column_name = 'blobs_deleted_at'
+		)`).Scan(&hasColumn); err != nil {
+		t.Fatalf("check blobs_deleted_at: %v", err)
+	}
+	if !hasColumn {
+		t.Error("blobs_deleted_at column not found after migrate up")
+	}
+
+	checkExplainUsesIndex(t, pool,
+		"documents_blob_gc_idx",
+		`SELECT id FROM documents
+		 WHERE blobs_deleted_at IS NULL
+		   AND status IN ('deleted', 'expired', 'abandoned')
+		   AND updated_at < $1`,
+		"2099-01-01")
+
+	if err := m.Steps(-1); err != nil {
+		t.Fatalf("migrate down one step: %v", err)
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx,
+		`SELECT status FROM documents WHERE slug = 'expired-slug'`).Scan(&status); err != nil {
+		t.Fatalf("read expired row after down: %v", err)
+	}
+	if status != "deleted" {
+		t.Errorf("expired row status after down = %q, want deleted", status)
+	}
+	if err := pool.QueryRow(ctx,
+		`SELECT status FROM documents WHERE slug = 'abandoned-slug'`).Scan(&status); err != nil {
+		t.Fatalf("read abandoned row after down: %v", err)
+	}
+	if status != "pending" {
+		t.Errorf("abandoned row status after down = %q, want pending", status)
+	}
+
+	if err := insertDocument(ctx, pool, "post-down-slug", "expired"); err == nil {
+		t.Error("insert with status 'expired' succeeded after down; CHECK not reverted")
+	}
+}
+
+// insertDocument inserts a minimal documents row with the given slug and status.
+func insertDocument(ctx context.Context, pool *pgxpool.Pool, slug, status string) error {
+	_, err := pool.Exec(ctx,
+		`INSERT INTO documents (slug, idempotency_key, status, manifest, manifest_hash, bytes_total, file_count)
+		 VALUES ($1, gen_random_uuid(), $2, '{}'::jsonb, '\x00'::bytea, 0, 0)`,
+		slug, status)
+	return err
+}
+
 func checkExplainUsesIndex(t *testing.T, pool *pgxpool.Pool, indexName, query string, args ...any) {
 	t.Helper()
 	ctx := context.Background()

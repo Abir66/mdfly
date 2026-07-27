@@ -328,6 +328,26 @@ func publishFiles(t *testing.T, srv *httptest.Server, idempKey, projectRoot, roo
 	return decodeCommitResponse(t, commitR).Slug
 }
 
+// setDocumentStatus forces a document row into a lifecycle status directly,
+// standing in for the GC job that produces the terminal states.
+func setDocumentStatus(t *testing.T, dsn, slug, status string) {
+	t.Helper()
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	defer pool.Close()
+
+	tag, err := pool.Exec(ctx, `UPDATE documents SET status = $1 WHERE slug = $2`, status, slug)
+	if err != nil {
+		t.Fatalf("set status %s on %s: %v", status, slug, err)
+	}
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("set status %s on %s: %d rows affected", status, slug, tag.RowsAffected())
+	}
+}
+
 // getString GETs url and returns the status code and body.
 func getString(t *testing.T, url string) (int, string) {
 	t.Helper()
