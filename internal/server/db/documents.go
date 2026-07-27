@@ -385,6 +385,65 @@ WHERE d.id = c.id`
 	return tag.RowsAffected(), nil
 }
 
+// BlobGCCandidate is a terminal row whose R2 blobs are still present.
+type BlobGCCandidate struct {
+	ID     int64
+	Slug   string
+	Status DocumentStatus
+}
+
+// ListBlobGCCandidates returns up to limit terminal rows whose blobs still need
+// deleting, oldest transition first (ADR-0030). 'abandoned' rows qualify at
+// once — no URL ever served them — while 'deleted' and 'expired' rows wait
+// until their transition timestamp is at or before gracedBefore. The predicate
+// matches documents_blob_gc_idx, and rows already stamped with blobs_deleted_at
+// are excluded, so a swept row is never re-listed.
+func (c *Client) ListBlobGCCandidates(ctx context.Context, gracedBefore time.Time, limit int) ([]BlobGCCandidate, error) {
+	const q = `
+SELECT id, slug, status
+FROM documents
+WHERE blobs_deleted_at IS NULL
+  AND status IN ('deleted', 'expired', 'abandoned')
+  AND (status = 'abandoned' OR updated_at <= $1)
+ORDER BY updated_at
+LIMIT $2`
+
+	rows, err := c.pool.Query(ctx, q, gracedBefore, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list blob gc candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var out []BlobGCCandidate
+	for rows.Next() {
+		var cand BlobGCCandidate
+		if err := rows.Scan(&cand.ID, &cand.Slug, &cand.Status); err != nil {
+			return nil, fmt.Errorf("scan blob gc candidate: %w", err)
+		}
+		out = append(out, cand)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list blob gc candidates: %w", err)
+	}
+	return out, nil
+}
+
+// SetBlobsDeletedAt records that a row's R2 blobs are gone, dropping it from the
+// blob-GC work-list. updated_at is deliberately left alone: it is the transition
+// timestamp the grace windows order by. Re-stamping an already-stamped row is a
+// no-op success.
+func (c *Client) SetBlobsDeletedAt(ctx context.Context, id int64) error {
+	const q = `
+UPDATE documents
+SET blobs_deleted_at = now()
+WHERE id = $1 AND blobs_deleted_at IS NULL`
+
+	if _, err := c.pool.Exec(ctx, q, id); err != nil {
+		return fmt.Errorf("set blobs deleted at: %w", err)
+	}
+	return nil
+}
+
 func scanDocument(row pgx.Row) (*Document, error) {
 	var d Document
 	err := row.Scan(

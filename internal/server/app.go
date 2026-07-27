@@ -65,7 +65,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	assets := static.New()
 
 	runner := jobs.New(jobs.SystemClock{})
-	registerJobs(runner, cfg.Jobs, pg)
+	registerJobs(runner, cfg.Jobs, pg, r2)
 
 	return &App{
 		cfg:     cfg,
@@ -86,8 +86,13 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 
 // registerJobs wires the periodic jobs onto runner (ADR-0029). Intervals and
 // grace windows come from cfg, so nothing about the schedule is hardcoded here.
-func registerJobs(runner *jobs.Runner, cfg JobsConfig, store gc.Store) {
-	lifecycleGC := &gc.Service{Db: store, AbandonGrace: cfg.AbandonGrace}
+func registerJobs(runner *jobs.Runner, cfg JobsConfig, store gc.Store, blobs gc.Blobs) {
+	lifecycleGC := &gc.Service{
+		Db:              store,
+		Blobs:           blobs,
+		AbandonGrace:    cfg.AbandonGrace,
+		BlobDeleteGrace: cfg.BlobDeleteGrace,
+	}
 	runner.Register(jobLifecycleGC, cfg.LifecycleGCInterval, lifecycleGC.Job)
 }
 

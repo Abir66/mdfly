@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +33,8 @@ import (
 	"github.com/Abir66/mdfly/internal/cli/localstate"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
+	"github.com/Abir66/mdfly/internal/server/service/document"
+	"github.com/Abir66/mdfly/internal/server/service/gc"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
@@ -614,3 +617,152 @@ func TestCLIPublish_sourcesAndState(t *testing.T) {
 
 // Ensure api.CommitResponse has a URL field — compile-time type check.
 var _ = api.CommitResponse{URL: ""}
+
+// TestCLIDelete_gcRemovesBlobs is the lifecycle end of the blackbox path: two
+// documents are published, one is deleted through the CLI, its URL starts
+// serving 410, and a GC pass past the blob-delete grace removes exactly that
+// slug's blobs from R2 while the other document's blobs stay put (ADR-0030).
+func TestCLIDelete_gcRemovesBlobs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	const (
+		blobGrace  = 24 * time.Hour
+		pastGrace  = blobGrace + time.Hour
+		configPerm = 0644
+	)
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	pg := db.New(pool)
+	r2 := storage.New(storage.Config{
+		Endpoint:        env.endpoint,
+		AccessKeyID:     env.accessKey,
+		SecretAccessKey: env.secretKey,
+		Bucket:          env.bucket,
+		PublicBaseURL:   env.endpoint + "/" + env.bucket,
+	})
+
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: srv.URL}
+	viewSvc := &view.Service{Db: pg, Storage: r2, Static: static.New()}
+	docSvc := &document.Service{Db: pg}
+	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))
+	mux.HandleFunc("POST /v1/publish/commit", handlers.Commit(pubSvc))
+	mux.HandleFunc("DELETE /v1/documents/{slug}", handlers.DeleteDocument(docSvc))
+	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
+
+	bin := buildCLI(t)
+	configDir := t.TempDir()
+	workDir := t.TempDir()
+
+	imgContent := []byte("\x89PNG\r\n\x1a\ndoomedpng")
+	if err := os.WriteFile(filepath.Join(workDir, "logo.png"), imgContent, configPerm); err != nil {
+		t.Fatal(err)
+	}
+	doomedContent := []byte("# Doomed\n\n![logo](./logo.png)\n")
+	if err := os.WriteFile(filepath.Join(workDir, "doomed.md"), doomedContent, configPerm); err != nil {
+		t.Fatal(err)
+	}
+	keeperContent := []byte("# Keeper\n")
+	if err := os.WriteFile(filepath.Join(workDir, "keeper.md"), keeperContent, configPerm); err != nil {
+		t.Fatal(err)
+	}
+
+	runCLI := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = workDir
+		cmd.Env = append(os.Environ(), "MDFLY_API="+srv.URL, "MDFLY_CONFIG_DIR="+configDir)
+		var out, errOut bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &out, &errOut
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("mdfly %v: %v\nstderr: %s", args, err, errOut.String())
+		}
+		return strings.TrimSpace(out.String())
+	}
+
+	doomedSlug := strings.TrimPrefix(runCLI("publish", "doomed.md"), srv.URL+"/")
+	keeperSlug := strings.TrimPrefix(runCLI("publish", "keeper.md"), srv.URL+"/")
+
+	ctx := context.Background()
+	doomedRoot := storage.BlobKey(doomedSlug, hashOf(doomedContent), ".md")
+	doomedAsset := storage.BlobKey(doomedSlug, hashOf(imgContent), ".png")
+	keeperRoot := storage.BlobKey(keeperSlug, hashOf(keeperContent), ".md")
+	for _, blob := range []struct {
+		key  string
+		size int
+	}{
+		{doomedRoot, len(doomedContent)},
+		{doomedAsset, len(imgContent)},
+		{keeperRoot, len(keeperContent)},
+	} {
+		if err := r2.HeadBlob(ctx, blob.key, int64(blob.size)); err != nil {
+			t.Fatalf("blob %s missing before delete: %v", blob.key, err)
+		}
+	}
+
+	if out := runCLI("delete", "-y", "--slug", doomedSlug); !strings.Contains(out, doomedSlug) {
+		t.Fatalf("delete stdout = %q, want it to name %s", out, doomedSlug)
+	}
+
+	verifyClient := &http.Client{Timeout: 10 * time.Second}
+	assertStatus := func(slug string, want int) {
+		t.Helper()
+		resp, err := verifyClient.Get(srv.URL + "/" + slug)
+		if err != nil {
+			t.Fatalf("GET /%s: %v", slug, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("GET /%s = %d, want %d", slug, resp.StatusCode, want)
+		}
+	}
+	assertStatus(doomedSlug, http.StatusGone)
+	assertStatus(keeperSlug, http.StatusOK)
+
+	sweeper := &gc.Service{
+		Db:              pg,
+		Blobs:           r2,
+		AbandonGrace:    time.Hour,
+		BlobDeleteGrace: blobGrace,
+		Now:             func() time.Time { return time.Now().Add(pastGrace) },
+	}
+	res, err := sweeper.Sweep(ctx)
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if res.BlobsDeleted != 1 {
+		t.Fatalf("sweep deleted blobs for %d rows, want 1", res.BlobsDeleted)
+	}
+
+	for _, key := range []string{doomedRoot, doomedAsset} {
+		if err := r2.HeadBlob(ctx, key, 0); !errors.Is(err, storage.ErrBlobMissing) {
+			t.Errorf("blob %s after GC: err = %v, want ErrBlobMissing", key, err)
+		}
+	}
+	if err := r2.HeadBlob(ctx, keeperRoot, int64(len(keeperContent))); err != nil {
+		t.Errorf("live document's blob was collateral damage: %v", err)
+	}
+	assertStatus(doomedSlug, http.StatusGone)
+
+	// The stamped row leaves the work-list, so a second pass finds nothing.
+	res, err = sweeper.Sweep(ctx)
+	if err != nil {
+		t.Fatalf("second Sweep: %v", err)
+	}
+	if res.BlobsDeleted != 0 {
+		t.Errorf("second pass deleted blobs for %d rows, want 0", res.BlobsDeleted)
+	}
+}

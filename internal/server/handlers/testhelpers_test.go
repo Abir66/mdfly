@@ -153,6 +153,17 @@ func startMinio(t *testing.T) minioEnv {
 // ── test server ───────────────────────────────────────────────────────────────
 
 // newTestServer builds a full httptest.Server with all handlers registered.
+// newR2 builds a storage client against the test minio bucket.
+func newR2(env minioEnv) *storage.Client {
+	return storage.New(storage.Config{
+		Endpoint:        env.endpoint,
+		AccessKeyID:     env.accessKey,
+		SecretAccessKey: env.secretKey,
+		Bucket:          env.bucket,
+		PublicBaseURL:   env.endpoint + "/" + env.bucket,
+	})
+}
+
 func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *httptest.Server {
 	t.Helper()
 
@@ -163,13 +174,7 @@ func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *http
 	t.Cleanup(pool.Close)
 
 	pg := db.New(pool)
-	r2 := storage.New(storage.Config{
-		Endpoint:        env.endpoint,
-		AccessKeyID:     env.accessKey,
-		SecretAccessKey: env.secretKey,
-		Bucket:          env.bucket,
-		PublicBaseURL:   env.endpoint + "/" + env.bucket,
-	})
+	r2 := newR2(env)
 
 	assets := static.New()
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: baseURL}
