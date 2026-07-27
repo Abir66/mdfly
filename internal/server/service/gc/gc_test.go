@@ -92,6 +92,34 @@ func TestSweep_defaultClockIsWallClock(t *testing.T) {
 	}
 }
 
+// A non-positive grace would abandon rows still mid-publish, so the pass must
+// fail before touching either transition.
+func TestSweep_rejectsNonPositiveAbandonGrace(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		grace time.Duration
+	}{
+		{"zero", 0},
+		{"negative", -time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeStore{expiredCount: 3, abandonedCount: 2}
+			svc := &gc.Service{Db: store, AbandonGrace: tc.grace}
+
+			res, err := svc.Sweep(context.Background())
+			if !errors.Is(err, gc.ErrInvalidAbandonGrace) {
+				t.Fatalf("err = %v, want ErrInvalidAbandonGrace", err)
+			}
+			if res != (gc.Result{}) {
+				t.Errorf("result = %+v, want zero", res)
+			}
+			if store.expiredLimit != 0 || store.abandonedLimit != 0 {
+				t.Error("a transition ran despite the invalid grace")
+			}
+		})
+	}
+}
+
 // A failing transition must not skip the other one: the pass reports both the
 // error and whatever the surviving transition moved.
 func TestSweep_bothTransitionsRunWhenOneFails(t *testing.T) {

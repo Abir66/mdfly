@@ -25,6 +25,11 @@ type Store interface {
 	MarkAbandoned(ctx context.Context, olderThan time.Time, limit int) (int64, error)
 }
 
+// ErrInvalidAbandonGrace is returned by Sweep when AbandonGrace is not
+// positive. A zero or negative grace would put the abandon cutoff at or after
+// now and flip in-flight pending rows, so the pass refuses to run.
+var ErrInvalidAbandonGrace = errors.New("abandon grace must be positive")
+
 // Service executes lifecycle sweeps. AbandonGrace is required and must be
 // positive — wiring supplies it from JobsConfig. BatchSize defaults to
 // DefaultBatchSize and Now to time.Now.
@@ -43,8 +48,14 @@ type Result struct {
 
 // Sweep runs one pass of both transitions and returns what moved. Both are
 // attempted even if the first fails, so a broken expiry cannot stall
-// abandonment; the returned error joins the failures.
+// abandonment; the returned error joins the failures. A non-positive
+// AbandonGrace fails the whole pass with ErrInvalidAbandonGrace before either
+// transition runs.
 func (s *Service) Sweep(ctx context.Context) (Result, error) {
+	if s.AbandonGrace <= 0 {
+		return Result{}, fmt.Errorf("%w, got %s", ErrInvalidAbandonGrace, s.AbandonGrace)
+	}
+
 	now := s.now()
 	limit := s.batchSize()
 
