@@ -705,7 +705,13 @@ func TestView_expiredByGCReturns410(t *testing.T) {
 	}
 	defer client.Close()
 
-	res, err := (&gc.Service{Db: client, AbandonGrace: time.Hour}).Sweep(ctx)
+	sweeper := &gc.Service{
+		Db:              client,
+		Blobs:           newR2(env),
+		AbandonGrace:    time.Hour,
+		BlobDeleteGrace: 24 * time.Hour,
+	}
+	res, err := sweeper.Sweep(ctx)
 	if err != nil {
 		t.Fatalf("Sweep: %v", err)
 	}

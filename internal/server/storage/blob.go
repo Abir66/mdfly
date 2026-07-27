@@ -58,13 +58,19 @@ func New(cfg Config) *Client {
 	}
 }
 
+// PrefixKey returns the R2 key prefix holding every blob of a slug.
+// Format: documents/<slug>/
+func PrefixKey(slug string) string {
+	return "documents/" + slug + "/"
+}
+
 // BlobKey returns the R2 object key for a slug+hash+ext triple.
 // Format: documents/<slug>/<hash>.<ext>
 func BlobKey(slug, hashHex, ext string) string {
 	if ext != "" && !strings.HasPrefix(ext, ".") {
 		ext = "." + ext
 	}
-	return "documents/" + slug + "/" + hashHex + ext
+	return PrefixKey(slug) + hashHex + ext
 }
 
 // BlobPublicURL returns the public CDN URL for a blob.

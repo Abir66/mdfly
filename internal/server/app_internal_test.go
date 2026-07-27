@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/jobs"
 	"github.com/Abir66/mdfly/internal/server/static"
 )
@@ -65,8 +66,12 @@ type fakeTicker struct{ ch chan time.Time }
 func (t fakeTicker) Chan() <-chan time.Time { return t.ch }
 func (t fakeTicker) Stop()                  {}
 
-// fakeGCStore reports the cutoff each sweep asked to abandon rows before.
-type fakeGCStore struct{ abandonedBefore chan time.Time }
+// fakeGCStore reports the cutoff each sweep asked to abandon rows before and the
+// one it asked to delete blobs before.
+type fakeGCStore struct {
+	abandonedBefore chan time.Time
+	blobsBefore     chan time.Time
+}
 
 func (f *fakeGCStore) MarkExpired(context.Context, time.Time, int) (int64, error) { return 0, nil }
 
@@ -75,18 +80,39 @@ func (f *fakeGCStore) MarkAbandoned(_ context.Context, olderThan time.Time, _ in
 	return 0, nil
 }
 
+func (f *fakeGCStore) ListBlobGCCandidates(_ context.Context, gracedBefore time.Time, _ int) ([]db.BlobGCCandidate, error) {
+	f.blobsBefore <- gracedBefore
+	return nil, nil
+}
+
+func (f *fakeGCStore) SetBlobsDeletedAt(context.Context, int64) error { return nil }
+
+type fakeBlobDeleter struct{}
+
+func (fakeBlobDeleter) DeletePrefix(context.Context, string) error { return nil }
+
 // TestRegisterJobs_lifecycleGC pins the wiring of the lifecycle sweep: it runs
-// on JobsConfig.LifecycleGCInterval and applies JobsConfig.AbandonGrace.
+// on JobsConfig.LifecycleGCInterval and applies both grace windows from
+// JobsConfig.
 func TestRegisterJobs_lifecycleGC(t *testing.T) {
 	const (
-		interval = 42 * time.Minute
-		grace    = 3 * time.Hour
+		interval   = 42 * time.Minute
+		grace      = 3 * time.Hour
+		blobGrace  = 30 * time.Hour
+		cutoffSlop = time.Second
 	)
 	clock := &fakeClock{ticks: make(chan time.Time), created: make(chan time.Duration, 1)}
-	store := &fakeGCStore{abandonedBefore: make(chan time.Time, 1)}
+	store := &fakeGCStore{
+		abandonedBefore: make(chan time.Time, 1),
+		blobsBefore:     make(chan time.Time, 1),
+	}
 
 	runner := jobs.New(clock)
-	registerJobs(runner, JobsConfig{LifecycleGCInterval: interval, AbandonGrace: grace}, store)
+	registerJobs(runner, JobsConfig{
+		LifecycleGCInterval: interval,
+		AbandonGrace:        grace,
+		BlobDeleteGrace:     blobGrace,
+	}, store, fakeBlobDeleter{})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -98,14 +124,21 @@ func TestRegisterJobs_lifecycleGC(t *testing.T) {
 
 	before := time.Now()
 	clock.ticks <- before
-	select {
-	case cutoff := <-store.abandonedBefore:
-		if want := before.Add(-grace); cutoff.Before(want.Add(-time.Second)) || cutoff.After(time.Now().Add(-grace)) {
-			t.Errorf("abandon cutoff = %s, want ~%s", cutoff, want)
+
+	assertCutoff := func(name string, got chan time.Time, applied time.Duration) {
+		t.Helper()
+		select {
+		case cutoff := <-got:
+			want := before.Add(-applied)
+			if cutoff.Before(want.Add(-cutoffSlop)) || cutoff.After(time.Now().Add(-applied)) {
+				t.Errorf("%s cutoff = %s, want ~%s", name, cutoff, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("lifecycle-gc job did not reach the %s step after a tick", name)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("lifecycle-gc job did not sweep after a tick")
 	}
+	assertCutoff("abandon", store.abandonedBefore, grace)
+	assertCutoff("blob delete", store.blobsBefore, blobGrace)
 }
 
 func waitFor(t *testing.T, cond func() bool) {
