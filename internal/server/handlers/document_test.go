@@ -120,6 +120,35 @@ func TestDelete_idempotentOnAlreadyDeleted(t *testing.T) {
 	}
 }
 
+// TestDelete_terminalStatuses covers the two GC-produced states: an 'abandoned'
+// row was never published so it is indistinguishable from missing (404), while
+// an 'expired' row is already gone and deleting it is a no-op success.
+func TestDelete_terminalStatuses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	const token = "mftk_secrettoken"
+	slug := publishWithToken(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeed004", "hi.md", []byte("# Hi\n"), token)
+
+	setDocumentStatus(t, dsn, slug, "abandoned")
+	resp := deleteDoc(t, srv.URL, slug, token)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("delete abandoned status=%d, want 404", resp.StatusCode)
+	}
+
+	setDocumentStatus(t, dsn, slug, "expired")
+	resp = deleteDoc(t, srv.URL, slug, token)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("delete expired status=%d, want 204", resp.StatusCode)
+	}
+}
+
 func TestDelete_missingSlugIs404(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")

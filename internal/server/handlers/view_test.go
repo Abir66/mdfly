@@ -634,6 +634,44 @@ func TestView_missingSlugReturns404(t *testing.T) {
 	}
 }
 
+// TestView_lifecycleStatusSemantics pins the HTTP status each lifecycle state
+// serves on both view routes (ADR-0030): published 200, deleted/expired 410,
+// pending/abandoned 404.
+func TestView_lifecycleStatusSemantics(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	const rootPath = "lifecycle.md"
+	files := map[string][]byte{rootPath: []byte("# Lifecycle\n")}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee55", "/proj", rootPath, files)
+
+	cases := []struct {
+		status string
+		want   int
+	}{
+		{"published", http.StatusOK},
+		{"expired", http.StatusGone},
+		{"deleted", http.StatusGone},
+		{"abandoned", http.StatusNotFound},
+		{"pending", http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		setDocumentStatus(t, dsn, slug, tc.status)
+
+		if code, _ := getString(t, srv.URL+"/"+slug); code != tc.want {
+			t.Errorf("GET /%s (status %s) = %d, want %d", slug, tc.status, code, tc.want)
+		}
+		if code, _ := getString(t, srv.URL+"/"+slug+"/"+rootPath); code != tc.want {
+			t.Errorf("GET /%s/%s (status %s) = %d, want %d", slug, rootPath, tc.status, code, tc.want)
+		}
+	}
+}
+
 func TestView_htmlEscaping(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")

@@ -22,8 +22,9 @@ type Service struct {
 
 // Delete soft-deletes slug after verifying the Edit Token. token is the
 // plaintext bearer credential. Delete is unconditional (removal has no "lost
-// update" to guard against) and idempotent — re-deleting a deleted slug is a
-// no-op success.
+// update" to guard against) and idempotent — re-deleting an already-gone slug
+// ('deleted' or 'expired') is a no-op success, while a row that was never
+// public ('pending' or 'abandoned') is 404.
 func (s *Service) Delete(ctx context.Context, slug, token string) *httpx.Error {
 	doc, err := s.Db.GetBySlugAny(ctx, slug)
 	if err != nil {
@@ -32,13 +33,13 @@ func (s *Service) Delete(ctx context.Context, slug, token string) *httpx.Error {
 		}
 		return httpx.Internal("failed to load document")
 	}
-	if doc.Status == db.StatusPending {
+	if doc.Status == db.StatusPending || doc.Status == db.StatusAbandoned {
 		return httpx.NotFound("not found")
 	}
 	if herr := verifyEditToken(doc, token); herr != nil {
 		return herr
 	}
-	if doc.Status == db.StatusDeleted {
+	if doc.Status == db.StatusDeleted || doc.Status == db.StatusExpired {
 		return nil
 	}
 	if _, err := s.Db.SoftDelete(ctx, slug); err != nil {
