@@ -14,6 +14,11 @@ const (
 	defaultAddr            = ":8080"
 	defaultShutdownTimeout = 15 * time.Second
 	defaultLogLevel        = slog.LevelInfo
+
+	defaultPurgeDrainInterval  = 15 * time.Minute
+	defaultLifecycleGCInterval = time.Hour
+	defaultAbandonGrace        = time.Hour
+	defaultBlobDeleteGrace     = 24 * time.Hour
 )
 
 // Config is the server's runtime configuration, populated from environment
@@ -25,11 +30,22 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	Database        DatabaseConfig
 	R2              storage.Config
+	Jobs            JobsConfig
 }
 
 // DatabaseConfig holds Postgres connection parameters.
 type DatabaseConfig struct {
 	URL string
+}
+
+// JobsConfig holds the periodic-job intervals and grace windows (ADR-0029).
+// Env vars, with defaults: PURGE_DRAIN_INTERVAL (15m), LIFECYCLE_GC_INTERVAL
+// (1h), ABANDON_GRACE (1h), BLOB_DELETE_GRACE (24h).
+type JobsConfig struct {
+	PurgeDrainInterval  time.Duration
+	LifecycleGCInterval time.Duration
+	AbandonGrace        time.Duration
+	BlobDeleteGrace     time.Duration
 }
 
 // LoadConfig reads configuration from the environment.
@@ -73,6 +89,11 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("SHUTDOWN_TIMEOUT: %w", err)
 	}
 
+	jobs, err := loadJobsConfig()
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Addr:            envOrDefault("ADDR", defaultAddr),
 		BaseURL:         baseURL,
@@ -86,7 +107,29 @@ func LoadConfig() (Config, error) {
 			Bucket:          r2Bucket,
 			PublicBaseURL:   cdnBase,
 		},
+		Jobs: jobs,
 	}, nil
+}
+
+func loadJobsConfig() (JobsConfig, error) {
+	var cfg JobsConfig
+	for _, spec := range []struct {
+		key string
+		def time.Duration
+		dst *time.Duration
+	}{
+		{"PURGE_DRAIN_INTERVAL", defaultPurgeDrainInterval, &cfg.PurgeDrainInterval},
+		{"LIFECYCLE_GC_INTERVAL", defaultLifecycleGCInterval, &cfg.LifecycleGCInterval},
+		{"ABANDON_GRACE", defaultAbandonGrace, &cfg.AbandonGrace},
+		{"BLOB_DELETE_GRACE", defaultBlobDeleteGrace, &cfg.BlobDeleteGrace},
+	} {
+		d, err := parseDuration(os.Getenv(spec.key), spec.def)
+		if err != nil {
+			return JobsConfig{}, fmt.Errorf("%s: %w", spec.key, err)
+		}
+		*spec.dst = d
+	}
+	return cfg, nil
 }
 
 func requireEnv(key string) (string, error) {
