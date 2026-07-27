@@ -19,7 +19,7 @@ func UpdateInit(svc *publish.Service) http.HandlerFunc {
 			return
 		}
 
-		res, herr := svc.UpdateInit(r.Context(), req, bearerToken(r.Header.Get("Authorization")))
+		res, herr := svc.UpdateInit(r.Context(), req, httpx.BearerToken(r.Header.Get("Authorization")))
 		if herr != nil {
 			httpx.WriteError(w, herr)
 			return
@@ -41,7 +41,7 @@ func UpdateCommit(svc *publish.Service) http.HandlerFunc {
 			return
 		}
 
-		res, herr := svc.UpdateCommit(r.Context(), req, bearerToken(r.Header.Get("Authorization")))
+		res, herr := svc.UpdateCommit(r.Context(), req, httpx.BearerToken(r.Header.Get("Authorization")))
 		if herr != nil {
 			httpx.WriteError(w, herr)
 			return

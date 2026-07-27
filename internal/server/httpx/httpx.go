@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Abir66/mdfly/internal/api"
 )
@@ -88,4 +89,14 @@ func WriteError(w http.ResponseWriter, e *Error) {
 	WriteJSON(w, e.Status, api.ErrorResponse{
 		Error: api.ErrorBody{Code: e.Code, Message: e.Msg, Details: e.Details},
 	})
+}
+
+// BearerToken extracts the token from an "Authorization: Bearer <token>" header
+// (ADR-0015). Returns "" when the header is absent or not a bearer scheme.
+func BearerToken(header string) string {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return ""
+	}
+	return strings.TrimSpace(header[len(prefix):])
 }
