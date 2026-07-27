@@ -325,6 +325,57 @@ RETURNING id, slug, idempotency_key, status,
 	return doc, nil
 }
 
+// MarkExpired flips up to limit anonymous published rows whose expires_at is at
+// or before now to 'expired' (ADR-0030) and returns how many moved. Owned
+// Documents carry no expires_at, so the predicate — which matches
+// documents_anon_expiry_idx — never selects them. The status guard keeps
+// repeated passes idempotent: an already-expired row is not re-selected.
+func (c *Client) MarkExpired(ctx context.Context, now time.Time, limit int) (int64, error) {
+	const q = `
+UPDATE documents
+SET status = 'expired',
+    updated_at = now()
+WHERE id IN (
+	SELECT id FROM documents
+	WHERE expires_at IS NOT NULL
+	  AND deleted_at IS NULL
+	  AND status = 'published'
+	  AND expires_at <= $1
+	ORDER BY expires_at
+	LIMIT $2
+)`
+
+	tag, err := c.pool.Exec(ctx, q, now, limit)
+	if err != nil {
+		return 0, fmt.Errorf("mark expired: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// MarkAbandoned flips up to limit pending rows created at or before olderThan to
+// 'abandoned' (ADR-0030) and returns how many moved. The predicate matches
+// documents_pending_gc_idx, and the status guard makes repeated passes
+// idempotent.
+func (c *Client) MarkAbandoned(ctx context.Context, olderThan time.Time, limit int) (int64, error) {
+	const q = `
+UPDATE documents
+SET status = 'abandoned',
+    updated_at = now()
+WHERE id IN (
+	SELECT id FROM documents
+	WHERE status = 'pending'
+	  AND created_at <= $1
+	ORDER BY created_at
+	LIMIT $2
+)`
+
+	tag, err := c.pool.Exec(ctx, q, olderThan, limit)
+	if err != nil {
+		return 0, fmt.Errorf("mark abandoned: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func scanDocument(row pgx.Row) (*Document, error) {
 	var d Document
 	err := row.Scan(
