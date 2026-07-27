@@ -325,6 +325,66 @@ RETURNING id, slug, idempotency_key, status,
 	return doc, nil
 }
 
+// MarkExpired flips up to limit anonymous published rows whose expires_at is at
+// or before now to 'expired' (ADR-0030) and returns how many moved. Owned
+// Documents carry no expires_at, so the predicate — which matches
+// documents_anon_expiry_idx — never selects them. The status guard keeps
+// repeated passes idempotent: an already-expired row is not re-selected.
+// Candidates are locked with FOR UPDATE SKIP LOCKED, so a concurrent sweep or
+// SoftDelete on the same row is stepped over rather than waited on.
+func (c *Client) MarkExpired(ctx context.Context, now time.Time, limit int) (int64, error) {
+	const q = `
+WITH candidates AS (
+	SELECT id FROM documents
+	WHERE expires_at IS NOT NULL
+	  AND deleted_at IS NULL
+	  AND status = 'published'
+	  AND expires_at <= $1
+	ORDER BY expires_at
+	LIMIT $2
+	FOR UPDATE SKIP LOCKED
+)
+UPDATE documents d
+SET status = 'expired',
+    updated_at = now()
+FROM candidates c
+WHERE d.id = c.id`
+
+	tag, err := c.pool.Exec(ctx, q, now, limit)
+	if err != nil {
+		return 0, fmt.Errorf("mark expired: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// MarkAbandoned flips up to limit pending rows created at or before olderThan to
+// 'abandoned' (ADR-0030) and returns how many moved. The predicate matches
+// documents_pending_gc_idx, and the status guard makes repeated passes
+// idempotent. Candidates are locked like MarkExpired's, so a concurrent Publish
+// or sweep on the same row is skipped rather than blocked.
+func (c *Client) MarkAbandoned(ctx context.Context, olderThan time.Time, limit int) (int64, error) {
+	const q = `
+WITH candidates AS (
+	SELECT id FROM documents
+	WHERE status = 'pending'
+	  AND created_at <= $1
+	ORDER BY created_at
+	LIMIT $2
+	FOR UPDATE SKIP LOCKED
+)
+UPDATE documents d
+SET status = 'abandoned',
+    updated_at = now()
+FROM candidates c
+WHERE d.id = c.id`
+
+	tag, err := c.pool.Exec(ctx, q, olderThan, limit)
+	if err != nil {
+		return 0, fmt.Errorf("mark abandoned: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func scanDocument(row pgx.Row) (*Document, error) {
 	var d Document
 	err := row.Scan(

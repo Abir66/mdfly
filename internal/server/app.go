@@ -18,6 +18,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/jobs"
 	"github.com/Abir66/mdfly/internal/server/service/document"
+	"github.com/Abir66/mdfly/internal/server/service/gc"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
@@ -32,6 +33,8 @@ const (
 
 	dbConnectTimeout = 5 * time.Second
 	dbPingTimeout    = 5 * time.Second
+
+	jobLifecycleGC = "lifecycle-gc"
 )
 
 // App holds the assembled server: infrastructure clients + domain services.
@@ -61,6 +64,9 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	pg := db.New(pool)
 	assets := static.New()
 
+	runner := jobs.New(jobs.SystemClock{})
+	registerJobs(runner, cfg.Jobs, pg)
+
 	return &App{
 		cfg:     cfg,
 		pool:    pool,
@@ -74,8 +80,15 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		},
 		view:     &view.Service{Db: pg, Storage: r2, Static: assets},
 		document: &document.Service{Db: pg},
-		jobs:     jobs.New(jobs.SystemClock{}),
+		jobs:     runner,
 	}, nil
+}
+
+// registerJobs wires the periodic jobs onto runner (ADR-0029). Intervals and
+// grace windows come from cfg, so nothing about the schedule is hardcoded here.
+func registerJobs(runner *jobs.Runner, cfg JobsConfig, store gc.Store) {
+	lifecycleGC := &gc.Service{Db: store, AbandonGrace: cfg.AbandonGrace}
+	runner.Register(jobLifecycleGC, cfg.LifecycleGCInterval, lifecycleGC.Job)
 }
 
 // Run starts the periodic jobs and the HTTP server, then blocks until ctx is

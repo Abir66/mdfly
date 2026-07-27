@@ -1,13 +1,17 @@
 package handlers_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/server/db"
+	"github.com/Abir66/mdfly/internal/server/service/gc"
 )
 
 func TestView_returnsRenderedMarkdown(t *testing.T) {
@@ -669,6 +673,48 @@ func TestView_lifecycleStatusSemantics(t *testing.T) {
 		if code, _ := getString(t, srv.URL+"/"+slug+"/"+rootPath); code != tc.want {
 			t.Errorf("GET /%s/%s (status %s) = %d, want %d", slug, rootPath, tc.status, code, tc.want)
 		}
+	}
+}
+
+// TestView_expiredByGCReturns410 runs a real lifecycle sweep over a published
+// row whose expires_at has lapsed: the sweep flips it to 'expired' and the view
+// path stops serving it (ADR-0030).
+func TestView_expiredByGCReturns410(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	const rootPath = "gc.md"
+	files := map[string][]byte{rootPath: []byte("# Sweep me\n")}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee56", "/proj", rootPath, files)
+
+	if code, _ := getString(t, srv.URL+"/"+slug); code != http.StatusOK {
+		t.Fatalf("GET /%s before expiry = %d, want 200", slug, code)
+	}
+
+	backdateExpiry(t, dsn, slug, time.Now().Add(-time.Hour))
+
+	ctx := context.Background()
+	client, err := db.NewFromDSN(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open db client: %v", err)
+	}
+	defer client.Close()
+
+	res, err := (&gc.Service{Db: client, AbandonGrace: time.Hour}).Sweep(ctx)
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+	if res.Expired != 1 {
+		t.Fatalf("sweep expired %d rows, want 1", res.Expired)
+	}
+
+	if code, _ := getString(t, srv.URL+"/"+slug); code != http.StatusGone {
+		t.Errorf("GET /%s after sweep = %d, want 410", slug, code)
 	}
 }
 

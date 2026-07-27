@@ -348,6 +348,26 @@ func setDocumentStatus(t *testing.T, dsn, slug, status string) {
 	}
 }
 
+// backdateExpiry rewinds a published row's expires_at so the lifecycle sweep
+// treats it as lapsed.
+func backdateExpiry(t *testing.T, dsn, slug string, expiresAt time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	defer pool.Close()
+
+	tag, err := pool.Exec(ctx, `UPDATE documents SET expires_at = $1 WHERE slug = $2`, expiresAt, slug)
+	if err != nil {
+		t.Fatalf("backdate expiry on %s: %v", slug, err)
+	}
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("backdate expiry on %s: %d rows affected", slug, tag.RowsAffected())
+	}
+}
+
 // getString GETs url and returns the status code and body.
 func getString(t *testing.T, url string) (int, string) {
 	t.Helper()
