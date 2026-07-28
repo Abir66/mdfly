@@ -81,9 +81,14 @@ writes `rl:token:<digest>:1m:<step>` and `rl:token:<digest>:1h:<step>` instead.
 Edit Tokens appear only as a digest prefix — the credential itself is never
 written to Redis.
 
-To confirm fail-open, rotate the password in the console without updating the env
-var: writes must keep succeeding, with `rate limiter unavailable, allowing
-request` in the logs. Restore the password afterwards.
+To confirm fail-open, make Redis genuinely unreachable — the pool holds open
+connections, so rotating the password alone leaves the live sockets working and
+proves nothing. Drop the connections: block egress to the Redis port from the VM
+(`sudo iptables -A OUTPUT -p tcp --dport 6379 -j REJECT`), or for a self-hosted
+instance `sudo systemctl stop redis-server`. Writes must keep succeeding, with
+`rate limiter unavailable, allowing request` in the logs. Restore Redis
+afterwards (`sudo iptables -D OUTPUT …` / `systemctl start`) and re-run §4 to see
+the limiter throttle again.
 
 ## 5. Alternative: self-host on the Oracle VM
 
@@ -100,4 +105,7 @@ loopback only (the Ubuntu default) and leave it off the VM's public ingress rule
 Verification in §4 is unchanged except that `redis-cli --scan --pattern 'rl:*'`
 replaces the Data Browser. The limiter's guarantee is unaffected: counters still
 survive a backend restart, since Redis is a separate process. They do not survive
-a VM rebuild — acceptable, because a rebuilt VM has no traffic to throttle yet.
+a VM rebuild: the counters reset, so a subject that had spent its allowance gets
+a fresh one and the replacement VM serves traffic unthrottled until the windows
+refill. Accepted — a rebuild is rare and operator-driven, and the Cloudflare edge
+limit still stands throughout.

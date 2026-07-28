@@ -150,6 +150,34 @@ func TestAllow_hourWindowTripsIndependently(t *testing.T) {
 	}
 }
 
+// TestAllow_reportsTheLongestWaitWhenBothWindowsTrip spends the hourly allowance
+// first, then hammers the minute window: with both windows over, the caller must
+// be told to wait out the hour, not a minute that would only earn another 429.
+func TestAllow_reportsTheLongestWaitWhenBothWindowsTrip(t *testing.T) {
+	limiter := ratelimit.New(newFakeCounter())
+	at := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	limiter.Now = func() time.Time { return at }
+
+	for range ratelimit.PerHour {
+		limiter.Allow(context.Background(), "subject") //nolint:errcheck
+		at = at.Add(time.Minute)
+	}
+	for range ratelimit.PerMinute + 1 {
+		limiter.Allow(context.Background(), "subject") //nolint:errcheck
+	}
+
+	got, _ := limiter.Allow(context.Background(), "subject")
+	if got.Allowed {
+		t.Fatal("request past both allowances was allowed")
+	}
+	if got.Limit != ratelimit.PerHour {
+		t.Errorf("Limit = %d, want the hour limit %d", got.Limit, ratelimit.PerHour)
+	}
+	if want := 30 * time.Minute; got.RetryAfter != want {
+		t.Errorf("RetryAfter = %s, want %s (to the next hour bucket)", got.RetryAfter, want)
+	}
+}
+
 // TestAllow_windowRollover walks the clock past the minute bucket boundary: the
 // next window is a different key, so the subject starts from a full allowance.
 func TestAllow_windowRollover(t *testing.T) {

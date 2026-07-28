@@ -102,18 +102,28 @@ func (l *Limiter) ops(subject string, now time.Time) []CounterOp {
 	return ops
 }
 
-// decide turns per-window counts into a verdict: denied by the first window over
-// its limit, else allowed carrying the tightest remaining allowance.
+// decide turns per-window counts into a verdict: denied by the exceeded window
+// the caller must wait longest on, else allowed carrying the tightest remaining
+// allowance. Every window is inspected, so a request over both the minute and
+// the hour limit is told to wait out the hour rather than retrying in a minute
+// into another 429.
 func (l *Limiter) decide(counts []int64, now time.Time) Decision {
 	allowed := Decision{Allowed: true, Limit: l.Windows[0].Limit, Remaining: l.Windows[0].Limit}
+	var denied Decision
 
 	for i, w := range l.Windows {
 		if counts[i] > int64(w.Limit) {
-			return Decision{Limit: w.Limit, RetryAfter: untilNextWindow(w, now)}
+			if retry := untilNextWindow(w, now); retry > denied.RetryAfter {
+				denied = Decision{Limit: w.Limit, RetryAfter: retry}
+			}
+			continue
 		}
 		if remaining := w.Limit - int(counts[i]); remaining < allowed.Remaining {
 			allowed.Limit, allowed.Remaining = w.Limit, remaining
 		}
+	}
+	if denied.RetryAfter > 0 {
+		return denied
 	}
 	return allowed
 }

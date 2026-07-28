@@ -21,10 +21,10 @@ func newClient(t *testing.T, addr string) *redis.Client {
 	return client
 }
 
-// TestIncrementWithTTL_pipelinesEveryOp pins the wire contract: every op's key is
-// incremented and given its TTL in one pipelined exchange, and the counts come
-// back in ops order.
-func TestIncrementWithTTL_pipelinesEveryOp(t *testing.T) {
+// TestIncrementWithTTL_countsEveryOp pins the wire contract: every op's key is
+// incremented and given its TTL in one exchange, and the counts come back in
+// ops order.
+func TestIncrementWithTTL_countsEveryOp(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := newClient(t, mr.Addr())
 
@@ -70,6 +70,29 @@ func TestIncrementWithTTL_rejectsNonPositiveTTL(t *testing.T) {
 		if mr.Exists("k") {
 			t.Fatalf("key was incremented despite ttl %s", ttl)
 		}
+	}
+}
+
+// TestIncrementWithTTL_isAllOrNothing pins the limiter's contract that a request
+// counts every window or none: one key holding a non-counter value must leave
+// the other key untouched rather than half-spending the subject's allowance.
+func TestIncrementWithTTL_isAllOrNothing(t *testing.T) {
+	mr := miniredis.RunT(t)
+	client := newClient(t, mr.Addr())
+	mr.Set("rl:sub:1h:7", "not-a-number")
+
+	ops := []ratelimit.CounterOp{
+		{Key: "rl:sub:1m:42", TTL: time.Minute},
+		{Key: "rl:sub:1h:7", TTL: time.Hour},
+	}
+	if _, err := client.IncrementWithTTL(context.Background(), ops); err == nil {
+		t.Fatal("IncrementWithTTL returned no error for a non-counter key")
+	}
+	if mr.Exists("rl:sub:1m:42") {
+		t.Error("the healthy window was incremented despite the failed one")
+	}
+	if got, _ := mr.Get("rl:sub:1h:7"); got != "not-a-number" {
+		t.Errorf("value at the bad key = %q, want it untouched", got)
 	}
 }
 

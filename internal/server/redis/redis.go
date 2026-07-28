@@ -63,35 +63,73 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	return client, nil
 }
 
-// IncrementWithTTL increments every op's key and arms its expiry, all in one
-// pipelined round trip, returning the incremented values in ops order. Batching
-// is load-bearing: the limiter needs every window counted or none, so one
-// window can never go unspent because a later one failed. The EXPIRE only
-// garbage-collects the key — callers own window resets by varying the key, so a
-// lost EXPIRE leaks a key but never blocks a subject.
+// incrementScript counts every key in one atomic server-side step. It validates
+// all keys first and only then mutates, because Redis does not roll back a
+// script's (or a transaction's) earlier writes when a later command fails: the
+// limiter's all-or-nothing contract has to be won by checking before touching.
+var incrementScript = goredis.NewScript(`
+for i = 1, #KEYS do
+  local ttl = tonumber(ARGV[i])
+  if not ttl or ttl < 1 then
+    return redis.error_reply('invalid ttl for key ' .. KEYS[i])
+  end
+  local current = redis.call('GET', KEYS[i])
+  if current and not string.match(current, '^%-?%d+$') then
+    return redis.error_reply('non-integer counter at key ' .. KEYS[i])
+  end
+end
+local counts = {}
+for i = 1, #KEYS do
+  counts[i] = redis.call('INCR', KEYS[i])
+  redis.call('EXPIRE', KEYS[i], ARGV[i])
+end
+return counts
+`)
+
+// IncrementWithTTL increments every op's key and arms its expiry in one atomic
+// round trip, returning the incremented values in ops order. Atomicity is
+// load-bearing: the limiter needs every window counted or none, so one window
+// can never go unspent because a later one held a bad value. A rejected TTL or
+// a non-counter key mutates nothing, and a failed execution or an unexpected
+// reply is reported as an error — the counters are then indeterminate, never
+// assumed spent. The EXPIRE only garbage-collects the key — callers own window
+// resets by varying the key, so a lost EXPIRE leaks a key but never blocks a
+// subject.
 func (c *Client) IncrementWithTTL(ctx context.Context, ops []ratelimit.CounterOp) ([]int64, error) {
 	if len(ops) == 0 {
 		return nil, nil
 	}
 
-	pipe := c.rdb.Pipeline()
-	incrs := make([]*goredis.IntCmd, len(ops))
+	keys := make([]string, len(ops))
+	ttls := make([]any, len(ops))
 	for i, op := range ops {
-		if op.TTL <= 0 {
-			return nil, fmt.Errorf("redis: non-positive ttl %s for key %q", op.TTL, op.Key)
+		if op.TTL < time.Second {
+			return nil, fmt.Errorf("redis: ttl %s below one second for key %q", op.TTL, op.Key)
 		}
-		incrs[i] = pipe.Incr(ctx, op.Key)
-		pipe.Expire(ctx, op.Key, op.TTL)
-	}
-	if _, err := pipe.Exec(ctx); err != nil {
-		return nil, fmt.Errorf("redis pipeline: %w", err)
+		keys[i] = op.Key
+		ttls[i] = int64(op.TTL.Seconds())
 	}
 
+	reply, err := incrementScript.Run(ctx, c.rdb, keys, ttls...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis increment: %w", err)
+	}
+	return replyCounts(reply, ops)
+}
+
+// replyCounts reads the script's reply as one count per op. Anything else means
+// the outcome is unknown — the counters may or may not have moved — so it is an
+// error rather than a partial success.
+func replyCounts(reply any, ops []ratelimit.CounterOp) ([]int64, error) {
+	values, ok := reply.([]any)
+	if !ok || len(values) != len(ops) {
+		return nil, fmt.Errorf("redis increment: indeterminate reply %T for %d ops", reply, len(ops))
+	}
 	counts := make([]int64, len(ops))
-	for i, incr := range incrs {
-		count, err := incr.Result()
-		if err != nil {
-			return nil, fmt.Errorf("redis incr %q: %w", ops[i].Key, err)
+	for i, value := range values {
+		count, ok := value.(int64)
+		if !ok {
+			return nil, fmt.Errorf("redis increment: indeterminate count %T for key %q", value, ops[i].Key)
 		}
 		counts[i] = count
 	}
