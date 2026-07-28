@@ -66,6 +66,23 @@ func TestRateLimit_deny(t *testing.T) {
 	}
 }
 
+// TestRateLimit_retryAfterRoundsUp keeps Retry-After from advertising a retry the
+// limiter would still deny: a fractional wait rounds up to the next second.
+func TestRateLimit_retryAfterRoundsUp(t *testing.T) {
+	limiter := &fakeLimiter{decision: ratelimit.Decision{
+		Limit:      ratelimit.PerMinute,
+		RetryAfter: 1500 * time.Millisecond,
+	}}
+	handler := middleware.RateLimit(limiter)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/publish/init", nil))
+
+	if got := rec.Header().Get("Retry-After"); got != "2" {
+		t.Errorf("Retry-After = %q, want %q", got, "2")
+	}
+}
+
 // TestRateLimit_subject pins key resolution: an Edit Token identifies the editor
 // across IPs; anonymous callers are keyed by CF-Connecting-IP, but only when the
 // peer is a Cloudflare edge — a header from anywhere else is spoofable and the

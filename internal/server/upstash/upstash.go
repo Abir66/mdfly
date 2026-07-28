@@ -39,9 +39,12 @@ func New(cfg Config) *Client {
 // the key: callers own window resets by varying the key, so a lost EXPIRE leaks
 // a key but never blocks a subject.
 func (c *Client) IncrementWithTTL(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	if ttl <= 0 {
+		return 0, fmt.Errorf("upstash: non-positive ttl %s", ttl)
+	}
 	body, err := json.Marshal([][]string{
 		{"INCR", key},
-		{"EXPIRE", key, strconv.FormatInt(int64(ttl.Seconds()), 10)},
+		{"EXPIRE", key, strconv.FormatInt(expireSeconds(ttl), 10)},
 	})
 	if err != nil {
 		return 0, fmt.Errorf("encode pipeline: %w", err)
@@ -58,6 +61,13 @@ func (c *Client) IncrementWithTTL(ctx context.Context, key string, ttl time.Dura
 		return 0, fmt.Errorf("upstash INCR: %s", results[0].Error)
 	}
 	return results[0].Result, nil
+}
+
+// expireSeconds converts ttl to EXPIRE's whole-second argument, rounding up so a
+// sub-second TTL arms at one second instead of truncating to zero — which Redis
+// reads as "delete now".
+func expireSeconds(ttl time.Duration) int64 {
+	return int64((ttl + time.Second - 1) / time.Second)
 }
 
 // pipelineResult is one command's outcome in a pipeline response.

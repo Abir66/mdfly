@@ -58,6 +58,43 @@ func TestIncrementWithTTL_pipelinesIncrAndExpire(t *testing.T) {
 	}
 }
 
+// TestIncrementWithTTL_ttl pins the EXPIRE argument: sub-second TTLs round up to
+// one second rather than truncating to zero (which Redis reads as "delete now"),
+// and a non-positive TTL is rejected before any round trip.
+func TestIncrementWithTTL_ttl(t *testing.T) {
+	var gotBody [][]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		json.Unmarshal(raw, &gotBody) //nolint:errcheck
+		io.WriteString(w, `[{"result":1},{"result":1}]`)
+	}))
+	t.Cleanup(srv.Close)
+	client := upstash.New(upstash.Config{URL: srv.URL, Token: "tok"})
+
+	for _, tt := range []struct{ ttl, want string }{
+		{"1500ms", "2"},
+		{"1ns", "1"},
+		{"2s", "2"},
+	} {
+		ttl, err := time.ParseDuration(tt.ttl)
+		if err != nil {
+			t.Fatalf("parse %s: %v", tt.ttl, err)
+		}
+		if _, err := client.IncrementWithTTL(context.Background(), "k", ttl); err != nil {
+			t.Fatalf("IncrementWithTTL(%s): %v", tt.ttl, err)
+		}
+		if got := gotBody[1][2]; got != tt.want {
+			t.Errorf("EXPIRE seconds for %s = %q, want %q", tt.ttl, got, tt.want)
+		}
+	}
+
+	for _, ttl := range []time.Duration{0, -time.Second} {
+		if _, err := client.IncrementWithTTL(context.Background(), "k", ttl); err == nil {
+			t.Errorf("IncrementWithTTL(%s) returned no error", ttl)
+		}
+	}
+}
+
 // TestIncrementWithTTL_errors covers the failure shapes the limiter must see as
 // errors so it can fail open: a non-200 status and a per-command error.
 func TestIncrementWithTTL_errors(t *testing.T) {

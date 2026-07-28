@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/httpx"
@@ -45,10 +46,16 @@ func RateLimit(limiter Limiter) func(http.Handler) http.Handler {
 func writeRateLimited(w http.ResponseWriter, d ratelimit.Decision) {
 	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(d.Limit))
 	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(d.Remaining))
-	w.Header().Set("Retry-After", strconv.Itoa(int(d.RetryAfter.Seconds())))
+	w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(d.RetryAfter)))
 	httpx.WriteError(w, &httpx.Error{
 		Status: http.StatusTooManyRequests,
 		Code:   api.CodeRateLimited,
 		Msg:    rateLimitedMessage,
 	})
+}
+
+// retryAfterSeconds renders d for the Retry-After header, rounding up so a
+// fractional wait never advertises a retry the limiter would still deny.
+func retryAfterSeconds(d time.Duration) int {
+	return int((d + time.Second - 1) / time.Second)
 }

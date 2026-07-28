@@ -64,9 +64,11 @@ curl -sD - -o /dev/null -X POST https://api.mdfly.dev/v1/publish/init \
 ```
 
 `X-RateLimit-Limit: 10`, `X-RateLimit-Remaining: 0`, `Retry-After: <seconds to
-the next minute>`. In the Upstash console, **Data Browser** shows the counter
-keys as `rl:ip:<addr>:1m:<step>` and `rl:token:<digest>:1h:<step>`, each with a
-TTL. Edit Tokens appear only as a digest prefix — the credential itself is never
+the next minute>`. In the Upstash console, **Data Browser** shows the two keys
+one request creates, each with a TTL — for the anonymous curls above,
+`rl:ip:<addr>:1m:<step>` and `rl:ip:<addr>:1h:<step>`; an authenticated request
+writes `rl:token:<digest>:1m:<step>` and `rl:token:<digest>:1h:<step>` instead.
+Edit Tokens appear only as a digest prefix — the credential itself is never
 written to Upstash.
 
 To confirm fail-open, rotate the token in the console without updating the env

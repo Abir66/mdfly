@@ -53,9 +53,14 @@ type Limiter struct {
 	Now     func() time.Time
 }
 
-// New returns a Limiter counting in store with the DefaultWindows.
+// New returns a Limiter counting in store with its own copy of DefaultWindows,
+// so tuning one Limiter's Windows cannot disturb another's.
 func New(store Counter) *Limiter {
-	return &Limiter{Counter: store, Windows: DefaultWindows, Now: time.Now}
+	return &Limiter{
+		Counter: store,
+		Windows: append([]Window(nil), DefaultWindows...),
+		Now:     time.Now,
+	}
 }
 
 // Allow counts one request for subject in every window and reports whether it
