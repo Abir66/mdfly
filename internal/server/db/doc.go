@@ -1,2 +1,3 @@
-// Package db implements the documents-row CRUD layer against PostgreSQL.
+// Package db implements the CRUD layer against PostgreSQL: documents rows plus the
+// purge_queue rows that ride their write transactions (ADR-0031).
 package db

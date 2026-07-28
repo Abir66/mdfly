@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Abir66/mdfly/internal/server/cloudflare"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/jobs"
 	"github.com/Abir66/mdfly/internal/server/middleware"
@@ -22,6 +23,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/service/document"
 	"github.com/Abir66/mdfly/internal/server/service/gc"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
+	"github.com/Abir66/mdfly/internal/server/service/purge"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
@@ -38,6 +40,7 @@ const (
 	dbPingTimeout    = 5 * time.Second
 
 	jobLifecycleGC = "lifecycle-gc"
+	jobPurgeDrain  = "purge-drain"
 )
 
 // App holds the assembled server: infrastructure clients + domain services.
@@ -68,25 +71,47 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	pg := db.New(pool)
 	assets := static.New()
 
+	purger := newPurge(cfg, pg)
+	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: cfg.BaseURL}
+	docSvc := &document.Service{Db: pg}
+	if purger != nil {
+		pubSvc.Purge = purger
+		docSvc.Purge = purger
+	}
+
 	runner := jobs.New(jobs.SystemClock{})
-	registerJobs(runner, cfg.Jobs, pg, r2)
+	registerJobs(runner, cfg.Jobs, pg, r2, purger)
 
 	return &App{
-		cfg:     cfg,
-		pool:    pool,
-		db:      pg,
-		storage: r2,
-		static:  assets,
-		publish: &publish.Service{
-			Db:      pg,
-			Storage: r2,
-			BaseURL: cfg.BaseURL,
-		},
+		cfg:      cfg,
+		pool:     pool,
+		db:       pg,
+		storage:  r2,
+		static:   assets,
+		publish:  pubSvc,
 		view:     &view.Service{Db: pg, Storage: r2, Static: assets},
-		document: &document.Service{Db: pg},
+		document: docSvc,
 		jobs:     runner,
 		limiter:  newLimiter(cfg.RateLimit),
 	}, nil
+}
+
+// newPurge builds the CDN purge service (ADR-0031), or returns nil when
+// Cloudflare is unconfigured — local dev still enqueues purges durably, it just
+// never contacts the edge, rather than refusing to boot.
+func newPurge(cfg Config, pg *db.Client) *purge.Service {
+	if cfg.Cloudflare.ZoneID == "" || cfg.Cloudflare.Token == "" {
+		slog.Warn("cloudflare not configured, cdn purges will stay queued")
+		return nil
+	}
+	return &purge.Service{
+		Db: pg,
+		CDN: cloudflare.New(cloudflare.Config{
+			ZoneID: cfg.Cloudflare.ZoneID,
+			Token:  cfg.Cloudflare.Token,
+		}),
+		Host: purge.HostFromBaseURL(cfg.BaseURL),
+	}
 }
 
 // newLimiter builds the write-path rate limiter (ADR-0028), or returns nil when
@@ -102,7 +127,9 @@ func newLimiter(cfg RateLimitConfig) middleware.Limiter {
 
 // registerJobs wires the periodic jobs onto runner (ADR-0029). Intervals and
 // grace windows come from cfg, so nothing about the schedule is hardcoded here.
-func registerJobs(runner *jobs.Runner, cfg JobsConfig, store gc.Store, blobs gc.Blobs) {
+// A nil purger leaves the drain unregistered: with no Cloudflare credentials
+// every pass would fail, so queued rows simply wait for a configured process.
+func registerJobs(runner *jobs.Runner, cfg JobsConfig, store gc.Store, blobs gc.Blobs, purger *purge.Service) {
 	lifecycleGC := &gc.Service{
 		Db:              store,
 		Blobs:           blobs,
@@ -110,6 +137,10 @@ func registerJobs(runner *jobs.Runner, cfg JobsConfig, store gc.Store, blobs gc.
 		BlobDeleteGrace: cfg.BlobDeleteGrace,
 	}
 	runner.Register(jobLifecycleGC, cfg.LifecycleGCInterval, lifecycleGC.Job)
+
+	if purger != nil {
+		runner.Register(jobPurgeDrain, cfg.PurgeDrainInterval, purger.Job)
+	}
 }
 
 // Run starts the periodic jobs and the HTTP server, then blocks until ctx is

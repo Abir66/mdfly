@@ -189,8 +189,10 @@ func TestLifecycleStatusMigration(t *testing.T) {
 		   AND updated_at < $1`,
 		"2099-01-01")
 
-	if err := m.Steps(-1); err != nil {
-		t.Fatalf("migrate down one step: %v", err)
+	// Step back to 0002 explicitly rather than by one step, so a later migration
+	// does not silently retarget this assertion.
+	if err := m.Migrate(2); err != nil {
+		t.Fatalf("migrate down to 0002: %v", err)
 	}
 
 	var status string
@@ -211,6 +213,62 @@ func TestLifecycleStatusMigration(t *testing.T) {
 
 	if err := insertDocument(ctx, pool, "post-down-slug", "expired"); err == nil {
 		t.Error("insert with status 'expired' succeeded after down; CHECK not reverted")
+	}
+}
+
+// TestPurgeQueueMigration verifies migration 0004: purge_queue exists with the
+// slug primary key rejecting a duplicate, its due-work index is used by the
+// drain's predicate, and stepping down drops the table.
+func TestPurgeQueueMigration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn, cleanup := startPostgres(t)
+	t.Cleanup(cleanup)
+
+	m, err := migrate.New("file://"+migrationsDir(), strings.Replace(dsn, "postgres://", "pgx5://", 1))
+	if err != nil {
+		t.Fatalf("create migrator: %v", err)
+	}
+	defer m.Close()
+	if err := m.Up(); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("open pool: %v", err)
+	}
+	defer pool.Close()
+
+	if _, err := pool.Exec(ctx, `INSERT INTO purge_queue (slug) VALUES ('dup')`); err != nil {
+		t.Fatalf("insert purge row: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO purge_queue (slug) VALUES ('dup')`); err == nil {
+		t.Error("duplicate slug insert succeeded; primary key missing")
+	}
+
+	checkExplainUsesIndex(t, pool,
+		"purge_queue_due_idx",
+		"SELECT slug FROM purge_queue WHERE next_attempt_at <= $1 ORDER BY next_attempt_at",
+		"2099-01-01")
+
+	if err := m.Migrate(3); err != nil {
+		t.Fatalf("migrate down to 0003: %v", err)
+	}
+
+	var tableExists bool
+	if err := pool.QueryRow(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'public' AND table_name = 'purge_queue'
+		)`).Scan(&tableExists); err != nil {
+		t.Fatalf("check purge_queue after down: %v", err)
+	}
+	if tableExists {
+		t.Error("purge_queue still exists after migrate down")
 	}
 }
 

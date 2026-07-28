@@ -31,6 +31,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/handlers"
 	"github.com/Abir66/mdfly/internal/server/service/document"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
+	"github.com/Abir66/mdfly/internal/server/service/purge"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
@@ -165,6 +166,13 @@ func newR2(env minioEnv) *storage.Client {
 }
 
 func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *httptest.Server {
+	return newTestServerWithPurge(t, dsn, env, baseURL, nil)
+}
+
+// newTestServerWithPurge is newTestServer with the post-commit CDN purge wired.
+// A nil purger leaves the inline fast path off; the transactional enqueue happens
+// either way, because it lives in the write's own transaction.
+func newTestServerWithPurge(t *testing.T, dsn string, env minioEnv, baseURL string, purger *purge.Service) *httptest.Server {
 	t.Helper()
 
 	pool, err := pgxpool.New(context.Background(), dsn)
@@ -180,6 +188,10 @@ func newTestServer(t *testing.T, dsn string, env minioEnv, baseURL string) *http
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: baseURL}
 	viewSvc := &view.Service{Db: pg, Storage: r2, Static: assets}
 	docSvc := &document.Service{Db: pg}
+	if purger != nil {
+		pubSvc.Purge = purger
+		docSvc.Purge = purger
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/publish/init", handlers.Init(pubSvc))

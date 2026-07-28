@@ -8,6 +8,7 @@ import (
 
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/jobs"
+	"github.com/Abir66/mdfly/internal/server/service/purge"
 	"github.com/Abir66/mdfly/internal/server/static"
 )
 
@@ -112,7 +113,7 @@ func TestRegisterJobs_lifecycleGC(t *testing.T) {
 		LifecycleGCInterval: interval,
 		AbandonGrace:        grace,
 		BlobDeleteGrace:     blobGrace,
-	}, store, fakeBlobDeleter{})
+	}, store, fakeBlobDeleter{}, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -139,6 +140,57 @@ func TestRegisterJobs_lifecycleGC(t *testing.T) {
 	}
 	assertCutoff("abandon", store.abandonedBefore, grace)
 	assertCutoff("blob delete", store.blobsBefore, blobGrace)
+}
+
+// TestRegisterJobs_purgeDrain pins the drain's wiring: it gets its own ticker on
+// JobsConfig.PurgeDrainInterval, and none at all when Cloudflare is unconfigured
+// (nil purger), so an unpurgeable process does not churn the queue.
+func TestRegisterJobs_purgeDrain(t *testing.T) {
+	const (
+		gcInterval    = 42 * time.Minute
+		drainInterval = 7 * time.Minute
+	)
+	cfg := JobsConfig{
+		LifecycleGCInterval: gcInterval,
+		PurgeDrainInterval:  drainInterval,
+		AbandonGrace:        time.Hour,
+		BlobDeleteGrace:     time.Hour,
+	}
+
+	clock := &fakeClock{ticks: make(chan time.Time), created: make(chan time.Duration, 2)}
+	runner := jobs.New(clock)
+	registerJobs(runner, cfg, &fakeGCStore{}, fakeBlobDeleter{}, &purge.Service{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	runner.Start(ctx)
+
+	intervals := map[time.Duration]bool{}
+	for range 2 {
+		select {
+		case d := <-clock.created:
+			intervals[d] = true
+		case <-time.After(5 * time.Second):
+			t.Fatal("fewer than two tickers created")
+		}
+	}
+	if !intervals[drainInterval] {
+		t.Errorf("no ticker on the purge drain interval %s, got %v", drainInterval, intervals)
+	}
+
+	bareClock := &fakeClock{ticks: make(chan time.Time), created: make(chan time.Duration, 2)}
+	bareRunner := jobs.New(bareClock)
+	registerJobs(bareRunner, cfg, &fakeGCStore{}, fakeBlobDeleter{}, nil)
+	bareRunner.Start(ctx)
+
+	if got := <-bareClock.created; got != gcInterval {
+		t.Errorf("first ticker interval = %s, want the lifecycle gc %s", got, gcInterval)
+	}
+	select {
+	case d := <-bareClock.created:
+		t.Errorf("second ticker created (%s) with no purge service wired", d)
+	case <-time.After(100 * time.Millisecond):
+	}
 }
 
 func waitFor(t *testing.T, cond func() bool) {
