@@ -64,11 +64,15 @@ LIMIT $2`
 	return out, nil
 }
 
-// MarkPurgeDone drops slug from the queue after a successful purge. Clearing a
-// slug that is already gone is a no-op success, which keeps a duplicated drain
-// harmless.
-func (o *ops) MarkPurgeDone(ctx context.Context, slug string) error {
-	if _, err := o.q.Exec(ctx, `DELETE FROM purge_queue WHERE slug = $1`, slug); err != nil {
+// MarkPurgeDone drops slug from the queue after a successful purge. attempts is
+// the value the row carried when it was claimed and fences the delete: a write
+// that landed mid-purge reset the row's attempts, so the delete becomes a no-op
+// and the newer content keeps its queued purge. Clearing a slug that is already
+// gone is a no-op success, which keeps a duplicated drain harmless.
+func (o *ops) MarkPurgeDone(ctx context.Context, slug string, attempts int) error {
+	const q = `DELETE FROM purge_queue WHERE slug = $1 AND attempts = $2`
+
+	if _, err := o.q.Exec(ctx, q, slug, attempts); err != nil {
 		return fmt.Errorf("mark purge done: %w", err)
 	}
 	return nil
@@ -76,14 +80,16 @@ func (o *ops) MarkPurgeDone(ctx context.Context, slug string) error {
 
 // BackoffPurge keeps slug queued after a failed purge, counting the attempt and
 // pushing the next one out to nextAttemptAt. The caller owns the backoff curve.
-func (o *ops) BackoffPurge(ctx context.Context, slug string, nextAttemptAt time.Time) error {
+// attempts fences the update the same way MarkPurgeDone's does, so a stale claim
+// cannot push a freshly enqueued purge into the future.
+func (o *ops) BackoffPurge(ctx context.Context, slug string, attempts int, nextAttemptAt time.Time) error {
 	const q = `
 UPDATE purge_queue
 SET attempts = attempts + 1,
-    next_attempt_at = $2
-WHERE slug = $1`
+    next_attempt_at = $3
+WHERE slug = $1 AND attempts = $2`
 
-	if _, err := o.q.Exec(ctx, q, slug, nextAttemptAt); err != nil {
+	if _, err := o.q.Exec(ctx, q, slug, attempts, nextAttemptAt); err != nil {
 		return fmt.Errorf("backoff purge: %w", err)
 	}
 	return nil

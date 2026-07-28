@@ -6,11 +6,11 @@ Every publish/update commit and every delete enqueues its slug to the durable
 scoped API token to do that. Nothing is pre-provisioned — do this once, by hand,
 in the Cloudflare dashboard.
 
-Prefix purge is a **paid-plan feature on some zones**: Free zones get purge by
-URL, hostname, tag and prefix on many plans, but if the API rejects the prefix
-form with `"Prefix purge is not available for your zone"`, the zone needs a Pro
-plan (or the code must fall back to per-URL purge). Verify with step 4 before
-relying on it.
+Prefix purge needs **no plan upgrade**: Cloudflare offers purge by URL, hostname,
+tag, prefix and purge-everything on Free, Pro, Business and Enterprise alike —
+only the rate limits differ by plan. If the API rejects a prefix purge, the cause
+is the token or the zone ID, not the plan; step 4 verifies both before the backend
+depends on them.
 
 ## 1. Copy the zone ID
 
@@ -75,7 +75,8 @@ A purge of a slug that was never cached is a valid no-op. Failures to read:
 - `"errors":[{"code":10000,"message":"Authentication error"}]` — wrong token, or
   the token lacks `Cache Purge`.
 - `"code":1012` — wrong zone ID.
-- a message about prefix purge not being available — see the plan note above.
+- `"code":10001` or a message about the request body — the `prefixes` payload is
+  malformed; prefix purge itself is available on every plan.
 
 Then check the end-to-end path against the deployed backend:
 
@@ -98,8 +99,8 @@ psql "$DATABASE_URL" -c 'SELECT slug, attempts, next_attempt_at FROM purge_queue
 ```
 
 A healthy system keeps this table empty or near-empty. Rows with a climbing
-`attempts` mean Cloudflare is rejecting the purge — check the token, then the
-zone's plan.
+`attempts` mean Cloudflare is rejecting the purge — check the token, then the zone
+ID, then the rejection message in the logs.
 
 ## Rate limits to respect
 

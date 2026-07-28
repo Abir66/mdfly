@@ -57,13 +57,23 @@ func (s *fakeStore) ClaimPurgeDue(_ context.Context, _ time.Time, limit int) ([]
 	return s.due, nil
 }
 
-func (s *fakeStore) MarkPurgeDone(_ context.Context, slug string) error {
+// MarkPurgeDone mirrors the fenced DELETE: a claim whose attempts no longer match
+// the row leaves it queued.
+func (s *fakeStore) MarkPurgeDone(_ context.Context, slug string, attempts int) error {
+	if got, ok := s.queue[slug]; ok && got != attempts {
+		return nil
+	}
 	delete(s.queue, slug)
 	s.doneSlugs = append(s.doneSlugs, slug)
 	return nil
 }
 
-func (s *fakeStore) BackoffPurge(_ context.Context, slug string, next time.Time) error {
+// BackoffPurge mirrors the fenced UPDATE: same attempts check, then one more
+// attempt and a later due time.
+func (s *fakeStore) BackoffPurge(_ context.Context, slug string, attempts int, next time.Time) error {
+	if got, ok := s.queue[slug]; ok && got != attempts {
+		return nil
+	}
 	s.queue[slug]++
 	s.backoffs[slug] = next
 	return nil
@@ -86,7 +96,7 @@ func TestPurge_issuesTwoPrefixes(t *testing.T) {
 	store, cdn := newFakeStore(), &fakeCDN{}
 	svc := newService(store, cdn)
 
-	if err := svc.Purge(context.Background(), "abc123"); err != nil {
+	if err := svc.Purge(context.Background(), db.PurgeTask{Slug: "abc123"}); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
 
@@ -112,14 +122,14 @@ func TestPurge_clearsQueueRowOnSuccess(t *testing.T) {
 	svc := newService(store, cdn)
 	ctx := context.Background()
 
-	if err := svc.Purge(ctx, "abc123"); err != nil {
+	if err := svc.Purge(ctx, db.PurgeTask{Slug: "abc123"}); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
 	if _, still := store.queue["abc123"]; still {
 		t.Error("queue row survived a successful purge")
 	}
 
-	if err := svc.Purge(ctx, "abc123"); err != nil {
+	if err := svc.Purge(ctx, db.PurgeTask{Slug: "abc123"}); err != nil {
 		t.Errorf("duplicate Purge: %v", err)
 	}
 	if len(cdn.calls) != 2 {
@@ -134,7 +144,7 @@ func TestPurge_keepsRowOnCloudflareFailure(t *testing.T) {
 	cdn := &fakeCDN{err: errors.New("429 Too Many Requests")}
 	svc := newService(store, cdn)
 
-	if err := svc.Purge(context.Background(), "abc123"); err == nil {
+	if err := svc.Purge(context.Background(), db.PurgeTask{Slug: "abc123"}); err == nil {
 		t.Fatal("Purge returned nil on a Cloudflare failure")
 	}
 	if _, still := store.queue["abc123"]; !still {
@@ -151,7 +161,7 @@ func TestPurge_rejectsUnwiredCDN(t *testing.T) {
 	store := newFakeStore(db.PurgeTask{Slug: "abc123"})
 	svc := &purge.Service{Db: store, Host: "mdfly.dev"}
 
-	err := svc.Purge(context.Background(), "abc123")
+	err := svc.Purge(context.Background(), db.PurgeTask{Slug: "abc123"})
 	if !errors.Is(err, purge.ErrMissingCDN) {
 		t.Fatalf("Purge with no CDN = %v, want ErrMissingCDN", err)
 	}
@@ -165,8 +175,56 @@ func TestPurge_rejectsUnwiredCDN(t *testing.T) {
 func TestPurge_rejectsMissingHost(t *testing.T) {
 	svc := &purge.Service{Db: newFakeStore(), CDN: &fakeCDN{}}
 
-	if err := svc.Purge(context.Background(), "abc123"); !errors.Is(err, purge.ErrMissingHost) {
+	if err := svc.Purge(context.Background(), db.PurgeTask{Slug: "abc123"}); !errors.Is(err, purge.ErrMissingHost) {
 		t.Fatalf("Purge with no host = %v, want ErrMissingHost", err)
+	}
+}
+
+// TestPurge_rejectsMissingStore refuses before Cloudflare is called: with no queue
+// a successful purge could never be recorded, so the edge call would repeat every
+// tick against a row nothing can clear.
+func TestPurge_rejectsMissingStore(t *testing.T) {
+	cdn := &fakeCDN{}
+	svc := &purge.Service{CDN: cdn, Host: "mdfly.dev"}
+
+	if err := svc.Purge(context.Background(), db.PurgeTask{Slug: "abc123"}); !errors.Is(err, purge.ErrMissingStore) {
+		t.Fatalf("Purge with no store = %v, want ErrMissingStore", err)
+	}
+	if len(cdn.calls) != 0 {
+		t.Errorf("cdn called without a store: %v", cdn.calls)
+	}
+}
+
+// TestDrain_rejectsMissingStore is the drain counterpart: the pass reports the
+// misconfiguration instead of an empty queue.
+func TestDrain_rejectsMissingStore(t *testing.T) {
+	cdn := &fakeCDN{}
+	svc := &purge.Service{CDN: cdn, Host: "mdfly.dev"}
+
+	res, err := svc.Drain(context.Background())
+	if !errors.Is(err, purge.ErrMissingStore) {
+		t.Fatalf("Drain with no store = %v, want ErrMissingStore", err)
+	}
+	if res != (purge.Result{}) {
+		t.Errorf("result = %+v, want zero", res)
+	}
+	if len(cdn.calls) != 0 {
+		t.Errorf("cdn called without a store: %v", cdn.calls)
+	}
+}
+
+// TestPurge_staleClaimLeavesReEnqueuedRow covers the attempts fence: a write that
+// re-enqueued the slug mid-purge resets its attempts, so the older claim's clear
+// is a no-op and the newer content keeps its queued purge.
+func TestPurge_staleClaimLeavesReEnqueuedRow(t *testing.T) {
+	store := newFakeStore(db.PurgeTask{Slug: "abc123"}) // re-enqueued: attempts back to 0
+	svc := newService(store, &fakeCDN{})
+
+	if err := svc.Purge(context.Background(), db.PurgeTask{Slug: "abc123", Attempts: 2}); err != nil {
+		t.Fatalf("Purge: %v", err)
+	}
+	if _, still := store.queue["abc123"]; !still {
+		t.Error("stale claim cleared a re-enqueued row")
 	}
 }
 
@@ -289,13 +347,18 @@ func TestAttemptInline(t *testing.T) {
 }
 
 // TestHostFromBaseURL derives the purge host from the configured base URL: the
-// prefix Cloudflare wants carries no scheme and no trailing slash.
+// prefix Cloudflare wants carries no scheme, path, trailing slash or query.
 func TestHostFromBaseURL(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"https://mdfly.dev", "mdfly.dev"},
 		{"https://mdfly.dev/", "mdfly.dev"},
 		{"http://localhost:8080", "localhost:8080"},
 		{"mdfly.dev", "mdfly.dev"},
+		{"https://mdfly.dev/base", "mdfly.dev"},
+		{"https://mdfly.dev/base/", "mdfly.dev"},
+		{"https://mdfly.dev/base?x=1", "mdfly.dev"},
+		{"http://localhost:8080/base?x=1", "localhost:8080"},
+		{"mdfly.dev/base", "mdfly.dev"},
 		{"", ""},
 	}
 	for _, tt := range tests {

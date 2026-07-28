@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -48,11 +49,15 @@ var ErrMissingCDN = errors.New("cloudflare client is required")
 // nothing at the edge, so the pass refuses to send it.
 var ErrMissingHost = errors.New("purge host is required")
 
+// ErrMissingStore is returned when Db is nil. Without the queue a purge cannot be
+// cleared or backed off, so the pass refuses before it calls Cloudflare.
+var ErrMissingStore = errors.New("purge store is required")
+
 // Store is the subset of db.Client the purge queue needs.
 type Store interface {
 	ClaimPurgeDue(ctx context.Context, now time.Time, limit int) ([]db.PurgeTask, error)
-	MarkPurgeDone(ctx context.Context, slug string) error
-	BackoffPurge(ctx context.Context, slug string, nextAttemptAt time.Time) error
+	MarkPurgeDone(ctx context.Context, slug string, attempts int) error
+	BackoffPurge(ctx context.Context, slug string, attempts int, nextAttemptAt time.Time) error
 }
 
 // CDN is the edge cache a purge targets.
@@ -78,20 +83,21 @@ type Result struct {
 	Failed int
 }
 
-// Purge invalidates slug at the edge and drops it from the queue. It is
+// Purge invalidates task's slug at the edge and drops its queue row. It is
 // idempotent: the two prefix purges carry no document state, so a late or
 // duplicated purge only makes the edge re-read whatever Postgres holds now, and
-// clearing an already-cleared queue row is a no-op. A failed purge leaves the row
-// in place for the drain to retry.
-func (s *Service) Purge(ctx context.Context, slug string) error {
+// clearing an already-cleared queue row is a no-op. task.Attempts fences the
+// clear, so a write that landed mid-purge keeps its own queued purge. A failed
+// purge leaves the row in place for the drain to retry.
+func (s *Service) Purge(ctx context.Context, task db.PurgeTask) error {
 	if err := s.validateConfig(); err != nil {
 		return err
 	}
-	if err := s.CDN.PurgePrefixes(ctx, s.prefixes(slug)); err != nil {
-		return fmt.Errorf("purge %s: %w", slug, err)
+	if err := s.CDN.PurgePrefixes(ctx, s.prefixes(task.Slug)); err != nil {
+		return fmt.Errorf("purge %s: %w", task.Slug, err)
 	}
-	if err := s.Db.MarkPurgeDone(ctx, slug); err != nil {
-		return fmt.Errorf("clear purge queue for %s: %w", slug, err)
+	if err := s.Db.MarkPurgeDone(ctx, task.Slug, task.Attempts); err != nil {
+		return fmt.Errorf("clear purge queue for %s: %w", task.Slug, err)
 	}
 	return nil
 }
@@ -105,7 +111,9 @@ func (s *Service) AttemptInline(ctx context.Context, slug string) {
 	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), inlineTimeout)
 	go func() {
 		defer cancel()
-		if err := s.Purge(detached, slug); err != nil {
+		// The write that just committed enqueued the slug with attempts reset to
+		// zero, so that is the value this attempt is fenced against.
+		if err := s.Purge(detached, db.PurgeTask{Slug: slug}); err != nil {
 			slog.Warn("inline cdn purge failed, left queued", "slug", slug, "err", err)
 		}
 	}()
@@ -128,10 +136,10 @@ func (s *Service) Drain(ctx context.Context) (Result, error) {
 	var res Result
 	var errs []error
 	for _, task := range tasks {
-		if err := s.Purge(ctx, task.Slug); err != nil {
+		if err := s.Purge(ctx, task); err != nil {
 			res.Failed++
 			errs = append(errs, err)
-			if err := s.Db.BackoffPurge(ctx, task.Slug, now.Add(s.backoffFor(task.Attempts))); err != nil {
+			if err := s.Db.BackoffPurge(ctx, task.Slug, task.Attempts, now.Add(s.backoffFor(task.Attempts))); err != nil {
 				errs = append(errs, err)
 			}
 			continue
@@ -184,6 +192,9 @@ func (s *Service) backoffFor(attempts int) time.Duration {
 }
 
 func (s *Service) validateConfig() error {
+	if s.Db == nil {
+		return ErrMissingStore
+	}
 	if s.CDN == nil {
 		return ErrMissingCDN
 	}
@@ -207,9 +218,19 @@ func (s *Service) batchSize() int {
 	return s.BatchSize
 }
 
-// HostFromBaseURL strips the scheme and any trailing slash from a base URL,
-// leaving the host Cloudflare purge prefixes are built from.
+// HostFromBaseURL reduces a base URL to the host (with port, if any) that
+// Cloudflare purge prefixes are built from, dropping the scheme plus any path,
+// trailing slash or query. A schemeless value is parsed as if it carried one; an
+// unparseable value falls back to itself, which validateConfig then rejects or
+// the edge treats as a prefix that purges nothing.
 func HostFromBaseURL(baseURL string) string {
-	host := strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
-	return strings.TrimSuffix(host, "/")
+	raw := baseURL
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return strings.TrimSuffix(baseURL, "/")
+	}
+	return u.Host
 }

@@ -49,7 +49,7 @@ func TestEnqueuePurge_dedupesBySlug(t *testing.T) {
 		t.Fatalf("first enqueue: %v", err)
 	}
 	future := time.Now().Add(time.Hour)
-	if err := client.BackoffPurge(ctx, "abc123", future); err != nil {
+	if err := client.BackoffPurge(ctx, "abc123", 0, future); err != nil {
 		t.Fatalf("backoff: %v", err)
 	}
 	if err := client.EnqueuePurge(ctx, "abc123"); err != nil {
@@ -150,13 +150,13 @@ func TestClaimPurgeDue(t *testing.T) {
 			t.Fatalf("enqueue %s: %v", slug, err)
 		}
 	}
-	if err := client.BackoffPurge(ctx, "due-old", now.Add(-2*time.Hour)); err != nil {
+	if err := client.BackoffPurge(ctx, "due-old", 0, now.Add(-2*time.Hour)); err != nil {
 		t.Fatalf("backoff due-old: %v", err)
 	}
-	if err := client.BackoffPurge(ctx, "due-new", now.Add(-time.Hour)); err != nil {
+	if err := client.BackoffPurge(ctx, "due-new", 0, now.Add(-time.Hour)); err != nil {
 		t.Fatalf("backoff due-new: %v", err)
 	}
-	if err := client.BackoffPurge(ctx, "not-yet", now.Add(time.Hour)); err != nil {
+	if err := client.BackoffPurge(ctx, "not-yet", 0, now.Add(time.Hour)); err != nil {
 		t.Fatalf("backoff not-yet: %v", err)
 	}
 
@@ -195,13 +195,13 @@ func TestMarkPurgeDone(t *testing.T) {
 	if err := client.EnqueuePurge(ctx, "done1"); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
-	if err := client.MarkPurgeDone(ctx, "done1"); err != nil {
+	if err := client.MarkPurgeDone(ctx, "done1", 0); err != nil {
 		t.Fatalf("mark done: %v", err)
 	}
 	if got := countPurgeRows(t, pool); got != 0 {
 		t.Errorf("purge_queue rows = %d after mark done, want 0", got)
 	}
-	if err := client.MarkPurgeDone(ctx, "done1"); err != nil {
+	if err := client.MarkPurgeDone(ctx, "done1", 0); err != nil {
 		t.Errorf("re-mark done: %v", err)
 	}
 }
@@ -219,7 +219,7 @@ func TestBackoffPurge(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 	next := time.Now().Add(30 * time.Minute)
-	if err := client.BackoffPurge(ctx, "retry1", next); err != nil {
+	if err := client.BackoffPurge(ctx, "retry1", 0, next); err != nil {
 		t.Fatalf("backoff: %v", err)
 	}
 
@@ -232,6 +232,51 @@ func TestBackoffPurge(t *testing.T) {
 	}
 	if row.nextAttemptAt.Sub(next).Abs() > time.Second {
 		t.Errorf("next_attempt_at = %s, want ~%s", row.nextAttemptAt, next)
+	}
+}
+
+// TestPurgeCompletion_fencesStaleClaims covers the attempts fence on both
+// completion paths: a claim carrying an attempts value the row no longer has lost
+// the race to a fresh write, so neither the clear nor the backoff touches the row.
+func TestPurgeCompletion_fencesStaleClaims(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+	client, pool := lifecycleDB(t)
+	ctx := context.Background()
+
+	if err := client.EnqueuePurge(ctx, "raced1"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	const staleAttempts = 3
+	if err := client.MarkPurgeDone(ctx, "raced1", staleAttempts); err != nil {
+		t.Fatalf("stale mark done: %v", err)
+	}
+	if got := countPurgeRows(t, pool); got != 1 {
+		t.Fatalf("purge_queue rows = %d after a stale clear, want the row kept", got)
+	}
+
+	future := time.Now().Add(time.Hour)
+	if err := client.BackoffPurge(ctx, "raced1", staleAttempts, future); err != nil {
+		t.Fatalf("stale backoff: %v", err)
+	}
+	row, ok := readPurgeRow(t, pool, "raced1")
+	if !ok {
+		t.Fatal("purge row deleted by a stale backoff")
+	}
+	if row.attempts != 0 {
+		t.Errorf("attempts = %d after a stale backoff, want 0", row.attempts)
+	}
+	if !row.nextAttemptAt.Before(future) {
+		t.Errorf("next_attempt_at = %s, want the enqueued time, not the stale %s", row.nextAttemptAt, future)
+	}
+
+	if err := client.MarkPurgeDone(ctx, "raced1", 0); err != nil {
+		t.Fatalf("matching mark done: %v", err)
+	}
+	if got := countPurgeRows(t, pool); got != 0 {
+		t.Errorf("purge_queue rows = %d after a matching clear, want 0", got)
 	}
 }
 
