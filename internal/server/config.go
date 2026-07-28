@@ -31,6 +31,15 @@ type Config struct {
 	Database        DatabaseConfig
 	R2              storage.Config
 	Jobs            JobsConfig
+	RateLimit       RateLimitConfig
+}
+
+// RateLimitConfig holds the Upstash REST credentials backing the write-path rate
+// limiter (ADR-0028). Env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN.
+// Both empty means unconfigured — the server boots with the limiter off.
+type RateLimitConfig struct {
+	URL   string
+	Token string
 }
 
 // DatabaseConfig holds Postgres connection parameters.
@@ -108,6 +117,10 @@ func LoadConfig() (Config, error) {
 			PublicBaseURL:   cdnBase,
 		},
 		Jobs: jobs,
+		RateLimit: RateLimitConfig{
+			URL:   os.Getenv("UPSTASH_REDIS_REST_URL"),
+			Token: os.Getenv("UPSTASH_REDIS_REST_TOKEN"),
+		},
 	}, nil
 }
 

@@ -17,12 +17,15 @@ import (
 
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/jobs"
+	"github.com/Abir66/mdfly/internal/server/middleware"
+	"github.com/Abir66/mdfly/internal/server/ratelimit"
 	"github.com/Abir66/mdfly/internal/server/service/document"
 	"github.com/Abir66/mdfly/internal/server/service/gc"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
+	"github.com/Abir66/mdfly/internal/server/upstash"
 )
 
 const (
@@ -49,6 +52,7 @@ type App struct {
 	view     *view.Service
 	document *document.Service
 	jobs     *jobs.Runner
+	limiter  middleware.Limiter
 }
 
 // New wires the App from cfg: opens the DB pool, pings it, builds the R2 client,
@@ -81,7 +85,19 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		view:     &view.Service{Db: pg, Storage: r2, Static: assets},
 		document: &document.Service{Db: pg},
 		jobs:     runner,
+		limiter:  newLimiter(cfg.RateLimit),
 	}, nil
+}
+
+// newLimiter builds the write-path rate limiter (ADR-0028), or returns nil when
+// Upstash is unconfigured — local dev runs unthrottled rather than refusing to
+// boot, and the Cloudflare edge limit still stands in production.
+func newLimiter(cfg RateLimitConfig) middleware.Limiter {
+	if cfg.URL == "" || cfg.Token == "" {
+		slog.Warn("upstash not configured, write paths are unthrottled")
+		return nil
+	}
+	return ratelimit.New(upstash.New(upstash.Config{URL: cfg.URL, Token: cfg.Token}))
 }
 
 // registerJobs wires the periodic jobs onto runner (ADR-0029). Intervals and
