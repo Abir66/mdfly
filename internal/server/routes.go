@@ -26,7 +26,7 @@ func (a *App) routes() http.Handler {
 }
 
 // limited wraps h in the rate-limit middleware, or returns it untouched when no
-// limiter is configured (Upstash credentials absent — local dev and tests).
+// limiter is configured (REDIS_URL absent — local dev and tests).
 func (a *App) limited(h http.HandlerFunc) http.Handler {
 	if a.limiter == nil {
 		return h

@@ -2,7 +2,8 @@
 // (ADR-0028): dual fixed windows per subject, counted in a shared store so the
 // limit survives restarts. Counting is one INCR+EXPIRE per window against a key
 // that embeds the window's time bucket, so each window is a fresh self-resetting
-// key and the TTL only garbage-collects dead ones.
+// key and the TTL only garbage-collects dead ones. All of a request's windows are
+// counted in a single store round trip.
 package ratelimit
 
 import (
@@ -17,10 +18,18 @@ const (
 	PerHour   = 30
 )
 
-// Counter is the shared counting store: increment key and (re)arm its TTL,
-// returning the new value. Implemented by the upstash client.
+// CounterOp is one counter to bump: increment Key and arm TTL on it.
+type CounterOp struct {
+	Key string
+	TTL time.Duration
+}
+
+// Counter is the shared counting store: increment every op's key, arm its TTL,
+// and return the new values in ops order. Every op must land in one round trip,
+// so a request either counts all its windows or none. Implemented by the redis
+// client.
 type Counter interface {
-	IncrementWithTTL(ctx context.Context, key string, ttl time.Duration) (int64, error)
+	IncrementWithTTL(ctx context.Context, ops []CounterOp) ([]int64, error)
 }
 
 // Window is one fixed-window allowance: at most Limit requests per Size.
@@ -64,35 +73,49 @@ func New(store Counter) *Limiter {
 }
 
 // Allow counts one request for subject in every window and reports whether it
-// may proceed. Every window is counted even once one has tripped, so a subject
+// may proceed. All windows are counted in one store round trip, so a subject
 // hammering past its per-minute allowance still spends its hourly one. A store
 // failure fails open: the returned Decision allows the request and the error is
 // reported for the caller to log.
 func (l *Limiter) Allow(ctx context.Context, subject string) (Decision, error) {
-	now := l.Now()
-	allowed := Decision{Allowed: true, Limit: l.Windows[0].Limit, Remaining: l.Windows[0].Limit}
-	var denied *Decision
+	if len(l.Windows) == 0 {
+		return Decision{Allowed: true}, nil
+	}
 
-	for _, w := range l.Windows {
-		count, err := l.Counter.IncrementWithTTL(ctx, bucketKey(subject, w, now), w.Size)
-		if err != nil {
-			return Decision{Allowed: true}, err
+	now := l.Now()
+	counts, err := l.Counter.IncrementWithTTL(ctx, l.ops(subject, now))
+	if err != nil {
+		return Decision{Allowed: true}, err
+	}
+	if len(counts) != len(l.Windows) {
+		return Decision{Allowed: true}, fmt.Errorf("ratelimit: got %d counts for %d windows", len(counts), len(l.Windows))
+	}
+	return l.decide(counts, now), nil
+}
+
+// ops names one counter per window, each in the bucket containing now.
+func (l *Limiter) ops(subject string, now time.Time) []CounterOp {
+	ops := make([]CounterOp, len(l.Windows))
+	for i, w := range l.Windows {
+		ops[i] = CounterOp{Key: bucketKey(subject, w, now), TTL: w.Size}
+	}
+	return ops
+}
+
+// decide turns per-window counts into a verdict: denied by the first window over
+// its limit, else allowed carrying the tightest remaining allowance.
+func (l *Limiter) decide(counts []int64, now time.Time) Decision {
+	allowed := Decision{Allowed: true, Limit: l.Windows[0].Limit, Remaining: l.Windows[0].Limit}
+
+	for i, w := range l.Windows {
+		if counts[i] > int64(w.Limit) {
+			return Decision{Limit: w.Limit, RetryAfter: untilNextWindow(w, now)}
 		}
-		if count > int64(w.Limit) {
-			if denied == nil {
-				denied = &Decision{Limit: w.Limit, RetryAfter: untilNextWindow(w, now)}
-			}
-			continue
-		}
-		if remaining := w.Limit - int(count); remaining < allowed.Remaining {
+		if remaining := w.Limit - int(counts[i]); remaining < allowed.Remaining {
 			allowed.Limit, allowed.Remaining = w.Limit, remaining
 		}
 	}
-
-	if denied != nil {
-		return *denied, nil
-	}
-	return allowed, nil
+	return allowed
 }
 
 // untilNextWindow is how long until w's current bucket rolls over.

@@ -35,12 +35,12 @@ type Config struct {
 	Cloudflare      CloudflareConfig
 }
 
-// RateLimitConfig holds the Upstash REST credentials backing the write-path rate
-// limiter (ADR-0028). Env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN.
-// Both empty means unconfigured — the server boots with the limiter off.
+// RateLimitConfig holds the Redis connection backing the write-path rate limiter
+// (ADR-0028). Env var: REDIS_URL — `rediss://…` for Upstash's TLS endpoint,
+// `redis://…` for a local instance. Empty means unconfigured — the server boots
+// with the limiter off.
 type RateLimitConfig struct {
-	URL   string
-	Token string
+	URL string
 }
 
 // CloudflareConfig holds the zone and API token the CDN purge uses (ADR-0031).
@@ -125,11 +125,8 @@ func LoadConfig() (Config, error) {
 			Bucket:          r2Bucket,
 			PublicBaseURL:   cdnBase,
 		},
-		Jobs: jobs,
-		RateLimit: RateLimitConfig{
-			URL:   os.Getenv("UPSTASH_REDIS_REST_URL"),
-			Token: os.Getenv("UPSTASH_REDIS_REST_TOKEN"),
-		},
+		Jobs:      jobs,
+		RateLimit: RateLimitConfig{URL: os.Getenv("REDIS_URL")},
 		Cloudflare: CloudflareConfig{
 			ZoneID: os.Getenv("CLOUDFLARE_ZONE_ID"),
 			Token:  os.Getenv("CLOUDFLARE_API_TOKEN"),

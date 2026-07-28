@@ -65,7 +65,7 @@ To a publisher, editor, viewer, and the owner, the product behaves exactly as do
 
 **Modules** (approved with the user; deep modules behind interfaces, thin adapters isolated for fakeability):
 
-- **`ratelimit`** (deep) — `Allow(ctx, key string) (allowed bool, err error)`. Implements dual fixed-window counting (10/min + 30/hr) via a single house operation `incrementWithTtl(key, ttl)` (pipelined `INCR` + `EXPIRE`), where the key embeds a time-bucket step `floor(now/window)`. Fails open on any backing-store error. Backed by a thin **`upstash`** HTTPS-REST adapter behind an interface.
+- **`ratelimit`** (deep) — `Allow(ctx, key string) (allowed bool, err error)`. Implements dual fixed-window counting (10/min + 30/hr) via a single house operation `IncrementWithTTL(ops)` that pipelines every window's `INCR` + `EXPIRE` into one round trip, where each key embeds a time-bucket step `floor(now/window)`. Fails open on any backing-store error. Backed by a thin **`redis`** RESP/TCP-pool adapter behind an interface.
 - **rate-limit middleware + client-IP resolver** (shallow, in `middleware`/`httpx`) — resolves the subject key (Edit Token from `Authorization` on update/delete; otherwise `CF-Connecting-IP`, trusted only from Cloudflare's published ranges since `RemoteAddr` is a Cloudflare edge IP), calls `ratelimit.Allow`, and on deny returns `429` with `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `Retry-After`. Wraps `publish/init`, `update/init`, and `DELETE /documents/:slug` only.
 - **`jobs`** (deep-ish) — a ticker-driven runner: `Register(name string, interval time.Duration, fn func(ctx))` + `Start`/`Stop`, with an injectable clock so ticks can be driven in tests. Started at boot, stopped on graceful shutdown.
 - **`service/gc`** (deep) — the hourly lifecycle sweep as pure logic over `db` and `storage` interfaces: (a) mark anon `published` rows past `expires_at` → `expired`; (b) mark `pending` rows older than the 1h grace → `abandoned`; (c) for rows needing blob deletion with `blobs_deleted_at IS NULL`, call `storage.DeletePrefix` then stamp `blobs_deleted_at`. Grace: 24h for `deleted`/`expired`, immediate for `abandoned`. Bounded batch per pass.
@@ -105,12 +105,12 @@ CREATE TABLE purge_queue (
 
 **Modules to unit-test in isolation** (confirmed with the user — all four deep modules):
 
-- **`ratelimit`** — window rollover across the time-bucket boundary, dual-window enforcement (per-minute vs per-hour tripping independently), and fail-open when the backing store errors. Fake Upstash client (or miniredis).
+- **`ratelimit`** — window rollover across the time-bucket boundary, dual-window enforcement (per-minute vs per-hour tripping independently), and fail-open when the backing store errors. Fake counter (or miniredis).
 - **`service/gc`** — which rows transition to `expired` vs `abandoned`, the 24h-vs-immediate grace math, that Owned Documents are never expired, and that blob deletion fires only when `blobs_deleted_at IS NULL`. Fake `db` + fake R2.
 - **`service/purge`** — transactional enqueue + slug dedup, claim/backoff/`MarkDone` lifecycle, and that `Purge` is idempotent and re-reads latest state (a duplicate/late drain is a no-op). Fake `cloudflare` client.
 - **`storage.DeletePrefix`** — LIST + batched `DeleteObjects`, empty prefix (no-op), and pagination past one batch. Fake object store.
 
-**Prior art:** the existing end-to-end blackbox test + CI (S20) is the integration backstop and should be extended to cover a delete → 410 → blob-gone path. The stale README's own instinct — "verifiable via miniredis + fake Cloudflare client, no real infra" — is the right shape for the isolated tests; keep the fakes in-repo. Thin adapters (`upstash`, `cloudflare`) get a light contract test each, not deep coverage.
+**Prior art:** the existing end-to-end blackbox test + CI (S20) is the integration backstop and should be extended to cover a delete → 410 → blob-gone path. The stale README's own instinct — "verifiable via miniredis + fake Cloudflare client, no real infra" — is the right shape for the isolated tests; keep the fakes in-repo. Thin adapters (`redis`, `cloudflare`) get a light contract test each, not deep coverage.
 
 ## Out of Scope
 

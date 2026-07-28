@@ -132,7 +132,7 @@ func TestRateLimit_subject(t *testing.T) {
 // TestRateLimit_failsOpen pins the fail-open path end to end: a limiter error
 // must still reach the handler.
 func TestRateLimit_failsOpen(t *testing.T) {
-	limiter := &fakeLimiter{err: errors.New("upstash unreachable")}
+	limiter := &fakeLimiter{err: errors.New("redis unreachable")}
 	served := false
 	handler := middleware.RateLimit(limiter)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		served = true
