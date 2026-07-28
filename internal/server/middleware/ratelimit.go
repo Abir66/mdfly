@@ -22,7 +22,7 @@ type Limiter interface {
 
 // RateLimit throttles the wrapped handler per subject (ADR-0028). Wrap the write
 // paths only — read paths are edge-cached and never limited. A limiter failure
-// is logged and the request allowed through, so an Upstash outage degrades to
+// is logged and the request allowed through, so a Redis outage degrades to
 // unthrottled rather than blocked.
 func RateLimit(limiter Limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

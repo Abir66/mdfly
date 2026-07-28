@@ -20,6 +20,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/jobs"
 	"github.com/Abir66/mdfly/internal/server/middleware"
 	"github.com/Abir66/mdfly/internal/server/ratelimit"
+	"github.com/Abir66/mdfly/internal/server/redis"
 	"github.com/Abir66/mdfly/internal/server/service/document"
 	"github.com/Abir66/mdfly/internal/server/service/gc"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
@@ -27,7 +28,6 @@ import (
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
-	"github.com/Abir66/mdfly/internal/server/upstash"
 )
 
 const (
@@ -56,6 +56,7 @@ type App struct {
 	document *document.Service
 	jobs     *jobs.Runner
 	limiter  middleware.Limiter
+	counter  *redis.Client
 }
 
 // New wires the App from cfg: opens the DB pool, pings it, builds the R2 client,
@@ -64,6 +65,12 @@ type App struct {
 func New(ctx context.Context, cfg Config) (*App, error) {
 	pool, err := openPool(ctx, cfg.Database.URL)
 	if err != nil {
+		return nil, err
+	}
+
+	limiter, counter, err := newLimiter(ctx, cfg.RateLimit)
+	if err != nil {
+		pool.Close()
 		return nil, err
 	}
 
@@ -92,7 +99,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		view:     &view.Service{Db: pg, Storage: r2, Static: assets},
 		document: docSvc,
 		jobs:     runner,
-		limiter:  newLimiter(cfg.RateLimit),
+		limiter:  limiter,
+		counter:  counter,
 	}, nil
 }
 
@@ -114,15 +122,21 @@ func newPurge(cfg Config, pg *db.Client) *purge.Service {
 	}
 }
 
-// newLimiter builds the write-path rate limiter (ADR-0028), or returns nil when
-// Upstash is unconfigured — local dev runs unthrottled rather than refusing to
-// boot, and the Cloudflare edge limit still stands in production.
-func newLimiter(cfg RateLimitConfig) middleware.Limiter {
-	if cfg.URL == "" || cfg.Token == "" {
-		slog.Warn("upstash not configured, write paths are unthrottled")
-		return nil
+// newLimiter builds the write-path rate limiter over a pooled Redis connection
+// (ADR-0028), returning both so the caller can close the pool. Both are nil when
+// REDIS_URL is unset — local dev runs unthrottled rather than refusing to boot,
+// and the Cloudflare edge limit still stands in production. A malformed URL is a
+// config error and does fail the boot.
+func newLimiter(ctx context.Context, cfg RateLimitConfig) (middleware.Limiter, *redis.Client, error) {
+	if cfg.URL == "" {
+		slog.Warn("redis not configured, write paths are unthrottled")
+		return nil, nil, nil
 	}
-	return ratelimit.New(upstash.New(upstash.Config{URL: cfg.URL, Token: cfg.Token}))
+	client, err := redis.New(ctx, redis.Config{URL: cfg.URL})
+	if err != nil {
+		return nil, nil, err
+	}
+	return ratelimit.New(client), client, nil
 }
 
 // registerJobs wires the periodic jobs onto runner (ADR-0029). Intervals and
@@ -205,6 +219,11 @@ func (a *App) shutdown(server *http.Server) error {
 
 // Close releases infrastructure resources. Safe to call after Run returns.
 func (a *App) Close() {
+	if a.counter != nil {
+		if err := a.counter.Close(); err != nil {
+			slog.Warn("close redis", "err", err)
+		}
+	}
 	if a.pool != nil {
 		a.pool.Close()
 	}

@@ -3,31 +3,38 @@ package ratelimit_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Abir66/mdfly/internal/server/ratelimit"
 )
 
-// fakeCounter is an in-memory stand-in for Upstash: it counts per key and
-// records the TTL each key was given.
+// fakeCounter is an in-memory stand-in for the Redis store: it counts per key,
+// records the TTL each key was given, and tallies round trips.
 type fakeCounter struct {
-	counts map[string]int64
-	ttls   map[string]time.Duration
-	err    error
+	counts    map[string]int64
+	ttls      map[string]time.Duration
+	roundTrip int
+	err       error
 }
 
 func newFakeCounter() *fakeCounter {
 	return &fakeCounter{counts: map[string]int64{}, ttls: map[string]time.Duration{}}
 }
 
-func (f *fakeCounter) IncrementWithTTL(_ context.Context, key string, ttl time.Duration) (int64, error) {
+func (f *fakeCounter) IncrementWithTTL(_ context.Context, ops []ratelimit.CounterOp) ([]int64, error) {
+	f.roundTrip++
 	if f.err != nil {
-		return 0, f.err
+		return nil, f.err
 	}
-	f.counts[key]++
-	f.ttls[key] = ttl
-	return f.counts[key], nil
+	counts := make([]int64, len(ops))
+	for i, op := range ops {
+		f.counts[op.Key]++
+		f.ttls[op.Key] = op.TTL
+		counts[i] = f.counts[op.Key]
+	}
+	return counts, nil
 }
 
 func TestAllow_underLimit(t *testing.T) {
@@ -42,6 +49,47 @@ func TestAllow_underLimit(t *testing.T) {
 	}
 	if got.Limit != ratelimit.PerMinute || got.Remaining != ratelimit.PerMinute-1 {
 		t.Errorf("decision = %+v, want limit %d remaining %d", got, ratelimit.PerMinute, ratelimit.PerMinute-1)
+	}
+}
+
+// TestAllow_oneRoundTripPerRequest pins the batching contract: however many
+// windows are configured, one Allow costs the store exactly one round trip.
+func TestAllow_oneRoundTripPerRequest(t *testing.T) {
+	counter := newFakeCounter()
+	limiter := ratelimit.New(counter)
+
+	for range 3 {
+		if _, err := limiter.Allow(context.Background(), "subject"); err != nil {
+			t.Fatalf("Allow: %v", err)
+		}
+	}
+
+	if counter.roundTrip != 3 {
+		t.Errorf("round trips = %d for 3 requests, want 3", counter.roundTrip)
+	}
+}
+
+// TestAllow_deniedRequestStillSpendsEveryWindow pins ADR-0028's rule that all
+// windows are counted on every request: a request already denied by the
+// per-minute window still spends the hourly allowance, so short-circuiting the
+// count on the first tripped window would be caught here.
+func TestAllow_deniedRequestStillSpendsEveryWindow(t *testing.T) {
+	const overspend = 5
+
+	counter := newFakeCounter()
+	limiter := ratelimit.New(counter)
+	at := time.Date(2026, 7, 27, 10, 30, 0, 0, time.UTC)
+	limiter.Now = func() time.Time { return at }
+
+	for range ratelimit.PerMinute + overspend {
+		limiter.Allow(context.Background(), "subject") //nolint:errcheck
+	}
+
+	want := int64(ratelimit.PerMinute + overspend)
+	for key, count := range counter.counts {
+		if strings.Contains(key, ":1h:") && count != want {
+			t.Errorf("hourly counter %q = %d, want %d", key, count, want)
+		}
 	}
 }
 
@@ -102,6 +150,34 @@ func TestAllow_hourWindowTripsIndependently(t *testing.T) {
 	}
 }
 
+// TestAllow_reportsTheLongestWaitWhenBothWindowsTrip spends the hourly allowance
+// first, then hammers the minute window: with both windows over, the caller must
+// be told to wait out the hour, not a minute that would only earn another 429.
+func TestAllow_reportsTheLongestWaitWhenBothWindowsTrip(t *testing.T) {
+	limiter := ratelimit.New(newFakeCounter())
+	at := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
+	limiter.Now = func() time.Time { return at }
+
+	for range ratelimit.PerHour {
+		limiter.Allow(context.Background(), "subject") //nolint:errcheck
+		at = at.Add(time.Minute)
+	}
+	for range ratelimit.PerMinute + 1 {
+		limiter.Allow(context.Background(), "subject") //nolint:errcheck
+	}
+
+	got, _ := limiter.Allow(context.Background(), "subject")
+	if got.Allowed {
+		t.Fatal("request past both allowances was allowed")
+	}
+	if got.Limit != ratelimit.PerHour {
+		t.Errorf("Limit = %d, want the hour limit %d", got.Limit, ratelimit.PerHour)
+	}
+	if want := 30 * time.Minute; got.RetryAfter != want {
+		t.Errorf("RetryAfter = %s, want %s (to the next hour bucket)", got.RetryAfter, want)
+	}
+}
+
 // TestAllow_windowRollover walks the clock past the minute bucket boundary: the
 // next window is a different key, so the subject starts from a full allowance.
 func TestAllow_windowRollover(t *testing.T) {
@@ -136,7 +212,7 @@ func TestAllow_windowRollover(t *testing.T) {
 // degrade to unthrottled, never to blocked, and surface the error for logging.
 func TestAllow_failsOpen(t *testing.T) {
 	counter := newFakeCounter()
-	counter.err = errors.New("upstash unreachable")
+	counter.err = errors.New("redis unreachable")
 	limiter := ratelimit.New(counter)
 
 	got, err := limiter.Allow(context.Background(), "subject")
