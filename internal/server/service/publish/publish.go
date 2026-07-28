@@ -24,12 +24,28 @@ const (
 	slugRetries   = 10
 )
 
+// Purger runs the best-effort CDN purge that follows a committed write. The
+// durable queue row written inside the commit transaction is the real path, so a
+// nil Purger only delays invalidation to the next drain tick (ADR-0031).
+type Purger interface {
+	AttemptInline(ctx context.Context, slug string)
+}
+
 // Service executes the publish workflow. Init and Commit return *httpx.Error on
 // any failure so handlers can write the response without re-mapping.
 type Service struct {
 	Db      *db.Client
 	Storage *storage.Client
 	BaseURL string // e.g. "https://mdfly.dev"
+	Purge   Purger
+}
+
+// purgeSoon kicks the inline purge if one is wired.
+func (s *Service) purgeSoon(ctx context.Context, slug string) {
+	if s.Purge == nil {
+		return
+	}
+	s.Purge.AttemptInline(ctx, slug)
 }
 
 // InitResult is the data the Init handler serializes to the wire.
@@ -135,17 +151,41 @@ func (s *Service) Commit(ctx context.Context, req api.CommitRequest) (CommitResu
 	}
 
 	expiresAt := time.Now().Add(anonExpiresIn)
-	published, err := s.Db.Publish(ctx, req.IdempotencyKey, expiresAt)
+	published, err := s.commitPublish(ctx, req.IdempotencyKey, expiresAt)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return CommitResult{}, httpx.NotFound("no pending document for idempotency_key")
 		}
 		return CommitResult{}, httpx.Internal("failed to publish document")
 	}
+	s.purgeSoon(ctx, published.Slug)
 
 	return CommitResult{
 		URL:          documentURL(s.BaseURL, published.Slug),
 		Slug:         published.Slug,
 		ManifestHash: published.ManifestHashHex(),
 	}, nil
+}
+
+// commitPublish flips the pending row to 'published' and enqueues its CDN purge
+// in one transaction, so a published document can never end up live with a stale
+// edge cache and no pending purge (ADR-0031).
+func (s *Service) commitPublish(ctx context.Context, idempotencyKey string, expiresAt time.Time) (*db.Document, error) {
+	tx, err := s.Db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	published, err := tx.Publish(ctx, idempotencyKey, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.EnqueuePurge(ctx, published.Slug); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return published, nil
 }

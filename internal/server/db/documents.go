@@ -98,7 +98,7 @@ type InsertPendingParams struct {
 
 // InsertPending inserts a documents row with status='pending'.
 // On idempotency_key conflict (DO NOTHING) it fetches and returns the existing row.
-func (c *Client) InsertPending(ctx context.Context, p InsertPendingParams) (*Document, error) {
+func (o *ops) InsertPending(ctx context.Context, p InsertPendingParams) (*Document, error) {
 	manifestJSON, manifestHash, err := marshalManifest(p.Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("marshal manifest: %w", err)
@@ -129,14 +129,14 @@ RETURNING id, slug, idempotency_key, status,
           bytes_total, file_count,
           expires_at, created_at, updated_at`
 
-	row := c.pool.QueryRow(ctx, q,
+	row := o.q.QueryRow(ctx, q,
 		p.Slug, p.IdempotencyKey, manifestJSON, manifestHash,
 		editTokenHash, bytesTotal, fileCount,
 	)
 	doc, err := scanDocument(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return c.GetByIdempotencyKey(ctx, p.IdempotencyKey)
+			return o.GetByIdempotencyKey(ctx, p.IdempotencyKey)
 		}
 		return nil, fmt.Errorf("insert pending: %w", err)
 	}
@@ -144,7 +144,7 @@ RETURNING id, slug, idempotency_key, status,
 }
 
 // GetByIdempotencyKey returns the document row matching key, or ErrNotFound.
-func (c *Client) GetByIdempotencyKey(ctx context.Context, key string) (*Document, error) {
+func (o *ops) GetByIdempotencyKey(ctx context.Context, key string) (*Document, error) {
 	const q = `
 SELECT id, slug, idempotency_key, status,
        manifest, manifest_hash, edit_token_hash,
@@ -153,7 +153,7 @@ SELECT id, slug, idempotency_key, status,
 FROM documents
 WHERE idempotency_key = $1`
 
-	row := c.pool.QueryRow(ctx, q, key)
+	row := o.q.QueryRow(ctx, q, key)
 	doc, err := scanDocument(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -167,7 +167,7 @@ WHERE idempotency_key = $1`
 // Publish atomically flips status to 'published' and sets expires_at.
 // If the row is already published, returns it as-is (terminal-state idempotency).
 // Returns ErrNotFound if no pending row matches key.
-func (c *Client) Publish(ctx context.Context, idempotencyKey string, expiresAt time.Time) (*Document, error) {
+func (o *ops) Publish(ctx context.Context, idempotencyKey string, expiresAt time.Time) (*Document, error) {
 	const q = `
 UPDATE documents
 SET status = 'published',
@@ -180,7 +180,7 @@ RETURNING id, slug, idempotency_key, status,
           bytes_total, file_count,
           expires_at, created_at, updated_at`
 
-	row := c.pool.QueryRow(ctx, q, idempotencyKey, expiresAt)
+	row := o.q.QueryRow(ctx, q, idempotencyKey, expiresAt)
 	doc, err := scanDocument(row)
 	if err == nil {
 		return doc, nil
@@ -188,7 +188,7 @@ RETURNING id, slug, idempotency_key, status,
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("publish: %w", err)
 	}
-	doc, err = c.GetByIdempotencyKey(ctx, idempotencyKey)
+	doc, err = o.GetByIdempotencyKey(ctx, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ type UpdateManifestParams struct {
 // a nil parent (--force) drops the guard. Returns ErrNotFound when no published
 // row matches — the slug is gone, or a concurrent write moved manifest_hash off
 // the parent (which the caller maps to a 409 conflict).
-func (c *Client) UpdateManifest(ctx context.Context, p UpdateManifestParams) (*Document, error) {
+func (o *ops) UpdateManifest(ctx context.Context, p UpdateManifestParams) (*Document, error) {
 	manifestJSON, manifestHash, err := marshalManifest(p.Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("marshal manifest: %w", err)
@@ -241,7 +241,7 @@ RETURNING id, slug, idempotency_key, status,
           bytes_total, file_count,
           expires_at, created_at, updated_at`
 
-	row := c.pool.QueryRow(ctx, q,
+	row := o.q.QueryRow(ctx, q,
 		p.Slug, manifestJSON, manifestHash, bytesTotal, fileCount,
 		p.ExpiresAt, p.ParentManifestHash,
 	)
@@ -259,8 +259,8 @@ RETURNING id, slug, idempotency_key, status,
 // public but is gone — 'deleted' or 'expired' — yields ErrGone (→ 410); a
 // missing row, or one that was never public ('pending', 'abandoned'), yields
 // ErrNotFound (→ 404). Only 'published' rows are served (ADR-0030).
-func (c *Client) GetBySlug(ctx context.Context, sl string) (*Document, error) {
-	doc, err := c.GetBySlugAny(ctx, sl)
+func (o *ops) GetBySlug(ctx context.Context, sl string) (*Document, error) {
+	doc, err := o.GetBySlugAny(ctx, sl)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +279,7 @@ func (c *Client) GetBySlug(ctx context.Context, sl string) (*Document, error) {
 // GetBySlugAny returns the document row for slug regardless of status, or
 // ErrNotFound if no row exists. Used by the delete workflow, which must read a
 // terminal row to stay idempotent.
-func (c *Client) GetBySlugAny(ctx context.Context, sl string) (*Document, error) {
+func (o *ops) GetBySlugAny(ctx context.Context, sl string) (*Document, error) {
 	const q = `
 SELECT id, slug, idempotency_key, status,
        manifest, manifest_hash, edit_token_hash,
@@ -288,7 +288,7 @@ SELECT id, slug, idempotency_key, status,
 FROM documents
 WHERE slug = $1`
 
-	row := c.pool.QueryRow(ctx, q, sl)
+	row := o.q.QueryRow(ctx, q, sl)
 	doc, err := scanDocument(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -302,7 +302,7 @@ WHERE slug = $1`
 // SoftDelete flips slug's row to 'deleted' and stamps deleted_at, keeping the
 // slug reserved (ADR-0002). Returns the updated row, or ErrNotFound if no row
 // exists. Re-deleting an already-deleted row is a no-op that returns it as-is.
-func (c *Client) SoftDelete(ctx context.Context, sl string) (*Document, error) {
+func (o *ops) SoftDelete(ctx context.Context, sl string) (*Document, error) {
 	const q = `
 UPDATE documents
 SET status = 'deleted',
@@ -314,7 +314,7 @@ RETURNING id, slug, idempotency_key, status,
           bytes_total, file_count,
           expires_at, created_at, updated_at`
 
-	row := c.pool.QueryRow(ctx, q, sl)
+	row := o.q.QueryRow(ctx, q, sl)
 	doc, err := scanDocument(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -332,7 +332,7 @@ RETURNING id, slug, idempotency_key, status,
 // repeated passes idempotent: an already-expired row is not re-selected.
 // Candidates are locked with FOR UPDATE SKIP LOCKED, so a concurrent sweep or
 // SoftDelete on the same row is stepped over rather than waited on.
-func (c *Client) MarkExpired(ctx context.Context, now time.Time, limit int) (int64, error) {
+func (o *ops) MarkExpired(ctx context.Context, now time.Time, limit int) (int64, error) {
 	const q = `
 WITH candidates AS (
 	SELECT id FROM documents
@@ -350,7 +350,7 @@ SET status = 'expired',
 FROM candidates c
 WHERE d.id = c.id`
 
-	tag, err := c.pool.Exec(ctx, q, now, limit)
+	tag, err := o.q.Exec(ctx, q, now, limit)
 	if err != nil {
 		return 0, fmt.Errorf("mark expired: %w", err)
 	}
@@ -362,7 +362,7 @@ WHERE d.id = c.id`
 // documents_pending_gc_idx, and the status guard makes repeated passes
 // idempotent. Candidates are locked like MarkExpired's, so a concurrent Publish
 // or sweep on the same row is skipped rather than blocked.
-func (c *Client) MarkAbandoned(ctx context.Context, olderThan time.Time, limit int) (int64, error) {
+func (o *ops) MarkAbandoned(ctx context.Context, olderThan time.Time, limit int) (int64, error) {
 	const q = `
 WITH candidates AS (
 	SELECT id FROM documents
@@ -378,7 +378,7 @@ SET status = 'abandoned',
 FROM candidates c
 WHERE d.id = c.id`
 
-	tag, err := c.pool.Exec(ctx, q, olderThan, limit)
+	tag, err := o.q.Exec(ctx, q, olderThan, limit)
 	if err != nil {
 		return 0, fmt.Errorf("mark abandoned: %w", err)
 	}
@@ -398,7 +398,7 @@ type BlobGCCandidate struct {
 // until their transition timestamp is at or before gracedBefore. The predicate
 // matches documents_blob_gc_idx, and rows already stamped with blobs_deleted_at
 // are excluded, so a swept row is never re-listed.
-func (c *Client) ListBlobGCCandidates(ctx context.Context, gracedBefore time.Time, limit int) ([]BlobGCCandidate, error) {
+func (o *ops) ListBlobGCCandidates(ctx context.Context, gracedBefore time.Time, limit int) ([]BlobGCCandidate, error) {
 	const q = `
 SELECT id, slug, status
 FROM documents
@@ -408,7 +408,7 @@ WHERE blobs_deleted_at IS NULL
 ORDER BY updated_at
 LIMIT $2`
 
-	rows, err := c.pool.Query(ctx, q, gracedBefore, limit)
+	rows, err := o.q.Query(ctx, q, gracedBefore, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list blob gc candidates: %w", err)
 	}
@@ -432,13 +432,13 @@ LIMIT $2`
 // blob-GC work-list. updated_at is deliberately left alone: it is the transition
 // timestamp the grace windows order by. Re-stamping an already-stamped row is a
 // no-op success.
-func (c *Client) SetBlobsDeletedAt(ctx context.Context, id int64) error {
+func (o *ops) SetBlobsDeletedAt(ctx context.Context, id int64) error {
 	const q = `
 UPDATE documents
 SET blobs_deleted_at = now()
 WHERE id = $1 AND blobs_deleted_at IS NULL`
 
-	if _, err := c.pool.Exec(ctx, q, id); err != nil {
+	if _, err := o.q.Exec(ctx, q, id); err != nil {
 		return fmt.Errorf("set blobs deleted at: %w", err)
 	}
 	return nil

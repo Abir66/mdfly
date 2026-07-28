@@ -103,12 +103,14 @@ func (s *Service) UpdateCommit(ctx context.Context, req api.UpdateCommitRequest,
 	if herr != nil {
 		return CommitResult{}, herr
 	}
+	s.purgeSoon(ctx, updated.Slug)
 	return s.commitResult(updated.Slug, updated.ManifestHashHex()), nil
 }
 
-// applyUpdate performs the guarded atomic overwrite. A no-rows result means a
-// concurrent writer moved manifest_hash off the parent between our read and the
-// UPDATE, which is a lost optimistic-concurrency check → 409.
+// applyUpdate performs the guarded atomic overwrite and enqueues the slug's CDN
+// purge in the same transaction (ADR-0031). A no-rows result means a concurrent
+// writer moved manifest_hash off the parent between our read and the UPDATE,
+// which is a lost optimistic-concurrency check → 409.
 func (s *Service) applyUpdate(ctx context.Context, slug string, mfst manifest.Manifest, parentHex string) (*db.Document, *httpx.Error) {
 	var parent []byte
 	if parentHex != "" {
@@ -118,7 +120,7 @@ func (s *Service) applyUpdate(ctx context.Context, slug string, mfst manifest.Ma
 		}
 		parent = p
 	}
-	updated, err := s.Db.UpdateManifest(ctx, db.UpdateManifestParams{
+	updated, err := s.commitUpdate(ctx, db.UpdateManifestParams{
 		Slug:               slug,
 		Manifest:           mfst,
 		ParentManifestHash: parent,
@@ -129,6 +131,27 @@ func (s *Service) applyUpdate(ctx context.Context, slug string, mfst manifest.Ma
 			return s.reconcileConcurrentUpdate(ctx, slug, mfst)
 		}
 		return nil, httpx.Internal("failed to update document")
+	}
+	return updated, nil
+}
+
+// commitUpdate overwrites the live row and enqueues its purge atomically.
+func (s *Service) commitUpdate(ctx context.Context, p db.UpdateManifestParams) (*db.Document, error) {
+	tx, err := s.Db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	updated, err := tx.UpdateManifest(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.EnqueuePurge(ctx, updated.Slug); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
 	}
 	return updated, nil
 }

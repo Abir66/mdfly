@@ -32,6 +32,7 @@ type Config struct {
 	R2              storage.Config
 	Jobs            JobsConfig
 	RateLimit       RateLimitConfig
+	Cloudflare      CloudflareConfig
 }
 
 // RateLimitConfig holds the Upstash REST credentials backing the write-path rate
@@ -40,6 +41,14 @@ type Config struct {
 type RateLimitConfig struct {
 	URL   string
 	Token string
+}
+
+// CloudflareConfig holds the zone and API token the CDN purge uses (ADR-0031).
+// Env vars: CLOUDFLARE_ZONE_ID, CLOUDFLARE_API_TOKEN. Either empty means
+// unconfigured — purges are still enqueued durably, but nothing drains them.
+type CloudflareConfig struct {
+	ZoneID string
+	Token  string
 }
 
 // DatabaseConfig holds Postgres connection parameters.
@@ -120,6 +129,10 @@ func LoadConfig() (Config, error) {
 		RateLimit: RateLimitConfig{
 			URL:   os.Getenv("UPSTASH_REDIS_REST_URL"),
 			Token: os.Getenv("UPSTASH_REDIS_REST_TOKEN"),
+		},
+		Cloudflare: CloudflareConfig{
+			ZoneID: os.Getenv("CLOUDFLARE_ZONE_ID"),
+			Token:  os.Getenv("CLOUDFLARE_API_TOKEN"),
 		},
 	}, nil
 }
