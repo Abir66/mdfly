@@ -9,7 +9,7 @@ Follow these in order. Each one needs something the previous one produced.
 | 3 | [Cloudflare](3-cloudflare.md) | DNS, origin TLS cert, R2 bucket, purge token |
 | 4 | [Deploy](4-deploy.md) | Secrets on the box, migrations applied, stack running |
 | 5 | [Verify](5-verify.md) | Proof each piece works, with a checklist |
-| 6 | [Operate](6-operate.md) | Redeploys, backups, troubleshooting, runbook |
+| 6 | [Operate](6-operate.md) | Redeploys, troubleshooting, runbook |
 
 Reference, not a step: [Redis rate limiter](redis-rate-limit-setup.md) — the config's
 rationale, behaviour under memory pressure, and deeper verification.

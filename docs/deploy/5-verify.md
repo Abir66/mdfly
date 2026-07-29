@@ -205,6 +205,5 @@ console, that is the R2 CORS rule from step 3.5.
 - [ ] 6379, 8080, and 80 all refuse from outside; only 443 connects
 - [ ] A published document renders and its images load
 - [ ] An update invalidates the edge cache and `purge_queue` drains to empty
-- [ ] Database backups are on at the provider, with a retention you have checked
 
 Next: [6. Operate](6-operate.md).

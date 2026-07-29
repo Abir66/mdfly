@@ -16,8 +16,8 @@ Create a Postgres instance with your provider. Three choices that matter:
 - **A dedicated role and database**, not the provider's admin superuser. The role
   needs DDL on the mdfly database (migrations create tables and indexes) and
   nothing beyond it.
-- **Backups on**, with a retention you have actually looked at. This is your
-  restore path when a migration goes wrong. Step 6 covers the second copy.
+- **Backups on**, if the provider offers them. This is the only restore path when a
+  migration goes wrong — nothing on the VM keeps a copy of the data.
 
 Version 14 or newer. The schema uses `JSONB`, `BYTEA`, `TIMESTAMPTZ`, `BIGSERIAL`,
 and partial indexes — nothing exotic, no extensions.
@@ -66,17 +66,11 @@ URL to `migrate` without touching `.env`.
 
 ## 2.4 Check
 
-Install the Postgres **client** on the VM — just `psql` and `pg_dump`, no server:
+Install the Postgres **client** on the VM — `psql` only, no server:
 
 ```sh
 sudo apt-get -y install postgresql-client-16
 ```
-
-Match or exceed your server's major version. `pg_dump` refuses to dump a server
-newer than itself (`server version mismatch`), which you would not discover until
-the first backup in step 6. For a server newer than the client Ubuntu ships, add
-[PGDG](https://www.postgresql.org/download/linux/ubuntu/) and install that major
-instead.
 
 Then, before going any further:
 

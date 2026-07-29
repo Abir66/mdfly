@@ -1,6 +1,6 @@
 # 6. Operate
 
-Redeploys, backups, troubleshooting, and the things worth watching.
+Redeploys, troubleshooting, and the things worth watching.
 
 All commands run from `~/mdfly/deploy`.
 
@@ -38,53 +38,7 @@ chmod +x ~/mdfly/deploy.sh
 `deploy.sh` is gitignored territory — keep it on the box or add it to the repo
 deliberately.
 
-## 6.2 Backups
-
-The provider owns the primary backup (step 2.1). What it does not cover is losing
-access to the provider itself, so keep a provider-independent logical dump.
-
-Create a **second, private** R2 bucket — `mdfly-backups`, never the public `mdfly`
-bucket, never attached to a custom domain, with its own scoped token.
-
-```sh
-sudo apt-get -y install awscli
-mkdir -p ~/backups ~/bin
-
-cat > ~/bin/pg-backup.sh <<'EOF'
-#!/bin/sh
-set -eu
-STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-OUT="$HOME/backups/mdfly-$STAMP.sql.gz"
-pg_dump "$DATABASE_URL" | gzip > "$OUT"
-AWS_ACCESS_KEY_ID=$BACKUP_KEY_ID AWS_SECRET_ACCESS_KEY=$BACKUP_SECRET \
-  aws s3 cp "$OUT" "s3://mdfly-backups/" --endpoint-url "$BACKUP_ENDPOINT"
-find "$HOME/backups" -name 'mdfly-*.sql.gz' -mtime +7 -delete
-EOF
-chmod +x ~/bin/pg-backup.sh
-```
-
-Put `DATABASE_URL`, `BACKUP_KEY_ID`, `BACKUP_SECRET`, and `BACKUP_ENDPOINT` in
-`~/.backup-env` with mode 600, then:
-
-```sh
-crontab -e
-# 17 3 * * * . $HOME/.backup-env && $HOME/bin/pg-backup.sh >> $HOME/backups/cron.log 2>&1
-```
-
-Cron gets almost no environment — an unset `DATABASE_URL` is the usual reason a
-backup silently stops running, so check `cron.log` after the first night.
-
-**Test the restore, not the dump.** An untested backup is a guess. Restore into a
-scratch database, never over the live one:
-
-```sh
-gunzip -c ~/backups/mdfly-<stamp>.sql.gz | psql "<scratch-database-url>"
-```
-
-Redis needs no backup — the counters are disposable, and a fresh keyspace just
-grants everyone a new window (ADR-0013).
-
-## 6.3 Watch these four
+## 6.2 Watch these four
 
 | Number | How |
 |---|---|
@@ -100,7 +54,7 @@ docker compose logs -f app
 docker compose logs --since 1h app | grep -E '"level":"(WARN|ERROR)"'
 ```
 
-## 6.4 Rotations
+## 6.3 Rotations
 
 ```sh
 # Redis password — edit deploy/redis.conf and REDIS_URL in ../.env together
@@ -121,7 +75,7 @@ docker compose run --rm migrate && docker compose up -d app
 re-learning: re-run step 3.3 and `docker compose restart caddy`. Nothing else
 changes.
 
-## 6.5 Host patching
+## 6.4 Host patching
 
 ```sh
 sudo apt-get update && sudo apt-get -y upgrade && sudo reboot
@@ -129,7 +83,7 @@ sudo apt-get update && sudo apt-get -y upgrade && sudo reboot
 
 The stack comes back on its own via `restart: unless-stopped`.
 
-## 6.6 Idle reclaim
+## 6.5 Idle reclaim
 
 Oracle reclaims **idle Always Free compute** — roughly, an instance whose 95th
 percentile CPU, network, and memory utilisation all sit under 20% across a 7-day
@@ -152,11 +106,12 @@ Staying on a pure Always Free account, monitor and be ready to rebuild:
 - A reclaimed instance is **stopped**, not deleted. The boot volume survives, so
   restarting from the console usually recovers it — `restart: unless-stopped`
   brings the containers back.
-- If the instance is gone: re-run steps 1 and 4, then restore from 6.2. The reserved
-  IP is a separate resource and survives, so no DNS change is needed. Redis counters
-  do not survive; accepted per ADR-0013.
+- If the instance is gone: re-run steps 1 and 4. Nothing on the box is the only copy
+  of anything — the database is off-box and the image rebuilds from the repo. The
+  reserved IP is a separate resource and survives, so no DNS change is needed. Redis
+  counters do not survive; accepted per ADR-0013.
 
-## 6.7 Troubleshooting
+## 6.6 Troubleshooting
 
 **`502 Bad Gateway` from Caddy**
 
@@ -211,7 +166,7 @@ docker compose config | grep -A2 'app:' | head
 Compose reads `../.env` relative to the compose file. Output contains secrets — do
 not paste it anywhere.
 
-## 6.8 Command reference
+## 6.7 Command reference
 
 ```sh
 docker compose ps                       # what's running
