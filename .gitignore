@@ -31,6 +31,10 @@ tmp/
 .env.local
 *.env
 
+# Filled-in deploy config (examples are tracked)
+deploy/redis.conf
+deploy/tls/
+
 # macOS
 .DS_Store
 

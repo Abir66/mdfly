@@ -16,9 +16,9 @@ import (
 const connectingIPHeader = "CF-Connecting-IP"
 
 // cloudflareRanges is Cloudflare's published edge address space
-// (https://www.cloudflare.com/ips/). Only a peer inside these prefixes may
-// speak for a client via connectingIPHeader; from anywhere else the header is
-// caller-supplied and spoofable.
+// (https://www.cloudflare.com/ips/). A peer inside these prefixes reached the
+// origin directly from the edge and may speak for a client via
+// connectingIPHeader. Refresh alongside the same list in deploy/Caddyfile.
 var cloudflareRanges = mustParsePrefixes(
 	"173.245.48.0/20",
 	"103.21.244.0/22",
@@ -74,11 +74,11 @@ func fingerprint(token string) string {
 }
 
 // clientIP resolves the caller's address: the connecting-IP header when the peer
-// is a Cloudflare edge, else the peer itself.
+// is a trusted proxy, else the peer itself.
 func clientIP(r *http.Request) string {
 	peer := peerIP(r.RemoteAddr)
 	claimed := strings.TrimSpace(r.Header.Get(connectingIPHeader))
-	if claimed == "" || !fromCloudflare(peer) {
+	if claimed == "" || !fromTrustedProxy(peer) {
 		return peer
 	}
 	return claimed
@@ -93,10 +93,19 @@ func peerIP(addr string) string {
 	return host
 }
 
-func fromCloudflare(ip string) bool {
+// fromTrustedProxy reports whether a peer may speak for a client through
+// connectingIPHeader. Two peers qualify: a Cloudflare edge, and a loopback or
+// private address — the origin's own TLS terminator, which sits between the edge
+// and this process and is responsible for stripping the header when its own peer
+// is not Cloudflare (see deploy/Caddyfile). A private source address cannot be
+// routed in from the internet, so nothing else can claim it.
+func fromTrustedProxy(ip string) bool {
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
 		return false
+	}
+	if addr.IsLoopback() || addr.IsPrivate() {
+		return true
 	}
 	for _, prefix := range cloudflareRanges {
 		if prefix.Contains(addr) {
