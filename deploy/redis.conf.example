@@ -1,23 +1,19 @@
 # Redis for the write-path rate limiter (ADR-0013). Copy to deploy/redis.conf and
 # replace requirepass with a real secret — that file stays out of git.
-# Full rationale: docs/deploy/redis-rate-limit-setup.md
+# Rationale for every line: docs/deploy/redis-rate-limit-setup.md
 
-# Reachable on the Docker bridge network only — the compose service publishes no
-# host port, so "all interfaces" means all interfaces this container has.
+# Bridge network only; the compose service publishes no host port.
 bind 0.0.0.0
 port 6379
 requirepass CHANGE_ME_LONG_RANDOM
 
-# Ceiling so Redis can never grow until the Linux OOM killer picks a victim
-# (which might be the Go server, not Redis).
+# Ceiling, so the Linux OOM killer never gets to pick between Redis and the server.
 maxmemory 512mb
-# Evict only keys that carry a TTL. Every limiter key does by construction;
-# durable data added later will not, so pressure sheds counters first and never
-# touches durable state. `allkeys-lru` would do the opposite.
+# Evict only TTL-bearing keys. Every limiter key has one; durable data added later
+# would not, so pressure sheds counters first.
 maxmemory-policy volatile-lru
 
-# Durability: append every write to a log, flushed once per second, so a crash
-# loses at most 1s. RDB snapshots alongside give a single copyable backup file.
+# A crash loses at most 1s of counting. RDB alongside gives a copyable snapshot.
 appendonly yes
 appendfsync everysec
 save 900 1

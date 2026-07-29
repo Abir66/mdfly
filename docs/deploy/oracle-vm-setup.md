@@ -1,18 +1,21 @@
-# Provisioning the backend: Oracle Always Free VM + Postgres + Redis + Caddy
+# Provisioning the backend: Oracle Always Free VM + Redis + Caddy
 
 Owner-run setup for the mdfly backend origin (ADR-0003). Everything below happens
 once, by hand, in the Oracle Cloud console and over SSH. Nothing here is
 automated and nothing is idempotent — read a step before running it.
 
-**What you end up with.** One always-on ARM VM running five containers from
-`deploy/compose.yaml`: Caddy (the only service with a published host port),
-the Go server, Postgres, Redis, and a one-shot `migrate`. Postgres and Redis are
-compose services with named volumes, not rented managed instances — Oracle Always
-Free has no managed Postgres, and Redis is on-box per ADR-0013. Neither 5432 nor
-6379 is ever opened; both stay on the Docker bridge network.
+**What you end up with.** One always-on ARM VM running three long-lived
+containers from `deploy/compose.yaml` — Caddy (the only service with a published
+host port), the Go server, and Redis — plus a one-shot `migrate`. **Postgres is
+not on this box.** Metadata lives in a managed instance elsewhere, reached only
+through `DATABASE_URL`; ADR-0005 fixes that contract and deliberately leaves the
+host open, so any provider that speaks Postgres works with no code or compose
+change. Redis *is* on-box (ADR-0013) as a compose service with a named volume,
+and 6379 is never opened — it stays on the Docker bridge network.
 
-**Before you start**, have: a Cloudflare account with `mdfly.dev` in it (ADR-0011),
-an R2 bucket plus an S3-compatible access key pair, and an SSH keypair. The
+**Before you start**, have: a managed Postgres with its connection string, a
+Cloudflare account with `mdfly.dev` in it (ADR-0011), an R2 bucket plus an
+S3-compatible access key pair, and an SSH keypair. The
 Cloudflare zone ID and purge API token come later, with the edge configuration —
 see [cloudflare-purge-setup.md](cloudflare-purge-setup.md). The stack boots fine
 without them.
@@ -74,7 +77,7 @@ Security Lists → Default Security List → Add Ingress Rule:**
 | IP Protocol | TCP |
 | Destination Port Range | `443` |
 
-Leave the pre-existing SSH (22) rule. Add **nothing** for 5432, 6379, or 8080.
+Leave the pre-existing SSH (22) rule. Add **nothing** for 6379 or 8080.
 Consider narrowing the SSH rule's source to your own IP.
 
 **OS firewall.** Oracle's Ubuntu images ship iptables rules that drop inbound
@@ -94,9 +97,9 @@ sudo iptables -L INPUT -n --line-numbers
 > **Docker publishes ports by writing its own iptables rules in the `DOCKER`
 > chain, which is consulted before `INPUT`.** A container port under `ports:` is
 > reachable from the internet whether or not the OS firewall allows it. This is
-> why Redis and Postgres have **no `ports:` key at all** — that omission, not the
-> firewall, is what keeps them private. Never add `6379:6379` or `5432:5432` "to
-> debug"; use `docker compose exec` instead.
+> why Redis has **no `ports:` key at all** — that omission, not the firewall, is
+> what keeps it private. Never add `6379:6379` "to debug"; use
+> `docker compose exec redis redis-cli` instead.
 
 ### 1e. Verify
 
@@ -116,6 +119,7 @@ Free-eligible and **Billing → Cost analysis** should show zero.
 
 ```sh
 sudo apt-get update && sudo apt-get -y upgrade
+# postgresql-client is for talking to the managed Postgres from this box.
 sudo apt-get -y install ca-certificates curl git gnupg postgresql-client-16
 
 # Docker Engine + Compose v2 from Docker's own apt repo (arm64).
@@ -186,7 +190,7 @@ the two under `deploy/tls/`.
 cd ~/mdfly
 cp .env.example .env
 cp deploy/redis.conf.example deploy/redis.conf
-openssl rand -base64 32   # run twice — one for Postgres, one for Redis
+openssl rand -base64 32   # the Redis password
 chmod 600 .env deploy/redis.conf
 ```
 
@@ -201,9 +205,8 @@ bottom). The ones that must change:
 
 | Variable | Value |
 |---|---|
-| `POSTGRES_PASSWORD` | first generated secret |
-| `DATABASE_URL` | same password inline: `postgres://mdfly:<pw>@postgres:5432/mdfly?sslmode=disable` |
-| `REDIS_URL` | `redis://:<second secret>@redis:6379` |
+| `DATABASE_URL` | your provider's connection string, verbatim, **with `sslmode=require`** |
+| `REDIS_URL` | `redis://:<generated secret>@redis:6379` |
 | `BASE_URL` | `https://mdfly.dev` |
 | `R2_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | R2 API token pair, **Object Read & Write** on the `mdfly` bucket only |
@@ -211,12 +214,27 @@ bottom). The ones that must change:
 | `CDN_BASE_URL` | `https://cdn.mdfly.dev` |
 | `CLOUDFLARE_ZONE_ID` / `CLOUDFLARE_API_TOKEN` | leave empty until the edge configuration step |
 
-The password appears in two places (`POSTGRES_PASSWORD` and inside
-`DATABASE_URL`) and they must match — a mismatch shows up as `password
-authentication failed for user "mdfly"` in the app log.
+`DATABASE_URL` is the only thing tying this box to the database, so paste the
+provider's string whole, extra parameters included. `sslmode=require` is not
+optional: unlike Redis, this connection leaves the machine. Check it before going
+further:
+
+```sh
+psql "$DATABASE_URL" -Atc "select version();"
+```
+
+Three things to settle provider-side first:
+
+- **Allowlist the VM's reserved IP** if the provider firewalls by source address.
+  A hang rather than an error is almost always this.
+- **Use a dedicated role** owning only the mdfly database, not an admin
+  superuser. Migrations need DDL there and nothing beyond it.
+- **Pick the endpoint** where more than one is offered: a pooled host suits the
+  app's own pool, a direct host is safer for `migrate`'s DDL. If they differ, run
+  `migrate` against the direct URL and leave `DATABASE_URL` pooled.
 
 Then edit `deploy/redis.conf` and replace `requirepass CHANGE_ME_LONG_RANDOM` with
-the second secret. `requirepass` cannot read an environment variable, so it is
+the generated secret. `requirepass` cannot read an environment variable, so it is
 literal in that file — which is why the file is gitignored and only the
 `.example` is tracked. Full rationale for every other line in that file:
 [redis-rate-limit-setup.md](redis-rate-limit-setup.md).
@@ -239,28 +257,35 @@ isn't there yet — harmless, but it makes the first log unreadable.
 
 ```sh
 cd ~/mdfly/deploy
-docker compose run --rm migrate     # starts Postgres, applies, exits
+docker compose run --rm migrate     # applies against DATABASE_URL, exits
 docker compose up -d --build        # builds the image on the box, ~1 min
 docker compose ps
 ```
 
 `migrate` sits behind a `tools` profile so `up` never runs it. Its DSN is expanded
 by the container's own shell from `env_file`, not by Compose, so a `DATABASE_URL`
-already exported in your host shell cannot silently win.
-
-Verify the lifecycle and purge-queue schema landed:
+already exported in your host shell cannot silently win. If the provider gave you
+a separate direct (non-pooled) endpoint for DDL, use it here without touching
+`.env`:
 
 ```sh
-docker compose exec postgres psql -U mdfly -d mdfly -Atc \
+docker compose run --rm -e DATABASE_URL='<direct-url>' migrate
+```
+
+Verify the lifecycle and purge-queue schema landed — these run from the host
+against the managed instance, so `psql` needs no container:
+
+```sh
+psql "$DATABASE_URL" -Atc \
   "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname LIKE '%status%';"
 # => CHECK ((status = ANY (ARRAY['pending','published','deleted','expired','abandoned'])))
 
-docker compose exec postgres psql -U mdfly -d mdfly -Atc \
+psql "$DATABASE_URL" -Atc \
   "SELECT column_name FROM information_schema.columns
    WHERE table_name='documents' AND column_name='blobs_deleted_at';"
 # => blobs_deleted_at
 
-docker compose exec postgres psql -U mdfly -d mdfly -Atc "\dt"
+psql "$DATABASE_URL" -Atc "\dt"
 # => documents, purge_queue, schema_migrations
 ```
 
@@ -378,18 +403,17 @@ docker compose exec redis redis-cli -a "$REDIS_PASS" del probe:persist
 
 `(nil)` means `redis-data:/data` is not attached. Fix that before believing
 anything is durable. Use a key with **no TTL** — a TTL'd key is eviction-eligible
-and proves less. Same probe for Postgres: `\dt` after `down`/`up` must still show
-the tables.
+and proves less. The database is unaffected by this probe: it lives off-box, so
+`psql "$DATABASE_URL" -Atc "\dt"` should list the same tables before and after.
 
 `docker compose down -v` deletes the volumes. Never run it on this box.
 
-### 7f. Redis and Postgres are not internet-reachable
+### 7f. Redis is not internet-reachable
 
 From your laptop:
 
 ```sh
 nc -zv -w 3 <reserved-ip> 6379    # must time out or refuse
-nc -zv -w 3 <reserved-ip> 5432    # must time out or refuse
 nc -zv -w 3 <reserved-ip> 8080    # must time out or refuse
 nc -zv -w 3 <reserved-ip> 443     # must connect
 ```
@@ -431,23 +455,24 @@ Writes must keep working with Redis down (ADR-0013) — the Cloudflare edge limi
 
 ## 8. Backups
 
-**The boot volume is the only copy of the database.** Postgres is on-box, so
-nothing else is holding your data.
+**The provider owns the primary backup.** Turn it on and note its retention
+before going live — that is the restore path for "a migration went wrong an hour
+ago".
 
-Create a **second, private** R2 bucket (`mdfly-backups`) — not the public
-`mdfly` bucket, and never attached to a custom domain. Give it its own R2 token
-scoped to that bucket. Then:
+What it does not cover is losing access to the provider itself. So keep a
+provider-independent logical dump too, run from the VM against `DATABASE_URL` into
+a **second, private** R2 bucket (`mdfly-backups`) — never the public `mdfly`
+bucket, never attached to a custom domain, with its own scoped token.
 
 ```sh
 sudo apt-get -y install awscli
-mkdir -p ~/backups
+mkdir -p ~/backups ~/bin
 cat > ~/bin/pg-backup.sh <<'EOF'
 #!/bin/sh
 set -eu
-cd "$HOME/mdfly/deploy"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 OUT="$HOME/backups/mdfly-$STAMP.sql.gz"
-docker compose exec -T postgres pg_dump -U mdfly -d mdfly | gzip > "$OUT"
+pg_dump "$DATABASE_URL" | gzip > "$OUT"
 AWS_ACCESS_KEY_ID=$BACKUP_KEY_ID AWS_SECRET_ACCESS_KEY=$BACKUP_SECRET \
   aws s3 cp "$OUT" "s3://mdfly-backups/" --endpoint-url "$BACKUP_ENDPOINT"
 find "$HOME/backups" -name 'mdfly-*.sql.gz' -mtime +7 -delete
@@ -455,19 +480,21 @@ EOF
 chmod +x ~/bin/pg-backup.sh
 ```
 
-Put `BACKUP_KEY_ID`, `BACKUP_SECRET`, and `BACKUP_ENDPOINT` in a `chmod 600`
-file sourced by the cron entry, then:
+Put `DATABASE_URL`, `BACKUP_KEY_ID`, `BACKUP_SECRET`, and `BACKUP_ENDPOINT` in a
+`chmod 600` file sourced by the cron entry — cron gets almost no environment, so
+an unset `DATABASE_URL` is the usual reason a backup silently stops running:
 
 ```sh
 crontab -e
 # 17 3 * * * . $HOME/.backup-env && $HOME/bin/pg-backup.sh >> $HOME/backups/cron.log 2>&1
 ```
 
-**Test the restore, not the dump.** An untested backup is a guess:
+**Test the restore, not the dump.** An untested backup is a guess. Restore into a
+scratch database on the provider (or a throwaway local container), never over the
+live one:
 
 ```sh
-gunzip -c ~/backups/mdfly-<stamp>.sql.gz | \
-  docker compose exec -T postgres psql -U mdfly -d mdfly_restore_test
+gunzip -c ~/backups/mdfly-<stamp>.sql.gz | psql "<scratch-database-url>"
 ```
 
 Redis needs no backup — the counters are disposable and a fresh keyspace just
@@ -525,11 +552,13 @@ docker compose restart app
 # together, then
 docker compose up -d redis app
 
-# Rotate the Postgres password
-docker compose exec postgres psql -U mdfly -d mdfly \
-  -c "ALTER ROLE mdfly PASSWORD 'new';"
-# then update POSTGRES_PASSWORD and DATABASE_URL in ../.env and:
-#   docker compose up -d app
+# Rotate the Postgres password: change it in the provider's console (or
+# `ALTER ROLE mdfly PASSWORD …` over psql), update DATABASE_URL in ../.env, then
+docker compose up -d app
+
+# Move to a different Postgres provider: point DATABASE_URL at the new instance,
+# apply the schema there, then
+docker compose run --rm migrate && docker compose up -d app
 
 # Disk and memory
 df -h /; free -h; docker system df
@@ -539,8 +568,10 @@ docker system prune -f                # reclaims old build layers, not volumes
 sudo apt-get update && sudo apt-get -y upgrade && sudo reboot
 ```
 
-Watch three numbers over time: free disk on `/`, Redis `used_memory` against the
-512 MB cap, and `evicted_keys`.
+Watch four numbers over time: free disk on `/`, Redis `used_memory` against the
+512 MB cap, `evicted_keys`, and — in the provider's console — the database's
+connection count against its plan limit, which is the one ceiling that lives
+outside this box.
 
 ```sh
 docker compose exec redis redis-cli -a "$REDIS_PASS" info memory | \

@@ -1,13 +1,9 @@
-# mdfly production stack for the Oracle Always Free VM (ADR-0003).
+# Production stack for the backend VM (ADR-0003). Caddy is the only service that
+# publishes a host port. Postgres is not here — it is managed and off-box, reached
+# through DATABASE_URL (ADR-0005).
 #
-# Caddy is the only service that publishes a host port. Postgres, Redis, and the
-# Go server are reachable on the compose bridge network only — see
-# docs/deploy/oracle-vm-setup.md.
-#
-# Every value comes from the repo-root `.env` — one file for production and local
-# dev alike. Copy `.env.example` to `.env` at the repo root and fill it in before
-# the first `up`. Nothing here uses `${...}` interpolation, so no command needs an
-# `--env-file` flag and the working directory never matters.
+# Values come from the repo-root .env. No `${...}` interpolation anywhere, so no
+# command needs --env-file and the working directory never matters.
 
 name: mdfly
 
@@ -40,26 +36,8 @@ services:
       retries: 3
       start_period: 10s
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_started
-
-  # The image reads POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD from its own
-  # environment, so env_file covers it and no interpolation is needed. It also
-  # sees the app's secrets; that beats a second env file to keep in sync, and the
-  # file is already on the same box.
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    env_file: ../.env
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -q"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -68,12 +46,11 @@ services:
     volumes:
       - redis-data:/data
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
-    # No `ports:` — deliberate. See docs/deploy/redis-rate-limit-setup.md §3.
+    # No `ports:` — see docs/deploy/redis-rate-limit-setup.md §3.
 
-  # One-shot: `docker compose run --rm migrate`. The `tools` profile keeps it out
-  # of `docker compose up`. DATABASE_URL is expanded by the container's own shell
-  # at run time — `$$` escapes Compose's interpolation — so the value comes from
-  # env_file rather than from whatever the host happens to have set.
+  # One-shot: `docker compose run --rm migrate`. `$$` escapes Compose's
+  # interpolation so the container's shell expands DATABASE_URL from env_file,
+  # not from whatever the host shell has exported.
   migrate:
     image: migrate/migrate:v4.18.1
     profiles: ["tools"]
@@ -82,12 +59,8 @@ services:
     command: ['migrate -path=/migrations -database="$$DATABASE_URL" up']
     volumes:
       - ../migrations:/migrations:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
 
 volumes:
-  postgres-data:
   redis-data:
   caddy-data:
   caddy-config:
