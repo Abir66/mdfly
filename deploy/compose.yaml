@@ -4,9 +4,10 @@
 # Go server are reachable on the compose bridge network only — see
 # docs/deploy/oracle-vm-setup.md.
 #
-# Values come from deploy/.env, which Compose loads from this file's directory
-# for both `${...}` interpolation and the app's `env_file`. Copy
-# .env.example to .env and fill it in before the first `up`.
+# Every value comes from the repo-root `.env` — one file for production and local
+# dev alike. Copy `.env.example` to `.env` at the repo root and fill it in before
+# the first `up`. Nothing here uses `${...}` interpolation, so no command needs an
+# `--env-file` flag and the working directory never matters.
 
 name: mdfly
 
@@ -31,7 +32,7 @@ services:
       dockerfile: Dockerfile
     image: mdfly-server:local
     restart: unless-stopped
-    env_file: .env
+    env_file: ../.env
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 30s
@@ -44,13 +45,14 @@ services:
       redis:
         condition: service_started
 
+  # The image reads POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD from its own
+  # environment, so env_file covers it and no interpolation is needed. It also
+  # sees the app's secrets; that beats a second env file to keep in sync, and the
+  # file is already on the same box.
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    env_file: ../.env
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -69,13 +71,13 @@ services:
     # No `ports:` — deliberate. See docs/deploy/redis-rate-limit-setup.md §3.
 
   # One-shot: `docker compose run --rm migrate`. The `tools` profile keeps it out
-  # of `docker compose up`. DATABASE_URL is read from the container environment
-  # at run time (`$$` escapes Compose's own interpolation), so the command works
-  # from any working directory.
+  # of `docker compose up`. DATABASE_URL is expanded by the container's own shell
+  # at run time — `$$` escapes Compose's interpolation — so the value comes from
+  # env_file rather than from whatever the host happens to have set.
   migrate:
     image: migrate/migrate:v4.18.1
     profiles: ["tools"]
-    env_file: .env
+    env_file: ../.env
     entrypoint: ["/bin/sh", "-c"]
     command: ['migrate -path=/migrations -database="$$DATABASE_URL" up']
     volumes:

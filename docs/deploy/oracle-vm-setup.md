@@ -140,7 +140,10 @@ git clone https://github.com/Abir66/mdfly.git ~/mdfly
 cd ~/mdfly/deploy
 ```
 
-Every `docker compose` command below runs from `~/mdfly/deploy`.
+`docker compose` commands below are written from `~/mdfly/deploy`, where the
+compose file lives. They work from anywhere — every path in the file is relative
+to the file itself — but a consistent working directory is one less thing to think
+about.
 
 ---
 
@@ -176,18 +179,25 @@ TLS Version → 1.2**. Leave HSTS off in v1 (ADR-0011). The rest of the zone con
 
 ## 4. Secrets and configuration
 
-Three files live only on the VM: `.env`, `redis.conf`, and the two under `tls/`.
+Four files live only on the VM: `.env` at the repo root, `deploy/redis.conf`, and
+the two under `deploy/tls/`.
 
 ```sh
-cd ~/mdfly/deploy
+cd ~/mdfly
 cp .env.example .env
-cp redis.conf.example redis.conf
+cp deploy/redis.conf.example deploy/redis.conf
 openssl rand -base64 32   # run twice — one for Postgres, one for Redis
-chmod 600 .env redis.conf
+chmod 600 .env deploy/redis.conf
 ```
 
-Edit `.env`. Every variable is documented in `.env.example`; the ones that must
-change:
+There is **one** env file, not a prod/dev pair: the compose services read it as
+`env_file: ../.env` and a local `go run` sources the same file. Nothing in
+`deploy/compose.yaml` uses `${…}` interpolation, so no `docker compose` command
+needs an `--env-file` flag and the working directory never matters.
+
+Edit `.env`. Every variable is documented in the file itself, which ships with the
+production shape already in place (a commented local-dev block sits at the
+bottom). The ones that must change:
 
 | Variable | Value |
 |---|---|
@@ -205,8 +215,8 @@ The password appears in two places (`POSTGRES_PASSWORD` and inside
 `DATABASE_URL`) and they must match — a mismatch shows up as `password
 authentication failed for user "mdfly"` in the app log.
 
-Then edit `redis.conf` and replace `requirepass CHANGE_ME_LONG_RANDOM` with the
-second secret. `requirepass` cannot read an environment variable, so it is
+Then edit `deploy/redis.conf` and replace `requirepass CHANGE_ME_LONG_RANDOM` with
+the second secret. `requirepass` cannot read an environment variable, so it is
 literal in that file — which is why the file is gitignored and only the
 `.example` is tracked. Full rationale for every other line in that file:
 [redis-rate-limit-setup.md](redis-rate-limit-setup.md).
@@ -215,9 +225,9 @@ literal in that file — which is why the file is gitignored and only the
 file.
 
 **Job intervals and grace windows** (`PURGE_DRAIN_INTERVAL`,
-`LIFECYCLE_GC_INTERVAL`, `ABANDON_GRACE`, `BLOB_DELETE_GRACE`) are commented in
-`.env.example` with their code defaults. Leave them unless you have a reason;
-setting one overrides the default.
+`LIFECYCLE_GC_INTERVAL`, `ABANDON_GRACE`, `BLOB_DELETE_GRACE`) carry their code
+defaults in `.env.example`. Leave them unless you have a reason; setting one
+overrides the default.
 
 ---
 
@@ -228,14 +238,15 @@ after boot and logs a loud `relation "documents" does not exist` if the schema
 isn't there yet — harmless, but it makes the first log unreadable.
 
 ```sh
+cd ~/mdfly/deploy
 docker compose run --rm migrate     # starts Postgres, applies, exits
 docker compose up -d --build        # builds the image on the box, ~1 min
 docker compose ps
 ```
 
-`migrate` sits behind a `tools` profile so `up` never runs it. It reads
-`DATABASE_URL` from the container's environment rather than from Compose
-interpolation, so it needs no `--env-file` flag and works from any directory.
+`migrate` sits behind a `tools` profile so `up` never runs it. Its DSN is expanded
+by the container's own shell from `env_file`, not by Compose, so a `DATABASE_URL`
+already exported in your host shell cannot silently win.
 
 Verify the lifecycle and purge-queue schema landed:
 
@@ -510,13 +521,15 @@ docker compose logs --since 1h app | grep -E '"level":"(WARN|ERROR)"'
 # Restart one service
 docker compose restart app
 
-# Rotate the Redis password: edit redis.conf and REDIS_URL together, then
+# Rotate the Redis password: edit deploy/redis.conf and REDIS_URL in .env
+# together, then
 docker compose up -d redis app
 
 # Rotate the Postgres password
 docker compose exec postgres psql -U mdfly -d mdfly \
   -c "ALTER ROLE mdfly PASSWORD 'new';"
-# then update POSTGRES_PASSWORD and DATABASE_URL in .env and: docker compose up -d app
+# then update POSTGRES_PASSWORD and DATABASE_URL in ../.env and:
+#   docker compose up -d app
 
 # Disk and memory
 df -h /; free -h; docker system df
