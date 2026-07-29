@@ -86,7 +86,7 @@ func TestRateLimit_retryAfterRoundsUp(t *testing.T) {
 // TestRateLimit_subject pins key resolution: an Edit Token identifies the editor
 // across IPs; anonymous callers are keyed by CF-Connecting-IP, but only when the
 // peer is a Cloudflare edge — a header from anywhere else is spoofable and the
-// TCP peer is used instead.
+// TCP peer is used instead. An IPv6 address arrives with its colons flattened.
 func TestRateLimit_subject(t *testing.T) {
 	const (
 		cloudflareEdge = "173.245.48.5:40000"
@@ -106,6 +106,8 @@ func TestRateLimit_subject(t *testing.T) {
 		{"cloudflare peer is trusted", cloudflareEdge, "", claimedIP, "ip:" + claimedIP},
 		{"spoofed header is ignored", strangerPeer, "", claimedIP, "ip:203.0.113.9"},
 		{"no header falls back to peer", cloudflareEdge, "", "", "ip:173.245.48.5"},
+		{"ipv6 peer colons are flattened", "[::1]:40000", "", "", "ip:..1"},
+		{"ipv6 claimed address is flattened", cloudflareEdge, "", "2001:db8::5", "ip:2001.db8..5"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
