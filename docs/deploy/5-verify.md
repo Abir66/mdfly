@@ -32,16 +32,20 @@ the origin.
 
 ## 5b. Origin TLS is Full (strict)
 
+443 is open only to Cloudflare's ranges (step 1.3), so your laptop cannot reach the
+origin socket at all. Read the certificate from the VM instead:
+
 ```sh
-openssl s_client -connect <reserved-ip>:443 -servername mdfly.dev </dev/null 2>/dev/null \
+openssl s_client -connect 127.0.0.1:443 -servername mdfly.dev </dev/null 2>/dev/null \
   | openssl x509 -noout -issuer -dates
 # issuer => CloudFlare Origin SSL Certificate Authority
 # notAfter => ~15 years out
 ```
 
-A browser hitting the IP directly **should** show a certificate error. That is the
-Origin CA working: only Cloudflare trusts it, so bypassing the edge gets you
-nothing. Confirm **SSL/TLS → Overview** reads Full (strict).
+Two independent things stop an edge bypass, and both should hold. The VCN rule
+means a non-Cloudflare client never completes a TCP handshake. Even if it did, the
+Origin CA cert is trusted only by Cloudflare, so a browser hitting the IP directly
+would show a certificate error. Confirm **SSL/TLS → Overview** reads Full (strict).
 
 ## 5c. Tickers are running
 
@@ -147,16 +151,24 @@ proves less.
 
 **Never `docker compose down -v`** — that deletes the volume.
 
-## 5h. Nothing but 443 is reachable
+## 5h. Nothing is reachable except 443, from Cloudflare only
 
-From your laptop:
+From your laptop — which is not a Cloudflare address, so **every** port including
+443 must fail:
 
 ```sh
-nc -zv -w 3 <reserved-ip> 443     # must connect
+nc -zv -w 3 <reserved-ip> 443     # must time out  <- the VCN allowlist working
 nc -zv -w 3 <reserved-ip> 6379    # must time out or refuse
 nc -zv -w 3 <reserved-ip> 8080    # must time out or refuse
 nc -zv -w 3 <reserved-ip> 80      # must time out or refuse
 ```
+
+443 connecting from here means the ingress rule is still `0.0.0.0/0` — the edge
+is bypassable and the WAF, edge rate limit, and cache are all optional to an
+attacker. Fix step 1.3 before going further.
+
+That 443 works *through* the edge is what 5a already proved. Listening locally is
+separately checkable on the VM with `nc -zv -w 3 127.0.0.1 443`.
 
 And that no mapping exists at all:
 

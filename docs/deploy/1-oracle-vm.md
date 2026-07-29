@@ -43,41 +43,64 @@ address, and you get a different one. DNS points a fixed A record at the origin
 
 Write the address down. Steps 2 and 3 both need it.
 
-## 1.3 Open 443, and only 443
+## 1.3 Open 443 to Cloudflare, and to nobody else
 
-Two firewalls sit between the internet and Caddy. Both must allow 443/TCP and
-nothing else.
+Every DNS record pointing at this origin is proxied (step 3.2), so the only
+legitimate source of origin traffic is Cloudflare's edge. A connection from any
+other address is a scanner or a deliberate edge bypass, and a bypass defeats the
+WAF, the edge rate limit, and the cache all at once. `0.0.0.0/0` on 443 is what
+makes that bypass possible, so the ingress rule is scoped to Cloudflare instead.
 
 **Oracle VCN** — **Networking → Virtual cloud networks → your VCN → Security Lists
-→ Default Security List → Add Ingress Rule:**
+→ Default Security List → Add Ingress Rule.** One rule per Cloudflare range, all
+sharing the same protocol and port:
 
 | Field | Value |
 |---|---|
-| Source CIDR | `0.0.0.0/0` |
+| Source CIDR | one Cloudflare range (fifteen rules — see below) |
 | IP Protocol | TCP |
 | Destination Port Range | `443` |
+
+Read the ranges off the source of truth rather than from any copy in this repo:
+
+```sh
+curl -s https://www.cloudflare.com/ips-v4
+```
+
+Fifteen IPv4 ranges today. The IPv6 list at `/ips-v6` is not needed — the VCN
+here is IPv4-only and the A records point at an IPv4 reserved address.
 
 Keep the existing SSH (22) rule, and narrow its source to your own IP if you can.
 Add nothing for 6379 or 8080. **Do not open 80** — Caddy uses a long-lived
 Cloudflare Origin CA certificate, not ACME, so it never needs an HTTP challenge.
 
+> **This list drifts.** Cloudflare adds ranges occasionally, and a range added
+> after you built these rules looks exactly like an outage: the edge reports 5xx
+> from a healthy origin. Re-check `ips-v4` when diagnosing an origin-unreachable
+> report, and keep the rules in step with `cloudflare_edge_only` in
+> `deploy/Caddyfile` and `cloudflareRanges` in
+> `internal/server/middleware/clientip.go`.
+
 **OS firewall.** Oracle's Ubuntu images ship iptables rules that drop everything
-but SSH, persisted by `netfilter-persistent`:
+but SSH, persisted by `netfilter-persistent`. Leave them alone: **no `INPUT` rule
+for 443 is required, and adding one has no effect.** Caddy publishes 443 through
+Docker, and a published port is DNAT'd and forwarded to the container, traversing
+`FORWARD` → `DOCKER-USER` → `DOCKER`. The `INPUT` chain never sees that traffic.
 
-```sh
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-sudo netfilter-persistent save
-sudo iptables -L INPUT -n --line-numbers    # the new rule must sit above the REJECT
-```
+Do not install `ufw` here either. It fights the image's existing iptables rules,
+and Docker ignores it for the same reason.
 
-Do not install `ufw` here. It fights the image's existing iptables rules, and
-Docker ignores it anyway (see the warning below).
-
-> **Docker writes its own iptables rules in the `DOCKER` chain, consulted before
-> `INPUT`.** Anything under `ports:` is internet-reachable whether or not your
-> firewall allows it. Redis stays private because it has **no `ports:` key**, not
-> because of the firewall. Never add `6379:6379` "to debug" — use
-> `docker compose exec redis redis-cli`.
+> **Docker writes its own iptables rules in the `DOCKER` chain and bypasses
+> `INPUT` entirely.** Anything under `ports:` is internet-reachable whether or not
+> the host firewall allows it — which is why the VCN rule above, not iptables, is
+> what confines 443 to Cloudflare. Redis stays private because it has **no
+> `ports:` key**, not because of a firewall. Never add `6379:6379` "to debug" —
+> use `docker compose exec redis redis-cli`.
+>
+> Host-level filtering, if you want it as a second layer, belongs in the
+> `DOCKER-USER` chain, which `FORWARD` consults before `DOCKER`. It buys little
+> once the VCN rule is correct and adds a third copy of the Cloudflare list to
+> keep in sync, so it is deliberately not part of this runbook.
 
 ## 1.4 Install Docker and Git
 

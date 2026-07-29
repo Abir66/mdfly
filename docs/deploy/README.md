@@ -45,8 +45,10 @@ reachable only on the Docker bridge network.
 
 ## Rules that hold everywhere
 
-- **Only 443 is ever published.** Redis has no `ports:` key; that omission, not
-  the firewall, is what keeps it private.
+- **Only 443 is ever published, and only to Cloudflare's ranges.** The VCN ingress
+  rule is what confines it — host iptables never sees Docker-published traffic.
+  Redis has no `ports:` key; that omission, not a firewall, is what keeps it
+  private.
 - **One env file**: the repo-root `.env`. No `--env-file` flag on any command. Run
   `docker compose` from `~/mdfly/deploy` so it finds `compose.yaml`, or pass `-f`.
 - **Never `docker compose down -v`** on the VM — it deletes the Redis volume.
