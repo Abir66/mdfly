@@ -47,8 +47,8 @@ reachable only on the Docker bridge network.
 
 - **Only 443 is ever published.** Redis has no `ports:` key; that omission, not
   the firewall, is what keeps it private.
-- **One env file**: the repo-root `.env`. No `--env-file` flag on any command, and
-  the working directory never matters.
+- **One env file**: the repo-root `.env`. No `--env-file` flag on any command. Run
+  `docker compose` from `~/mdfly/deploy` so it finds `compose.yaml`, or pass `-f`.
 - **Never `docker compose down -v`** on the VM — it deletes the Redis volume.
 - Secrets live only on the box: `.env`, `deploy/redis.conf`, `deploy/tls/*`. All
   gitignored; only their `.example` twins are tracked.

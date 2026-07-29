@@ -14,7 +14,7 @@ cd ~/mdfly
 cp .env.example .env
 cp deploy/redis.conf.example deploy/redis.conf
 chmod 600 .env deploy/redis.conf
-openssl rand -base64 32          # the Redis password
+openssl rand -hex 32             # the Redis password — hex, so it is URL-safe
 ```
 
 Put that password in **two** places — they must match:
@@ -44,9 +44,11 @@ Leave the job intervals (`PURGE_DRAIN_INTERVAL`, `LIFECYCLE_GC_INTERVAL`,
 reason. `MDFLY_API` is a **CLI** variable and does not belong in this file.
 
 There is one env file, not a prod/dev pair. The compose services read it as
-`env_file: ../.env`, and nothing in `deploy/compose.yaml` uses `${…}`
-interpolation — so no command needs an `--env-file` flag and the working directory
-never matters.
+`env_file: ../.env`, and nothing in `deploy/compose.yaml` uses `${…}` interpolation —
+so no command needs an `--env-file` flag, and a `DATABASE_URL` exported in your shell
+cannot leak into the containers. You still have to run `docker compose` from
+`~/mdfly/deploy` (or pass `-f ~/mdfly/deploy/compose.yaml`) so Compose can find the
+file; what no longer matters is which directory the *values* are resolved from.
 
 ## 4.2 Pre-flight
 

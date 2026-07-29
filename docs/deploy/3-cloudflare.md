@@ -159,15 +159,30 @@ misses through one upper tier.
 
 ## 3.7 Edge rate limit
 
-**Security → WAF → Rate limiting rules → Create rule.** The Free plan allows one
-rule, so cover both write paths in it:
+**Security → WAF → Rate limiting rules → Create rule.**
+
+The Free plan is tightly boxed in: **one rule**, a **10-second** counting period, a
+**10-second** mitigation timeout, **IP** as the only characteristic, and expression
+fields limited to **path and verified-bot** — there is no hostname field. So the rule
+matches on path alone:
 
 | Field | Value |
 |---|---|
-| When incoming requests match | hostname equals `api.mdfly.dev` **and** URI path starts with `/v1/publish/` **or** starts with `/v1/update/` |
+| When incoming requests match | URI path starts with `/v1/publish/` **or** URI path starts with `/v1/update/` |
 | Characteristics | IP |
-| Rate | 10 requests per 1 minute |
-| Action | Block, 60 seconds |
+| Rate | 10 requests per 10 seconds |
+| Action | Block, 10 seconds |
+
+In the expression editor that is:
+
+```
+(starts_with(http.request.uri.path, "/v1/publish/") or starts_with(http.request.uri.path, "/v1/update/"))
+```
+
+Dropping the hostname costs nothing — only `api.mdfly.dev` serves `/v1/*`, so no other
+host can match. On **Pro or above** the same rule takes a 1-minute period and a 60-second
+block, which is a closer match to the backend's own 10/min window; on Free the shorter
+window is what the plan allows, not a tuning choice.
 
 This is **L1** — crude, IP-only, absorbing floods before they reach the origin. The
 backend's own identity-aware limit sits beneath it (ADR-0013) and is verified in
@@ -183,8 +198,13 @@ step 5.
 
 **Known false-positive risk**: Bot Fight Mode can block legitimate `curl` and agent
 traffic against `/llm/*` — bot-shaped by design — once that route ships. Start with
-defaults; if the Security Events log shows blocks there, add one WAF custom rule to
-skip `/llm/*`.
+defaults, and watch **Security → Events** for blocks on that path.
+
+There is no per-path exception to fall back on: Bot Fight Mode is all-or-nothing on
+Free, and a WAF skip rule does not apply to it (the configurable version, Super Bot
+Fight Mode, is Pro and above). Once you have confirmed the false positive in the
+events log, the remedy is to **turn Bot Fight Mode off** and lean on Managed Rules
+plus the rate limit — or upgrade, if the bot protection is worth the plan.
 
 ## 3.9 Purge token
 
@@ -225,17 +245,19 @@ curl -s -X POST \
 
 Expect `"success":true`. Purging a slug that was never cached is a valid no-op.
 
-| Error | Cause |
-|---|---|
-| `"code":10000` Authentication error | Wrong token, or it lacks Cache Purge |
-| `"code":1012` | Wrong zone ID |
-| `"code":10001` or a body complaint | Malformed `prefixes` payload — prefix purge itself is on every plan |
+On failure, read `errors[].message` in the response body — it names the actual
+problem, where the numeric codes overlap across causes. `"code":10000
+Authentication error` is the one worth memorising: wrong token, or a token without
+Cache Purge. Anything else, believe the message: a bad zone ID, a token scoped to a
+different zone, and a malformed `prefixes` payload all surface here and are told
+apart by the text, not the number.
 
-**Free-plan purge limits**: 5 requests/minute (token bucket, burst 25) and 100
-prefixes per request. The backend sends one request per slug, so a large backlog
-draining at once will hit 429s. That is handled — a 429 is treated like any other
-failure, the row stays queued, and the backlog drains over several ticks. If it
-becomes routine, coalesce slugs into one request; the 100-prefix ceiling allows 50
-slugs per call.
+**Free-plan purge limits**: 5 requests/minute (token bucket, burst 25), and **30
+prefixes per request** — prefix purge has its own cap, below the 100-operation
+ceiling that applies to purge generally. The backend sends one request per slug, so a
+large backlog draining at once will hit 429s. That is handled — a 429 is treated like
+any other failure, the row stays queued, and the backlog drains over several ticks. If
+it becomes routine, coalesce slugs into one request: each slug costs **two** prefixes
+(`/<slug>` and `/llm/<slug>`), so 30 prefixes is **15 slugs** per call.
 
 Next: [4. Deploy](4-deploy.md).

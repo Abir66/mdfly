@@ -2,7 +2,18 @@
 
 Redeploys, troubleshooting, and the things worth watching.
 
-All commands run from `~/mdfly/deploy`.
+All commands run from `~/mdfly/deploy` — `docker compose` finds `compose.yaml` by
+looking in the working directory, so from anywhere else you need
+`docker compose -f ~/mdfly/deploy/compose.yaml …`.
+
+Several commands below need the Redis password or the database URL. In a fresh shell:
+
+```sh
+cd ~/mdfly/deploy
+export REDISCLI_AUTH='<the Redis password>'
+alias rcli='docker compose exec -T -e REDISCLI_AUTH redis redis-cli'
+export DATABASE_URL=$(grep -m1 '^DATABASE_URL=' ../.env | cut -d= -f2-)
+```
 
 ## 6.1 Redeploy
 
@@ -14,9 +25,13 @@ docker compose ps
 docker image prune -f                # reclaims the previous build's layers
 ```
 
-Build the image, apply migrations as a one-off, then restart — in that order.
-Migrations never run automatically at boot, which is why a bad one can never take
-the site down on a restart loop.
+Migrations first, then the new image — in that order. Migrations are written to be
+readable by the old code as well as the new, so the schema can move ahead of the
+containers; the reverse would run new code against an old schema. `migrate` uses its
+own upstream image, not the app image, so nothing has to be built before it runs.
+
+Migrations never run automatically at boot, which is why a bad one can never take the
+site down on a restart loop.
 
 Optional, if you do this often:
 
@@ -57,8 +72,10 @@ docker compose logs --since 1h app | grep -E '"level":"(WARN|ERROR)"'
 ## 6.3 Rotations
 
 ```sh
-# Redis password — edit deploy/redis.conf and REDIS_URL in ../.env together
-docker compose up -d redis app
+# Redis password — edit deploy/redis.conf and REDIS_URL in ../.env together, then
+docker compose up -d redis
+rcli ping                            # => PONG, with the new REDISCLI_AUTH
+docker compose up -d app
 
 # Postgres password — change it provider-side, update DATABASE_URL in ../.env
 docker compose up -d app
@@ -67,9 +84,13 @@ docker compose up -d app
 docker compose up -d app
 
 # Move to a different Postgres provider
-#   point DATABASE_URL at the new instance, then
+#   migrate creates an EMPTY schema — it does not move data. Copy the data across
+#   with the providers' own tooling and confirm it landed before cutting over.
 docker compose run --rm migrate && docker compose up -d app
 ```
+
+Redis needs no such care on a move — the counters are disposable, and a fresh
+keyspace grants everyone a new window (ADR-0013).
 
 **Origin CA certificate** renewal is a 15-year problem, so the procedure will need
 re-learning: re-run step 3.3 and `docker compose restart caddy`. Nothing else
@@ -174,6 +195,6 @@ docker compose restart app              # restart one service
 docker compose down                     # stop everything, keep volumes
 docker compose down -v                  # DELETES VOLUMES — never on this box
 docker stats                            # live resource usage
-docker compose exec redis redis-cli -a "$PASS" --no-auth-warning ping
+rcli ping                               # needs the shell setup at the top of this file
 psql "$DATABASE_URL" -Atc '\dt'         # tables on the managed instance
 ```

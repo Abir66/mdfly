@@ -46,18 +46,12 @@ postgres://<role>:<password>@<host>:5432/<database>?sslmode=require
 `sslmode=require` is **not optional**. Unlike Redis, this connection leaves the
 machine.
 
-**URL-encode the password** if it contains any of `@ : / ? # % &`. An unencoded
-`@` splits the URL at the wrong place and you get a confusing "host not found":
+This is a URI, so the password must be **percent-encoded** — every character outside
+`A-Z a-z 0-9 - . _ ~`, not a particular short list. An unencoded `@` is the classic
+one: it splits the URL at the wrong place and you get a confusing "host not found".
 
-| Character | Encoded |
-|---|---|
-| `@` | `%40` |
-| `:` | `%3A` |
-| `/` | `%2F` |
-| `#` | `%23` |
-| `%` | `%25` |
-
-Easiest path: generate a password with no punctuation.
+Easiest path by far: generate a password with no punctuation, e.g.
+`openssl rand -hex 32`, and skip encoding entirely.
 
 If the provider offers **both a pooled and a direct endpoint**, use the pooled one
 for `DATABASE_URL` (the app has its own pool and opens long-lived connections) and
@@ -75,8 +69,14 @@ sudo apt-get -y install postgresql-client-16
 Then, before going any further:
 
 ```sh
-psql "postgres://<role>:<pw>@<host>:5432/<db>?sslmode=require" -Atc "select version(), now();"
+ psql "postgres://<role>:<pw>@<host>:5432/<db>?sslmode=require" -Atc "select version(), now();"
 ```
+
+Test the **whole string**, password included — that is what catches a percent-encoding
+mistake before it becomes a container that will not boot. Note the **leading space**:
+Ubuntu's default `HISTCONTROL=ignoreboth` includes `ignorespace`, so it keeps the
+password out of `~/.bash_history`. To prompt instead, and give up the encoding check:
+`psql -h <host> -p 5432 -U <role> -d <db> "sslmode=require"`.
 
 | Symptom | Cause |
 |---|---|

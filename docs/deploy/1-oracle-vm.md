@@ -33,8 +33,10 @@ with 1 GB RAM, which will not hold this stack.
 
 ## 1.2 Reserve the public IP
 
-A new instance gets an **ephemeral** IP that changes on stop/start. DNS points a
-fixed A record at the origin (ADR-0011), so make it static:
+A new instance gets an **ephemeral** IP. It survives reboots and stop/start, but it is
+tied to the instance's lifetime — terminate and recreate the instance, or unassign the
+address, and you get a different one. DNS points a fixed A record at the origin
+(ADR-0011), so make it independent of the instance:
 
 **Instance → Attached VNICs → primary VNIC → IPv4 Addresses → the public IP → Edit
 → Reserved public IP → Reserve new.**
@@ -160,9 +162,10 @@ cd ~/mdfly && ls deploy/
 # => Caddyfile  compose.yaml  redis.conf.example
 ```
 
-`docker compose` commands in later steps are written from `~/mdfly/deploy`. They
-work from anywhere, since every path in the compose file is relative to the file
-itself, but staying in one directory is one less thing to think about.
+`docker compose` commands in later steps are written from `~/mdfly/deploy`. Run them
+from there — Compose locates `compose.yaml` by looking in the working directory. From
+anywhere else, name it: `docker compose -f ~/mdfly/deploy/compose.yaml …`, which works
+because every path *inside* the file is relative to the file itself.
 
 ## 1.6 Check
 

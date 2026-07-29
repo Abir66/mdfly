@@ -3,7 +3,8 @@
 # through DATABASE_URL (ADR-0005).
 #
 # Values come from the repo-root .env. No `${...}` interpolation anywhere, so no
-# command needs --env-file and the working directory never matters.
+# command needs --env-file and no host-shell variable can leak in. Run compose from
+# this directory, or point it here with -f.
 
 name: mdfly
 

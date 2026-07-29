@@ -2,13 +2,15 @@
 
 Run these in order. Each proves one thing that can silently be wrong.
 
-Export the Redis password once — `--no-auth-warning` keeps `-a` from printing a
-warning on every call:
+Set up the shell once. `redis-cli` reads the password from `REDISCLI_AUTH`, which
+keeps it out of the process list, and `-e REDISCLI_AUTH` is what carries it into the
+container — without it every command returns `NOAUTH Authentication required.`
 
 ```sh
 cd ~/mdfly/deploy
-export PASS='<the Redis password>'
-alias rcli='docker compose exec -T redis redis-cli -a "$PASS" --no-auth-warning'
+export REDISCLI_AUTH='<the Redis password>'
+alias rcli='docker compose exec -T -e REDISCLI_AUTH redis redis-cli'
+export DATABASE_URL=$(grep -m1 '^DATABASE_URL=' ../.env | cut -d= -f2-)
 ```
 
 ## 5a. Healthy through Cloudflare
@@ -58,6 +60,12 @@ Slugs still enqueue transactionally, so nothing is lost; they drain once a
 configured process runs.
 
 ## 5d. Rate limiting returns 429
+
+Start from an empty bucket, or the count will be off. The per-minute window is a
+fresh key each minute, so `rcli --scan --pattern 'rl:*'` returning nothing means you
+are clear; otherwise wait out the minute. The **hourly** window is the one that
+bites — 30/hr per subject means this loop is only good for two more runs in the same
+hour before every response is a 429.
 
 ```sh
 for i in $(seq 1 11); do

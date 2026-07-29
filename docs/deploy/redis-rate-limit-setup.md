@@ -27,11 +27,13 @@ The example carries four decisions worth understanding:
 | Setting | Why |
 |---|---|
 | `bind 0.0.0.0` | All interfaces *this container has* — not the internet, because no host port is published (§3) |
-| `maxmemory 512mb` | A ceiling, so the Linux OOM killer never gets to choose between Redis and the Go server |
+| `maxmemory 512mb` | A ceiling on the **dataset**, not on the process. Redis still exceeds it through allocator fragmentation and non-evictable buffers (AOF rewrite, client output), so leave real headroom above it on the VM rather than treating it as protection from the OOM killer |
 | `maxmemory-policy volatile-lru` | Evict only TTL-bearing keys. Every limiter key has one; durable data added later would not, so pressure sheds counters first. `allkeys-lru` would do the opposite |
 | `appendonly yes` + `appendfsync everysec` | A crash loses at most one second of counting. `save 900 1` adds RDB snapshots as a copyable backup artifact |
 
-Generate the password with `openssl rand -base64 32`. It goes in **two** places
+Generate the password with `openssl rand -hex 32` — **hex, not base64**, because the
+value has to survive being pasted inside a URL and base64's `+` and `/` do not.
+It goes in **two** places
 and must match: literally after `requirepass` here (Redis config cannot read an
 environment variable), and inside `REDIS_URL` in the repo-root `.env`. That is why
 `deploy/redis.conf` is gitignored and only `redis.conf.example` is tracked.
@@ -91,17 +93,23 @@ explicitly, which is the point of choosing `volatile-lru` — better an error it
 can handle than an eviction it discovers later.
 
 Watch three numbers: `used_memory` against `maxmemory`, `evicted_keys`, and free
-disk on the volume. `docker compose exec redis redis-cli -a "$PASS" info memory`
-covers the first two.
+disk on the volume. `rcli info memory` covers the first two, using the helper defined
+in §5.
 
 ## 5. Verify
 
-The `redis-cli` commands below need the §1 password. Export it once, and add
-`--no-auth-warning` to keep `-a` from printing a warning on every call:
+The `redis-cli` commands below need the §1 password. `redis-cli` reads it from
+`REDISCLI_AUTH`, which keeps it out of the command line — `-a` puts it in the
+process list and prints a warning on every call.
 
 ```sh
-export PASS='<the password from §1>'
+export REDISCLI_AUTH='<the password from §1>'
+alias rcli='docker compose exec -T -e REDISCLI_AUTH redis redis-cli'
 ```
+
+The `-e REDISCLI_AUTH` is load-bearing: `redis-cli` runs **inside** the container, so
+an exported variable on the host does not reach it on its own and every command comes
+back `NOAUTH Authentication required.`
 
 ### 5a. The limiter throttles
 
@@ -128,7 +136,7 @@ the next minute>`.
 ### 5b. The keys look right
 
 ```sh
-docker compose exec redis redis-cli -a "$PASS" --scan --pattern 'rl:*'
+rcli --scan --pattern 'rl:*'
 ```
 
 Each request creates two keys, each with a TTL — for the anonymous curls above,
@@ -137,25 +145,25 @@ writes `rl:token:<digest>:1m:<step>` and `rl:token:<digest>:1h:<step>` instead.
 Edit Tokens appear only as a digest prefix — the credential itself is never
 written to Redis. An IPv6 caller has its colons flattened to dots, so `::1`
 appears as `rl:ip:..1:1m:<step>` rather than splitting the key into more
-segments. Confirm every key has a TTL (`redis-cli -a "$PASS" ttl <key>` returns
-a positive number, never `-1`) — a limiter key without one would be outside the
+segments. Confirm every key has a TTL (`rcli ttl <key>` returns a positive
+number, never `-1`) — a limiter key without one would be outside the
 `volatile-lru` eviction pool.
 
 ### 5c. Persistence survives a restart
 
 ```sh
-docker compose exec redis redis-cli -a "$PASS" set probe:persist ok
+rcli set probe:persist ok
 docker compose restart redis
-docker compose exec redis redis-cli -a "$PASS" get probe:persist   # => "ok"
-docker compose exec redis redis-cli -a "$PASS" del probe:persist
+rcli get probe:persist   # => "ok"
+rcli del probe:persist
 ```
 
 Then the stronger test — the one that catches a missing named volume:
 
 ```sh
-docker compose exec redis redis-cli -a "$PASS" set probe:persist ok
+rcli set probe:persist ok
 docker compose down && docker compose up -d
-docker compose exec redis redis-cli -a "$PASS" get probe:persist   # => "ok"
+rcli get probe:persist   # => "ok"
 ```
 
 If the second returns `(nil)`, the volume is not attached. Fix that before
