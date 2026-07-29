@@ -44,15 +44,24 @@ var cloudflareRanges = mustParsePrefixes(
 	"2c0f:f248::/32",
 )
 
+// subjectSeparator delimits the segments of a Redis rate-limit key, so an IPv6
+// address must not carry it verbatim into a subject.
+const subjectSeparator = ":"
+
+// subjectIPSeparator replaces subjectSeparator inside an IPv6 address, keeping a
+// key readable as rl:ip:<addr>:<window>:<step>.
+const subjectIPSeparator = "."
+
 // rateLimitSubject identifies who to charge a request to (ADR-0013): the Edit
 // Token when the caller carries one, otherwise the client IP. A token is
 // fingerprinted rather than used verbatim — the subject becomes a Redis key in a
-// third-party store, and a credential does not belong there.
+// third-party store, and a credential does not belong there. An IPv6 address has
+// its colons flattened so it cannot be mistaken for extra key segments.
 func rateLimitSubject(r *http.Request) string {
 	if token := httpx.BearerToken(r.Header.Get("Authorization")); token != "" {
 		return "token:" + fingerprint(token)
 	}
-	return "ip:" + clientIP(r)
+	return "ip:" + strings.ReplaceAll(clientIP(r), subjectSeparator, subjectIPSeparator)
 }
 
 // fingerprintLen is how much of the token digest identifies a subject. 16 hex

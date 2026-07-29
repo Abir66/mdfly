@@ -79,7 +79,9 @@ one request creates, each with a TTL — for the anonymous curls above,
 `rl:ip:<addr>:1m:<step>` and `rl:ip:<addr>:1h:<step>`; an authenticated request
 writes `rl:token:<digest>:1m:<step>` and `rl:token:<digest>:1h:<step>` instead.
 Edit Tokens appear only as a digest prefix — the credential itself is never
-written to Redis.
+written to Redis. An IPv6 caller has its colons flattened to dots, so `::1`
+appears as `rl:ip:..1:1m:<step>` rather than splitting the key into more
+segments.
 
 To confirm fail-open, make Redis genuinely unreachable — the pool holds open
 connections, so rotating the password alone leaves the live sockets working and
