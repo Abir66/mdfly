@@ -83,7 +83,7 @@ Docker ignores it anyway (see the warning below).
 ssh ubuntu@<reserved-ip>
 
 sudo apt-get update && sudo apt-get -y upgrade
-sudo apt-get -y install ca-certificates curl git gnupg postgresql-client-16
+sudo apt-get -y install ca-certificates curl git gnupg
 
 # Docker Engine + Compose v2, arm64
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -109,9 +109,8 @@ docker --version && docker compose version
 uname -m                  # => aarch64
 ```
 
-`postgresql-client-16` is for talking to the managed database in step 2. Use the
-official Docker apt repo rather than `curl | sh` so upgrades come through `apt`
-with the rest of the system.
+Use the official Docker apt repo rather than `curl | sh`, so upgrades come through
+`apt` with the rest of the system.
 
 ## 1.5 Clone the repo
 

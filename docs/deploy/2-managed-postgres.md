@@ -66,7 +66,19 @@ URL to `migrate` without touching `.env`.
 
 ## 2.4 Check
 
-From the VM, before going any further:
+Install the Postgres **client** on the VM — just `psql` and `pg_dump`, no server:
+
+```sh
+sudo apt-get -y install postgresql-client-16
+```
+
+Match or exceed your server's major version. `pg_dump` refuses to dump a server
+newer than itself (`server version mismatch`), which you would not discover until
+the first backup in step 6. For a server newer than the client Ubuntu ships, add
+[PGDG](https://www.postgresql.org/download/linux/ubuntu/) and install that major
+instead.
+
+Then, before going any further:
 
 ```sh
 psql "postgres://<role>:<pw>@<host>:5432/<db>?sslmode=require" -Atc "select version(), now();"
