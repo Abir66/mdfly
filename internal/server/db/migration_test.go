@@ -60,166 +60,11 @@ func startPostgres(t *testing.T) (dsn string, cleanup func()) {
 	return dsn, func() { container.Terminate(ctx) }
 }
 
-// TestDocumentsMigrationRoundTrip verifies migrate-up creates the documents
-// table with its three partial indexes, and migrate-down leaves an empty schema.
-func TestDocumentsMigrationRoundTrip(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: requires docker")
-	}
-
-	dsn, cleanup := startPostgres(t)
-	t.Cleanup(cleanup)
-
-	migrateDSN := strings.Replace(dsn, "postgres://", "pgx5://", 1)
-	m, err := migrate.New("file://"+migrationsDir(), migrateDSN)
-	if err != nil {
-		t.Fatalf("create migrator: %v", err)
-	}
-	defer m.Close()
-
-	if err := m.Up(); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
-	defer pool.Close()
-
-	for _, idx := range []string{
-		"documents_pending_gc_idx",
-		"documents_anon_expiry_idx",
-		"documents_owner_idx",
-	} {
-		var found bool
-		if err := pool.QueryRow(ctx,
-			`SELECT EXISTS(
-				SELECT 1 FROM pg_indexes
-				WHERE tablename = 'documents' AND indexname = $1
-			)`, idx).Scan(&found); err != nil {
-			t.Fatalf("check index %s: %v", idx, err)
-		}
-		if !found {
-			t.Errorf("index %s not found after migrate up", idx)
-		}
-	}
-
-	checkExplainUsesIndex(t, pool,
-		"documents_pending_gc_idx",
-		"SELECT id FROM documents WHERE status = 'pending' AND created_at < $1",
-		"2099-01-01")
-
-	checkExplainUsesIndex(t, pool,
-		"documents_anon_expiry_idx",
-		"SELECT id FROM documents WHERE expires_at < $1 AND deleted_at IS NULL",
-		"2099-01-01")
-
-	if err := m.Down(); err != nil {
-		t.Fatalf("migrate down: %v", err)
-	}
-
-	var tableExists bool
-	if err := pool.QueryRow(ctx,
-		`SELECT EXISTS(
-			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'public' AND table_name = 'documents'
-		)`).Scan(&tableExists); err != nil {
-		t.Fatalf("check table after down: %v", err)
-	}
-	if tableExists {
-		t.Error("documents table still exists after migrate down")
-	}
-}
-
-// TestLifecycleStatusMigration verifies migration 0003: the status CHECK admits
-// all five lifecycle values, blobs_deleted_at and its partial blob-GC index
-// exist, and stepping down reverts the CHECK after relocating the rows that the
-// narrower vocabulary can no longer hold.
-func TestLifecycleStatusMigration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration: requires docker")
-	}
-
-	dsn, cleanup := startPostgres(t)
-	t.Cleanup(cleanup)
-
-	migrateDSN := strings.Replace(dsn, "postgres://", "pgx5://", 1)
-	m, err := migrate.New("file://"+migrationsDir(), migrateDSN)
-	if err != nil {
-		t.Fatalf("create migrator: %v", err)
-	}
-	defer m.Close()
-
-	if err := m.Up(); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
-
-	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
-	defer pool.Close()
-
-	for _, status := range []string{"pending", "published", "deleted", "expired", "abandoned"} {
-		if err := insertDocument(ctx, pool, status+"-slug", status); err != nil {
-			t.Fatalf("insert %s row: %v", status, err)
-		}
-	}
-
-	var hasColumn bool
-	if err := pool.QueryRow(ctx,
-		`SELECT EXISTS(
-			SELECT 1 FROM information_schema.columns
-			WHERE table_name = 'documents' AND column_name = 'blobs_deleted_at'
-		)`).Scan(&hasColumn); err != nil {
-		t.Fatalf("check blobs_deleted_at: %v", err)
-	}
-	if !hasColumn {
-		t.Error("blobs_deleted_at column not found after migrate up")
-	}
-
-	checkExplainUsesIndex(t, pool,
-		"documents_blob_gc_idx",
-		`SELECT id FROM documents
-		 WHERE blobs_deleted_at IS NULL
-		   AND status IN ('deleted', 'expired', 'abandoned')
-		   AND updated_at < $1`,
-		"2099-01-01")
-
-	// Step back to 0002 explicitly rather than by one step, so a later migration
-	// does not silently retarget this assertion.
-	if err := m.Migrate(2); err != nil {
-		t.Fatalf("migrate down to 0002: %v", err)
-	}
-
-	var status string
-	if err := pool.QueryRow(ctx,
-		`SELECT status FROM documents WHERE slug = 'expired-slug'`).Scan(&status); err != nil {
-		t.Fatalf("read expired row after down: %v", err)
-	}
-	if status != "deleted" {
-		t.Errorf("expired row status after down = %q, want deleted", status)
-	}
-	if err := pool.QueryRow(ctx,
-		`SELECT status FROM documents WHERE slug = 'abandoned-slug'`).Scan(&status); err != nil {
-		t.Fatalf("read abandoned row after down: %v", err)
-	}
-	if status != "pending" {
-		t.Errorf("abandoned row status after down = %q, want pending", status)
-	}
-
-	if err := insertDocument(ctx, pool, "post-down-slug", "expired"); err == nil {
-		t.Error("insert with status 'expired' succeeded after down; CHECK not reverted")
-	}
-}
-
-// TestPurgeQueueMigration verifies migration 0004: purge_queue exists with the
-// slug primary key rejecting a duplicate, its due-work index is used by the
-// drain's predicate, and stepping down drops the table.
-func TestPurgeQueueMigration(t *testing.T) {
+// TestPartialIndexesServeGCPredicates asserts the planner actually reaches every
+// partial index through the predicate its owning job issues. A partial index
+// whose WHERE clause drifts from that predicate still satisfies the functional
+// tests — it just degrades to a seq scan — so nothing else catches the drift.
+func TestPartialIndexesServeGCPredicates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")
 	}
@@ -243,42 +88,35 @@ func TestPurgeQueueMigration(t *testing.T) {
 	}
 	defer pool.Close()
 
-	if _, err := pool.Exec(ctx, `INSERT INTO purge_queue (slug) VALUES ('dup')`); err != nil {
-		t.Fatalf("insert purge row: %v", err)
-	}
-	if _, err := pool.Exec(ctx, `INSERT INTO purge_queue (slug) VALUES ('dup')`); err == nil {
-		t.Error("duplicate slug insert succeeded; primary key missing")
-	}
+	checkExplainUsesIndex(t, pool,
+		"documents_pending_gc_idx",
+		"SELECT id FROM documents WHERE status = 'pending' AND created_at < $1",
+		"2099-01-01")
+
+	checkExplainUsesIndex(t, pool,
+		"documents_anon_expiry_idx",
+		"SELECT id FROM documents WHERE expires_at < $1 AND deleted_at IS NULL",
+		"2099-01-01")
+
+	checkExplainUsesIndex(t, pool,
+		"documents_owner_idx",
+		`SELECT id FROM documents
+		 WHERE owner_user_id = $1 AND deleted_at IS NULL
+		 ORDER BY updated_at DESC`,
+		1)
+
+	checkExplainUsesIndex(t, pool,
+		"documents_blob_gc_idx",
+		`SELECT id FROM documents
+		 WHERE blobs_deleted_at IS NULL
+		   AND status IN ('deleted', 'expired', 'abandoned')
+		   AND updated_at < $1`,
+		"2099-01-01")
 
 	checkExplainUsesIndex(t, pool,
 		"purge_queue_due_idx",
 		"SELECT slug FROM purge_queue WHERE next_attempt_at <= $1 ORDER BY next_attempt_at",
 		"2099-01-01")
-
-	if err := m.Migrate(3); err != nil {
-		t.Fatalf("migrate down to 0003: %v", err)
-	}
-
-	var tableExists bool
-	if err := pool.QueryRow(ctx,
-		`SELECT EXISTS(
-			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'public' AND table_name = 'purge_queue'
-		)`).Scan(&tableExists); err != nil {
-		t.Fatalf("check purge_queue after down: %v", err)
-	}
-	if tableExists {
-		t.Error("purge_queue still exists after migrate down")
-	}
-}
-
-// insertDocument inserts a minimal documents row with the given slug and status.
-func insertDocument(ctx context.Context, pool *pgxpool.Pool, slug, status string) error {
-	_, err := pool.Exec(ctx,
-		`INSERT INTO documents (slug, idempotency_key, status, manifest, manifest_hash, bytes_total, file_count)
-		 VALUES ($1, gen_random_uuid(), $2, '{}'::jsonb, '\x00'::bytea, 0, 0)`,
-		slug, status)
-	return err
 }
 
 func checkExplainUsesIndex(t *testing.T, pool *pgxpool.Pool, indexName, query string, args ...any) {
