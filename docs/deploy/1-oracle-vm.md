@@ -83,19 +83,9 @@ Docker ignores it anyway (see the warning below).
 ssh ubuntu@<reserved-ip>
 
 sudo apt-get update && sudo apt-get -y upgrade
-sudo apt-get -y install ca-certificates curl git gnupg
+sudo apt-get -y install git
 
-# Docker Engine + Compose v2, arm64
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-  -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] \
-https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
-  | sudo tee /etc/apt/sources.list.d/docker.list
-sudo apt-get update
-sudo apt-get -y install docker-ce docker-ce-cli containerd.io \
-  docker-buildx-plugin docker-compose-plugin
+curl -fsSL https://get.docker.com | sudo sh
 
 sudo usermod -aG docker ubuntu
 exit                      # group membership only applies to a new login
@@ -109,8 +99,32 @@ docker --version && docker compose version
 uname -m                  # => aarch64
 ```
 
-Use the official Docker apt repo rather than `curl | sh`, so upgrades come through
-`apt` with the rest of the system.
+`get.docker.com` is Docker's own script. It adds Docker's apt repository and
+signing key, then installs Engine plus the `compose` and `buildx` plugins — so
+`apt upgrade` keeps Docker current alongside the rest of the system. Do **not**
+`apt install docker.io`; that is Ubuntu's older fork and ships no compose plugin.
+
+<details>
+<summary>Doing the same thing by hand, if you would rather not pipe a script into root</summary>
+
+```sh
+sudo apt-get -y install ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt-get update
+sudo apt-get -y install docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+```
+
+Identical end state. Docker documents the convenience script as unsuitable for
+production, which is the only reason to prefer this.
+
+</details>
 
 ## 1.5 Clone the repo
 
