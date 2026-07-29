@@ -15,61 +15,40 @@ URL swap with no code change if this ever needs to move off-box (§6).
 
 ## 1. The Redis config file
 
-Create `deploy/redis.conf` alongside the compose file:
+Copy the tracked example and edit the password into it:
 
-```conf
-# Reachable on the Docker bridge network only — the compose service publishes
-# no host port, so this is not internet-reachable. See §3.
-bind 0.0.0.0
-port 6379
-requirepass CHANGE_ME_LONG_RANDOM
-
-# Ceiling so Redis can never grow until the Linux OOM killer picks a victim
-# (which might be the Go server, not Redis).
-maxmemory 512mb
-# Evict only keys that carry a TTL. Every limiter key does by construction;
-# durable data added later will not, so pressure sheds counters first and never
-# touches durable state. `allkeys-lru` would do the opposite.
-maxmemory-policy volatile-lru
-
-# Durability: append every write to a log, flushed once per second, so a crash
-# loses at most 1s. RDB snapshots alongside give a single copyable backup file.
-appendonly yes
-appendfsync everysec
-save 900 1
-dir /data
+```sh
+cp deploy/redis.conf.example deploy/redis.conf
+chmod 600 deploy/redis.conf
 ```
 
-Generate the password with `openssl rand -base64 32` and keep it in
-`deploy/mdfly.env`, not in the config file, if you prefer — but note
-`requirepass` cannot read an env var, so it must be literal here. Keep
-`redis.conf` out of git if you inline a real password; commit a
-`redis.conf.example` instead.
+The example carries four decisions worth understanding:
+
+| Setting | Why |
+|---|---|
+| `bind 0.0.0.0` | All interfaces *this container has* — not the internet, because no host port is published (§3) |
+| `maxmemory 512mb` | A ceiling, so the Linux OOM killer never gets to choose between Redis and the Go server |
+| `maxmemory-policy volatile-lru` | Evict only TTL-bearing keys. Every limiter key has one; durable data added later would not, so pressure sheds counters first. `allkeys-lru` would do the opposite |
+| `appendonly yes` + `appendfsync everysec` | A crash loses at most one second of counting. `save 900 1` adds RDB snapshots as a copyable backup artifact |
+
+Generate the password with `openssl rand -base64 32`. It goes in **two** places
+and must match: literally after `requirepass` here (Redis config cannot read an
+environment variable), and inside `REDIS_URL` in the repo-root `.env`. That is why
+`deploy/redis.conf` is gitignored and only `redis.conf.example` is tracked.
 
 Nothing else needs tuning. Window sizes, limits, pool size, and timeouts are
 code constants in `internal/server/ratelimit` and `internal/server/redis`.
 
 ## 2. The compose service
 
-```yaml
-services:
-  redis:
-    image: redis:7-alpine
-    command: redis-server /usr/local/etc/redis/redis.conf
-    volumes:
-      - redis-data:/data
-      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
-    restart: unless-stopped
-    # No `ports:` — deliberate. See §3.
+Already in `deploy/compose.yaml` — nothing to add. It mounts `redis.conf`
+read-only, attaches the `redis-data` named volume at `/data`, sets
+`restart: unless-stopped`, and deliberately declares no `ports:` (§3).
 
-volumes:
-  redis-data:
-```
-
-Then in the backend's environment:
+The one value you supply is in the repo-root `.env`:
 
 ```
-REDIS_URL=redis://:CHANGE_ME_LONG_RANDOM@redis:6379
+REDIS_URL=redis://:<the password from §1>@redis:6379
 ```
 
 `redis` is the compose service name; Docker's embedded DNS resolves it on the
@@ -85,7 +64,8 @@ anonymous one, not a bind mount into the container's ephemeral layer.
 
 Docker only opens a host firewall path for ports listed under `ports:`. Omitting
 the key leaves Redis addressable on the compose bridge network — by the `app`
-and `migrate` containers — and unreachable from the internet, so `bind 0.0.0.0`
+container, the only thing that needs it — and unreachable from the internet, so
+`bind 0.0.0.0`
 here means "all interfaces *this container has*", not "the public internet".
 `requirepass` is defence in depth for the case where something else later joins
 that network. Never add a `6379:6379` mapping "to debug" — use
@@ -115,6 +95,13 @@ disk on the volume. `docker compose exec redis redis-cli -a "$PASS" info memory`
 covers the first two.
 
 ## 5. Verify
+
+The `redis-cli` commands below need the §1 password. Export it once, and add
+`--no-auth-warning` to keep `-a` from printing a warning on every call:
+
+```sh
+export PASS='<the password from §1>'
+```
 
 ### 5a. The limiter throttles
 
@@ -204,11 +191,11 @@ If the URL parses but Redis is unreachable at boot, the server logs
 
 ## 7. If this ever moves off-box
 
-A managed provider (Upstash, Redis Cloud, ElastiCache) works with no code
-change — take the provider's **RESP/TCP** `rediss://` URL, not a REST endpoint,
-since the adapter speaks RESP over a pooled connection, and set it as
-`REDIS_URL`. Sections 1–3 stop applying (the provider owns persistence and
-memory policy) and §5b/§5c move to the provider's own console and tooling.
+A managed instance works with no code change — take the provider's **RESP/TCP**
+`rediss://` URL, not a REST endpoint, since the adapter speaks RESP over a pooled
+connection, and set it as `REDIS_URL`. Sections 1–3 stop applying (the provider
+owns persistence and memory policy) and §5b/§5c move to the provider's own console
+and tooling.
 
 Two things to check before making that trade: the per-request latency cost of
 leaving the box, and whether the free tier's monthly command quota covers your
