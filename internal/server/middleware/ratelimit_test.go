@@ -85,12 +85,15 @@ func TestRateLimit_retryAfterRoundsUp(t *testing.T) {
 
 // TestRateLimit_subject pins key resolution: an Edit Token identifies the editor
 // across IPs; anonymous callers are keyed by CF-Connecting-IP, but only when the
-// peer is a Cloudflare edge — a header from anywhere else is spoofable and the
-// TCP peer is used instead. An IPv6 address arrives with its colons flattened.
+// peer is a trusted proxy — a Cloudflare edge, or the origin's own TLS terminator
+// on a private address. A header from anywhere else is spoofable and the TCP peer
+// is used instead. An IPv6 address arrives with its colons flattened.
 func TestRateLimit_subject(t *testing.T) {
 	const (
 		cloudflareEdge = "173.245.48.5:40000"
 		strangerPeer   = "203.0.113.9:40000"
+		bridgePeer     = "172.18.0.4:40000"
+		loopbackPeer   = "127.0.0.1:40000"
 		editToken      = "mftk_abc123"
 		claimedIP      = "9.9.9.9"
 	)
@@ -104,6 +107,8 @@ func TestRateLimit_subject(t *testing.T) {
 		// The token subject is a digest prefix, not the credential itself.
 		{"edit token wins", cloudflareEdge, "Bearer " + editToken, claimedIP, "token:c168a1093fe13850"},
 		{"cloudflare peer is trusted", cloudflareEdge, "", claimedIP, "ip:" + claimedIP},
+		{"bridge peer is trusted", bridgePeer, "", claimedIP, "ip:" + claimedIP},
+		{"loopback peer is trusted", loopbackPeer, "", claimedIP, "ip:" + claimedIP},
 		{"spoofed header is ignored", strangerPeer, "", claimedIP, "ip:203.0.113.9"},
 		{"no header falls back to peer", cloudflareEdge, "", "", "ip:173.245.48.5"},
 		{"ipv6 peer colons are flattened", "[::1]:40000", "", "", "ip:..1"},

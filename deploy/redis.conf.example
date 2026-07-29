@@ -1,0 +1,20 @@
+# Redis for the write-path rate limiter (ADR-0013). Copy to deploy/redis.conf and
+# replace requirepass with a real secret — that file stays out of git.
+# Rationale for every line: docs/deploy/redis-rate-limit-setup.md
+
+# Bridge network only; the compose service publishes no host port.
+bind 0.0.0.0
+port 6379
+requirepass CHANGE_ME_LONG_RANDOM
+
+# Ceiling, so the Linux OOM killer never gets to pick between Redis and the server.
+maxmemory 512mb
+# Evict only TTL-bearing keys. Every limiter key has one; durable data added later
+# would not, so pressure sheds counters first.
+maxmemory-policy volatile-lru
+
+# A crash loses at most 1s of counting. RDB alongside gives a copyable snapshot.
+appendonly yes
+appendfsync everysec
+save 900 1
+dir /data

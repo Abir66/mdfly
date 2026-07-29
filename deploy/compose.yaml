@@ -1,0 +1,67 @@
+# Production stack for the backend VM (ADR-0003). Caddy is the only service that
+# publishes a host port. Postgres is not here — it is managed and off-box, reached
+# through DATABASE_URL (ADR-0005).
+#
+# Values come from the repo-root .env. No `${...}` interpolation anywhere, so no
+# command needs --env-file and no host-shell variable can leak in. Run compose from
+# this directory, or point it here with -f.
+
+name: mdfly
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./tls:/etc/caddy/tls:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_started
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: mdfly-server:local
+    restart: unless-stopped
+    env_file: ../.env
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      redis:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - redis-data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+    # No `ports:` — that omission is what keeps Redis private, not the firewall.
+
+  # One-shot: `docker compose run --rm migrate`. `$$` escapes Compose's
+  # interpolation so the container's shell expands DATABASE_URL from env_file,
+  # not from whatever the host shell has exported.
+  migrate:
+    image: migrate/migrate:v4.18.1
+    profiles: ["tools"]
+    env_file: ../.env
+    entrypoint: ["/bin/sh", "-c"]
+    command: ['migrate -path=/migrations -database="$$DATABASE_URL" up']
+    volumes:
+      - ../migrations:/migrations:ro
+
+volumes:
+  redis-data:
+  caddy-data:
+  caddy-config:
