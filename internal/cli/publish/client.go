@@ -16,7 +16,7 @@ func postJSON[T any](ctx context.Context, client *http.Client, url string, body 
 }
 
 // postJSONAuth is postJSON with an optional Edit Token sent as a bearer header
-// (ADR-0015). An empty token omits the header, so publish reuses it via postJSON.
+// (ADR-0008). An empty token omits the header, so publish reuses it via postJSON.
 func postJSONAuth[T any](ctx context.Context, client *http.Client, url, token string, body any) (T, error) {
 	var zero T
 	b, err := json.Marshal(body)

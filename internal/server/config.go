@@ -36,14 +36,14 @@ type Config struct {
 }
 
 // RateLimitConfig holds the Redis connection backing the write-path rate limiter
-// (ADR-0028). Env var: REDIS_URL — `rediss://…` for Upstash's TLS endpoint,
+// (ADR-0013). Env var: REDIS_URL — `rediss://…` for Upstash's TLS endpoint,
 // `redis://…` for a local instance. Empty means unconfigured — the server boots
 // with the limiter off.
 type RateLimitConfig struct {
 	URL string
 }
 
-// CloudflareConfig holds the zone and API token the CDN purge uses (ADR-0031).
+// CloudflareConfig holds the zone and API token the CDN purge uses (ADR-0012).
 // Env vars: CLOUDFLARE_ZONE_ID, CLOUDFLARE_API_TOKEN. Either empty means
 // unconfigured — purges are still enqueued durably, but nothing drains them.
 type CloudflareConfig struct {
@@ -56,7 +56,7 @@ type DatabaseConfig struct {
 	URL string
 }
 
-// JobsConfig holds the periodic-job intervals and grace windows (ADR-0029).
+// JobsConfig holds the periodic-job intervals and grace windows (ADR-0003).
 // Env vars, with defaults: PURGE_DRAIN_INTERVAL (15m), LIFECYCLE_GC_INTERVAL
 // (1h), ABANDON_GRACE (1h), BLOB_DELETE_GRACE (24h).
 type JobsConfig struct {

@@ -12,7 +12,7 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// Placeholder CSS classes emitted for client-side enrichment (ADR-0018, S12).
+// Placeholder CSS classes emitted for client-side enrichment (ADR-0010, S12).
 // The ssr boot snippet keys off the per-render enrichFlags (not these strings)
 // to lazy-load Mermaid/KaTeX; nothing renders these server-side. They must
 // satisfy the bluemonday class allow-list.

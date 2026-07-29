@@ -1,5 +1,5 @@
 // Package purge keeps the Cloudflare edge cache in step with Postgres
-// (ADR-0031). Every commit and delete enqueues its slug to the durable
+// (ADR-0012). Every commit and delete enqueues its slug to the durable
 // purge_queue inside the same transaction as the row flip; this package turns a
 // queued slug into the two prefix purges that cover it, attempts one inline right
 // after the write, and drains the queue with backoff on a ticker until it
@@ -36,7 +36,7 @@ const (
 	// detached from the request, so it needs its own deadline.
 	inlineTimeout = 30 * time.Second
 
-	// llmPathPrefix is the LLM twin's path segment (ADR-0016).
+	// llmPathPrefix is the LLM twin's path segment (ADR-0010).
 	llmPathPrefix = "llm"
 )
 
@@ -163,7 +163,7 @@ func (s *Service) Job(ctx context.Context) {
 
 // prefixes returns the two prefixes covering slug: the human page and the LLM
 // twin. Each covers the bare page plus every sub-path under it, so one pair
-// invalidates a whole document (ADR-0031).
+// invalidates a whole document (ADR-0012).
 func (s *Service) prefixes(slug string) []string {
 	return []string{
 		s.Host + "/" + slug,

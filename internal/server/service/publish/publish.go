@@ -1,5 +1,5 @@
 // Package publish runs the 3-phase publish wire protocol (CONTEXT.md "Publish",
-// ADR-0011): init mints a slug + presigned PUTs, commit HEAD-verifies blobs and
+// ADR-0006): init mints a slug + presigned PUTs, commit HEAD-verifies blobs and
 // atomically flips the row to 'published'. HTTP handlers in
 // internal/server/handlers are thin glue around Service.
 package publish
@@ -26,7 +26,7 @@ const (
 
 // Purger runs the best-effort CDN purge that follows a committed write. The
 // durable queue row written inside the commit transaction is the real path, so a
-// nil Purger only delays invalidation to the next drain tick (ADR-0031).
+// nil Purger only delays invalidation to the next drain tick (ADR-0012).
 type Purger interface {
 	AttemptInline(ctx context.Context, slug string)
 }
@@ -105,7 +105,7 @@ func (s *Service) Init(ctx context.Context, req api.InitRequest) (InitResult, *h
 }
 
 // ensurePayloadMatches reports a 422 when an existing row was reused under the
-// same idempotency_key but the incoming manifest hashes differently (ADR-0013).
+// same idempotency_key but the incoming manifest hashes differently (ADR-0006).
 // On a fresh insert the stored hash equals the incoming hash, so this passes.
 func ensurePayloadMatches(doc *db.Document, mfst manifest.Manifest) *httpx.Error {
 	incoming, err := db.ManifestHash(mfst)
@@ -169,7 +169,7 @@ func (s *Service) Commit(ctx context.Context, req api.CommitRequest) (CommitResu
 
 // commitPublish flips the pending row to 'published' and enqueues its CDN purge
 // in one transaction, so a published document can never end up live with a stale
-// edge cache and no pending purge (ADR-0031).
+// edge cache and no pending purge (ADR-0012).
 func (s *Service) commitPublish(ctx context.Context, idempotencyKey string, expiresAt time.Time) (*db.Document, error) {
 	tx, err := s.Db.Begin(ctx)
 	if err != nil {

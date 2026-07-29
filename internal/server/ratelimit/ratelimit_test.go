@@ -69,7 +69,7 @@ func TestAllow_oneRoundTripPerRequest(t *testing.T) {
 	}
 }
 
-// TestAllow_deniedRequestStillSpendsEveryWindow pins ADR-0028's rule that all
+// TestAllow_deniedRequestStillSpendsEveryWindow pins ADR-0013's rule that all
 // windows are counted on every request: a request already denied by the
 // per-minute window still spends the hourly allowance, so short-circuiting the
 // count on the first tripped window would be caught here.
@@ -208,7 +208,7 @@ func TestAllow_windowRollover(t *testing.T) {
 	}
 }
 
-// TestAllow_failsOpen pins ADR-0028's fail-open rule: a store outage must
+// TestAllow_failsOpen pins ADR-0013's fail-open rule: a store outage must
 // degrade to unthrottled, never to blocked, and surface the error for logging.
 func TestAllow_failsOpen(t *testing.T) {
 	counter := newFakeCounter()

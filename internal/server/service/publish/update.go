@@ -20,7 +20,7 @@ type UpdateInitResult struct {
 }
 
 // disposition classifies an incoming update against the live row's manifest
-// hash, per ADR-0027's three-way idempotency compare.
+// hash, per ADR-0006's three-way idempotency compare.
 type disposition int
 
 const (
@@ -44,7 +44,7 @@ func classifyUpdate(current, parent, next string) disposition {
 	return dispConflict
 }
 
-// UpdateInit runs the init phase of the update wire (ADR-0027): verify the Edit
+// UpdateInit runs the init phase of the update wire (ADR-0006): verify the Edit
 // Token, run the optimistic pre-check, diff the incoming manifest against the
 // stored one by (hash, ext), and presign PUTs only for new blobs. It writes
 // nothing to Postgres. token is the plaintext Edit Token from the header.
@@ -108,7 +108,7 @@ func (s *Service) UpdateCommit(ctx context.Context, req api.UpdateCommitRequest,
 }
 
 // applyUpdate performs the guarded atomic overwrite and enqueues the slug's CDN
-// purge in the same transaction (ADR-0031). A no-rows result means a concurrent
+// purge in the same transaction (ADR-0012). A no-rows result means a concurrent
 // writer moved manifest_hash off the parent between our read and the UPDATE,
 // which is a lost optimistic-concurrency check → 409.
 func (s *Service) applyUpdate(ctx context.Context, slug string, mfst manifest.Manifest, parentHex string) (*db.Document, *httpx.Error) {
@@ -211,7 +211,7 @@ func (s *Service) commitResult(slug, manifestHash string) CommitResult {
 
 // presignNewBlobs presigns one PUT per incoming (hash, ext) that is absent from
 // the stored manifest. A blob whose (hash, ext) already exists is content-
-// addressed under the same live key, so it needs no re-upload (ADR-0027).
+// addressed under the same live key, so it needs no re-upload (ADR-0006).
 func presignNewBlobs(ctx context.Context, r2 *storage.Client, sl string, incoming, stored manifest.Manifest) (map[string]string, *httpx.Error) {
 	storedSet := blobIdentities(stored)
 	urls := make(map[string]string)

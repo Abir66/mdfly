@@ -34,7 +34,7 @@ type PageData struct {
 	EnrichMermaid bool
 	EnrichMath    bool
 
-	// Viewer chrome (ADR-0024). Slug addresses tree/breadcrumb links; Tree and
+	// Viewer chrome (ADR-0010). Slug addresses tree/breadcrumb links; Tree and
 	// Breadcrumb come from the filetree package; CSSURL/JSURL are the hashed
 	// /_static asset URLs.
 	Slug string
@@ -119,7 +119,7 @@ func railScript(chrome bool) template.HTML {
 
 // nodeHref builds the viewer URL for a tree node or breadcrumb crumb. An empty
 // path is the bundle root (/{slug}); a path with leading "../" segments encodes
-// its depth as ?up=N because proxies strip dot-segments (ADR-0024).
+// its depth as ?up=N because proxies strip dot-segments (ADR-0010).
 func nodeHref(slug, p string) string {
 	up := 0
 	for strings.HasPrefix(p, "../") {

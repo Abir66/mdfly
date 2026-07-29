@@ -20,7 +20,7 @@ type Limiter interface {
 	Allow(ctx context.Context, subject string) (ratelimit.Decision, error)
 }
 
-// RateLimit throttles the wrapped handler per subject (ADR-0028). Wrap the write
+// RateLimit throttles the wrapped handler per subject (ADR-0013). Wrap the write
 // paths only — read paths are edge-cached and never limited. A limiter failure
 // is logged and the request allowed through, so a Redis outage degrades to
 // unthrottled rather than blocked.

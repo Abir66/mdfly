@@ -57,7 +57,7 @@ func Internal(msg string) *Error {
 }
 
 // Unprocessable returns a 422 error with a custom machine-readable code and an
-// empty details object (ADR-0013 idempotency payload mismatch).
+// empty details object (ADR-0006 idempotency payload mismatch).
 func Unprocessable(code, msg string) *Error {
 	return &Error{Status: http.StatusUnprocessableEntity, Code: code, Msg: msg, Details: map[string]any{}}
 }
@@ -92,7 +92,7 @@ func WriteError(w http.ResponseWriter, e *Error) {
 }
 
 // BearerToken extracts the token from an "Authorization: Bearer <token>" header
-// (ADR-0015). Returns "" when the header is absent or not a bearer scheme.
+// (ADR-0008). Returns "" when the header is absent or not a bearer scheme.
 func BearerToken(header string) string {
 	const prefix = "Bearer "
 	if !strings.HasPrefix(header, prefix) {

@@ -35,7 +35,7 @@ type UpdateOptions struct {
 	Progress           io.Writer
 }
 
-// RunUpdate orchestrates the update workflow (ADR-0027): build Bundle → limits
+// RunUpdate orchestrates the update workflow (ADR-0006): build Bundle → limits
 // preflight → update/init (presign changed blobs) → parallel upload → update/
 // commit → re-persist the Local State record. The URL and slug are unchanged.
 func RunUpdate(opts UpdateOptions) (Result, error) {
@@ -105,7 +105,7 @@ func doUpdateCommit(ctx context.Context, client *http.Client, opts UpdateOptions
 // persistUpdate rewrites the Local State record after a successful update,
 // preserving CreatedAt and the stored Edit Token while refreshing the manifest
 // hash, size, counters, and updated_at. A file update re-attaches the current
-// source path (rename resilience, ADR-0026); a text update clears it.
+// source path (rename resilience, ADR-0009); a text update clears it.
 func persistUpdate(stateDir string, src input.Source, token string, bundle Bundle, commit api.UpdateCommitResponse) error {
 	store := localstate.New(stateDir)
 	ledger, err := store.Load()

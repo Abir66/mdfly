@@ -639,7 +639,7 @@ func TestView_missingSlugReturns404(t *testing.T) {
 }
 
 // TestView_lifecycleStatusSemantics pins the HTTP status each lifecycle state
-// serves on both view routes (ADR-0030): published 200, deleted/expired 410,
+// serves on both view routes (ADR-0005): published 200, deleted/expired 410,
 // pending/abandoned 404.
 func TestView_lifecycleStatusSemantics(t *testing.T) {
 	if testing.Short() {
@@ -678,7 +678,7 @@ func TestView_lifecycleStatusSemantics(t *testing.T) {
 
 // TestView_expiredByGCReturns410 runs a real lifecycle sweep over a published
 // row whose expires_at has lapsed: the sweep flips it to 'expired' and the view
-// path stops serving it (ADR-0030).
+// path stops serving it (ADR-0005).
 func TestView_expiredByGCReturns410(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")

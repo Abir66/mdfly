@@ -4,7 +4,7 @@
 // Publish. Only a markdown Root is parsed for references; a non-markdown Root
 // (text, code, binary) has no links to follow and yields a single-file bundle.
 //
-// Reference gating follows ADR-0025 and CONTEXT.md: non-`.md` assets directly
+// Reference gating follows ADR-0010 and CONTEXT.md: non-`.md` assets directly
 // referenced by an included file are always pulled in; linked `.md` files are
 // followed transitively only under Options.Recursive. References that resolve
 // outside the project root — via `../`, an absolute path, `file://`, or a

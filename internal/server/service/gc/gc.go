@@ -1,8 +1,8 @@
-// Package gc runs the periodic document lifecycle sweep (ADR-0030): anonymous
+// Package gc runs the periodic document lifecycle sweep (ADR-0005): anonymous
 // published Documents past their expires_at become 'expired' (410), pending rows
 // that never committed within the abandon grace become 'abandoned' (404), and
 // terminal rows past their blob-delete grace lose their R2 blobs. The sweep is
-// driven by the jobs runner (ADR-0029) and is safe to repeat — each transition
+// driven by the jobs runner (ADR-0003) and is safe to repeat — each transition
 // selects only rows still in the source status, and a re-deleted blob prefix is
 // already empty.
 package gc

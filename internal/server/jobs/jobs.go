@@ -1,4 +1,4 @@
-// Package jobs runs named periodic work on in-process tickers (ADR-0029):
+// Package jobs runs named periodic work on in-process tickers (ADR-0003):
 // each registered job gets its own goroutine and ticker, started at boot and
 // stopped cleanly on shutdown.
 package jobs

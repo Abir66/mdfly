@@ -8,7 +8,7 @@ import (
 )
 
 // DeleteDocument handles DELETE /v1/documents/{slug}: Edit-Token-authenticated
-// soft delete (ADR-0015). Success is 204 No Content.
+// soft delete (ADR-0008). Success is 204 No Content.
 func DeleteDocument(svc *document.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := httpx.BearerToken(r.Header.Get("Authorization"))

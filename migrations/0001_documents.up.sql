@@ -31,7 +31,7 @@ CREATE INDEX documents_owner_idx
     ON documents (owner_user_id, updated_at DESC)
     WHERE owner_user_id IS NOT NULL AND deleted_at IS NULL;
 
--- Work-list for the blob-deletion pass (ADR-0030): terminal rows whose R2 blobs
+-- Work-list for the blob-deletion pass (ADR-0005): terminal rows whose R2 blobs
 -- are still present. updated_at is the transition timestamp for all three
 -- terminal statuses, so it orders the per-status grace window.
 CREATE INDEX documents_blob_gc_idx

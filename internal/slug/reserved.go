@@ -21,7 +21,7 @@ var reservedWords = map[string]struct{}{
 	"admin":     {},
 	"docs":      {},
 	"app":       {},
-	// Static-asset + landing route namespaces (ADR-0023 / ADR-0024). _static is
+	// Static-asset + landing route namespaces (ADR-0011 / ADR-0010). _static is
 	// outside the slug grammar so it needs no entry — only the Worker route.
 	"landing": {},
 	"static":  {},

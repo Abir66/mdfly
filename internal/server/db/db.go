@@ -61,7 +61,7 @@ func (c *Client) Close() {
 }
 
 // Tx is a Client's statement set bound to an open transaction. It exists so a
-// row flip and its purge enqueue commit or roll back together (ADR-0031).
+// row flip and its purge enqueue commit or roll back together (ADR-0012).
 type Tx struct {
 	ops
 	tx pgx.Tx

@@ -8,7 +8,7 @@ import (
 )
 
 // CDN host + pinned library versions for the lazy-loaded enrichment shims
-// (ADR-0018). Pulling from jsdelivr keeps the binary small and reuses the
+// (ADR-0010). Pulling from jsdelivr keeps the binary small and reuses the
 // libraries' own CDN caching.
 const (
 	cdnBase        = "https://cdn.jsdelivr.net"

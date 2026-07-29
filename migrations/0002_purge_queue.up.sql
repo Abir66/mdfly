@@ -1,4 +1,4 @@
--- Durable CDN purge queue (ADR-0031). One row per slug awaiting invalidation:
+-- Durable CDN purge queue (ADR-0012). One row per slug awaiting invalidation:
 -- the slug primary key deduplicates repeated writes to the same document, and
 -- next_attempt_at carries the retry backoff the drain job orders by.
 CREATE TABLE purge_queue (
