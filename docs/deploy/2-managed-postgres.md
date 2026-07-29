@@ -46,12 +46,21 @@ postgres://<role>:<password>@<host>:5432/<database>?sslmode=require
 `sslmode=require` is **not optional**. Unlike Redis, this connection leaves the
 machine.
 
-This is a URI, so the password must be **percent-encoded** — every character outside
-`A-Z a-z 0-9 - . _ ~`, not a particular short list. An unencoded `@` is the classic
-one: it splits the URL at the wrong place and you get a confusing "host not found".
+Two different things mangle a password here, and they want opposite fixes.
+
+**The URI.** Reserved characters must be **percent-encoded** — `@` above all, which
+otherwise splits the URL at the wrong place and gets you a confusing "host not found".
+
+**The shell.** In double quotes, `bash` expands `$`, `` ` ``, and `\` *before* psql
+sees the string. A password containing `$922` silently becomes `22` (bash reads `$9`,
+an empty positional parameter, then literal `22`) and you get
+`password authentication failed` for a password you know is right. Always put a
+connection URI in **single** quotes on the command line. Note the inverse in `.env`:
+Compose's `env_file` runs no shell, so there the value goes in raw and **unquoted** —
+quotes would become part of the password.
 
 Easiest path by far: generate a password with no punctuation, e.g.
-`openssl rand -hex 32`, and skip encoding entirely.
+`openssl rand -hex 32`. Neither problem can then occur.
 
 If the provider offers **both a pooled and a direct endpoint**, use the pooled one
 for `DATABASE_URL` (the app has its own pool and opens long-lived connections) and
@@ -69,19 +78,20 @@ sudo apt-get -y install postgresql-client-16
 Then, before going any further:
 
 ```sh
- psql "postgres://<role>:<pw>@<host>:5432/<db>?sslmode=require" -Atc "select version(), now();"
+ psql 'postgres://<role>:<pw>@<host>:5432/<db>?sslmode=require' -Atc 'select version(), now();'
 ```
 
-Test the **whole string**, password included — that is what catches a percent-encoding
-mistake before it becomes a container that will not boot. Note the **leading space**:
-Ubuntu's default `HISTCONTROL=ignoreboth` includes `ignorespace`, so it keeps the
-password out of `~/.bash_history`. To prompt instead, and give up the encoding check:
-`psql -h <host> -p 5432 -U <role> -d <db> "sslmode=require"`.
+**Single quotes**, per 2.3 — double quotes let the shell rewrite your password. Test the
+**whole string**, password included, since that is what catches an encoding mistake
+before it becomes a container that will not boot. Note the **leading space**: Ubuntu's
+default `HISTCONTROL=ignoreboth` includes `ignorespace`, so it keeps the password out
+of `~/.bash_history`. To prompt instead, and give up the encoding check:
+`psql -h <host> -p 5432 -U <role> -d <db> 'sslmode=require'`.
 
 | Symptom | Cause |
 |---|---|
 | Hangs, then times out | The firewall allowlist from 2.2 is missing or has the wrong IP |
-| `password authentication failed` | Wrong password, or an unencoded special character |
+| `password authentication failed` | Double quotes let the shell eat part of the password (2.3), an unencoded reserved character, or genuinely the wrong password — in that order of likelihood |
 | `no pg_hba.conf entry ... no encryption` | `sslmode=require` missing |
 | `database "..." does not exist` | Wrong database name, or the role has no access to it |
 
