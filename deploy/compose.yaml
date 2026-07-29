@@ -47,7 +47,7 @@ services:
     volumes:
       - redis-data:/data
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
-    # No `ports:` — see docs/deploy/redis-rate-limit-setup.md §3.
+    # No `ports:` — that omission is what keeps Redis private, not the firewall.
 
   # One-shot: `docker compose run --rm migrate`. `$$` escapes Compose's
   # interpolation so the container's shell expands DATABASE_URL from env_file,

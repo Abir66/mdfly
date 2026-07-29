@@ -69,6 +69,13 @@ docker compose logs -f app
 docker compose logs --since 1h app | grep -E '"level":"(WARN|ERROR)"'
 ```
 
+Redis at its cap is not an outage. `volatile-lru` evicts a limiter key, which grants
+that subject a fresh allowance — the same outcome as fail-open. If the cap is somehow
+reached with nothing volatile left to shed, writes get `OOM command not allowed when
+used memory > 'maxmemory'`, the limiter treats it as any other Redis error and fails
+open, and the edge rule still throttles floods. Rising `evicted_keys` at v1 traffic
+means something is wrong with key TTLs, not that you need more memory.
+
 ## 6.3 Rotations
 
 ```sh
@@ -91,6 +98,13 @@ docker compose run --rm migrate && docker compose up -d app
 
 Redis needs no such care on a move — the counters are disposable, and a fresh
 keyspace grants everyone a new window (ADR-0013).
+
+**Moving Redis off-box**, if it ever comes to that: take the provider's RESP/TCP
+`rediss://` URL — not a REST endpoint, since the adapter speaks RESP over a pooled
+connection — put it in `REDIS_URL`, drop the `redis` service, and `redis.conf` and
+the volume stop mattering (the provider owns persistence and memory policy). Weigh
+two things first: the per-request latency of leaving the box, and whether the free
+tier's command quota covers your write volume at ~1 command per write.
 
 **Origin CA certificate** renewal is a 15-year problem, so the procedure will need
 re-learning: re-run step 3.3 and `docker compose restart caddy`. Nothing else

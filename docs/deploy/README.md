@@ -11,8 +11,8 @@ Follow these in order. Each one needs something the previous one produced.
 | 5 | [Verify](5-verify.md) | Proof each piece works, with a checklist |
 | 6 | [Operate](6-operate.md) | Redeploys, troubleshooting, runbook |
 
-Reference, not a step: [Redis rate limiter](redis-rate-limit-setup.md) — the config's
-rationale, behaviour under memory pressure, and deeper verification.
+Six files, nothing else. The rate limiter's Redis is set up in step 4 and verified in
+step 5 like everything else — ADR-0013 holds the reasoning behind it.
 
 ## What you are building
 

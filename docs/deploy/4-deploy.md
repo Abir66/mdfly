@@ -39,6 +39,19 @@ Then fill in `.env`:
 `redis` is a compose service name, resolved by Docker's embedded DNS — not
 `localhost`, which inside a container means that container.
 
+`redis.conf` needs no tuning beyond the password. Its four settings, for when you
+wonder later why they are what they are:
+
+| Setting | Why |
+|---|---|
+| `bind 0.0.0.0` | All interfaces *this container has* — not the internet, since no host port is published |
+| `maxmemory 512mb` | A ceiling on the **dataset**, not the process — Redis exceeds it through fragmentation and non-evictable buffers, so leave headroom rather than treating it as OOM protection. Roughly 25× what the limiter needs (~20 MB at 100k subjects/hour) |
+| `maxmemory-policy volatile-lru` | Evict only TTL-bearing keys. Every limiter key has one, so pressure sheds counters and an evicted counter just grants a fresh allowance. `allkeys-lru` would shed durable data instead |
+| `appendonly yes` + `appendfsync everysec` | A crash loses at most one second of counting |
+
+Window sizes, limits, pool size, and timeouts are code constants in
+`internal/server/ratelimit` and `internal/server/redis` — not config.
+
 Leave the job intervals (`PURGE_DRAIN_INTERVAL`, `LIFECYCLE_GC_INTERVAL`,
 `ABANDON_GRACE`, `BLOB_DELETE_GRACE`) at their commented defaults unless you have a
 reason. `MDFLY_API` is a **CLI** variable and does not belong in this file.
@@ -124,5 +137,11 @@ A healthy first boot:
 Expected warnings, both harmless: `redis unreachable at boot, rate limiter will
 fail open` if Redis is still starting, and `cloudflare not configured, cdn purges
 will stay queued` if you left the Cloudflare values empty.
+
+`REDIS_URL` has three boot behaviours worth knowing apart: **unset** logs `redis not
+configured, write paths are unthrottled` and runs without the limiter (a supported
+local-dev mode, never production); **malformed** fails the boot deliberately, rather
+than degrading to unthrottled behind your back; **set but unreachable** warns as above
+and starts anyway.
 
 Next: [5. Verify](5-verify.md).
