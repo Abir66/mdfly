@@ -36,9 +36,9 @@ type Config struct {
 }
 
 // RateLimitConfig holds the Redis connection backing the write-path rate limiter
-// (ADR-0013). Env var: REDIS_URL — `rediss://…` for Upstash's TLS endpoint,
-// `redis://…` for a local instance. Empty means unconfigured — the server boots
-// with the limiter off.
+// (ADR-0013). Env var: REDIS_URL — `redis://…` for the local instance on the
+// backend's VM, `rediss://…` for a managed TLS endpoint. Empty means
+// unconfigured — the server boots with the limiter off.
 type RateLimitConfig struct {
 	URL string
 }

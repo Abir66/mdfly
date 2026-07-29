@@ -1,7 +1,9 @@
 # PRD: Deployment & Production Hardening
 
 **Triage:** `ready-for-agent`
-**Governed by:** ADR-0028 (app rate limiting on Redis), ADR-0029 (Oracle Always Free VM + in-process tickers — supersedes ADR-0007), ADR-0030 (blob deletion + lifecycle GC), ADR-0031 (durable CDN purge queue — supersedes the purge mechanism of ADR-0021).
+**Governed by:** ADR-0013 (app rate limiting on self-hosted Redis), ADR-0003 (Oracle Always Free VM + in-process tickers), ADR-0005 (blob deletion + lifecycle GC), ADR-0012 (durable CDN purge queue), ADR-0011 (Cloudflare edge).
+
+> **ADR numbering:** this PRD predates the ADR consolidation (31 → 14, commit `d0f76b2`). The header above uses current numbers; body references to ADR-0007/0017/0019/0021/0028–0032 are pre-consolidation and not yet renumbered.
 
 > Supersedes the stale "Deployment & Production Hardening" sketch in `docs/issues/README.md` (which referenced a never-written Azure/`reclaim` design). Compute target is Oracle, not Azure; blobs are *deleted*, never "reclaimed".
 
@@ -19,7 +21,7 @@ mdFly's core publish / update / view / delete loop works, but the service is not
 Harden the backend for a genuinely-free, always-on deployment and close the abuse and leak vectors:
 
 - Run on an **Oracle Cloud Always Free VM** (always-on, no scale-to-zero, no CPU-minute cap), so periodic work can run as **in-process tickers** with no external scheduler.
-- Add an **identity-aware application rate limiter** on Redis in front of the write paths, beneath the existing Cloudflare edge limit — one `REDIS_URL` selects the deployment (managed Upstash by default, self-hosted `redis://` supported).
+- Add an **identity-aware application rate limiter** on Redis in front of the write paths, beneath the existing Cloudflare edge limit. Redis is **self-hosted on the same VM** as a sibling container (durable AOF, `maxmemory 512mb`, `volatile-lru`), reached over a single `REDIS_URL` that keeps a managed `rediss://` endpoint available as a URL swap.
 - Add a **lifecycle GC** that marks Anonymous Documents `expired` at their TTL and never-committed rows `abandoned`, then **deletes the corresponding R2 blobs** by slug prefix after a safety grace.
 - Make cache invalidation **durable**: enqueue a purge in the same transaction as the commit/delete, attempt it inline, and drain a retry queue on a ticker so a purge is never permanently lost.
 
@@ -35,6 +37,7 @@ To a publisher, editor, viewer, and the owner, the product behaves exactly as do
 6. As a **legitimate publisher**, I want generous-enough limits (10/min and 30/hr per subject), so that normal CLI use never trips the limiter.
 7. As a **CI user**, I want a `429` to carry `X-RateLimit-*` and `Retry-After` headers, so that my script can back off correctly (CLI exit code 5).
 8. As the **owner**, I want the limiter to **fail open** when Redis is unreachable, so that a Redis outage degrades to "unthrottled" (edge limit still stands), never to "all writes blocked".
+8b. As the **owner**, I want Redis to run on my own VM with AOF persistence and a memory cap, so that I pay no vendor, pay no cross-network latency per write, and have a durable store already in place for the first state that actually needs to survive a restart.
 9. As a **viewer / AI agent**, I want read paths (SSR HTML, LLM twin, CDN assets) to never be rate-limited, so that reading a Document is always fast and served from edge cache.
 10. As the **owner**, I want an hourly lifecycle GC job, so that expiry, abandonment, and blob deletion happen automatically without me running anything by hand.
 11. As an **anonymous publisher**, I want my Document to auto-expire 30 days after my last publish/update, so that throwaway shares don't live forever.
@@ -65,7 +68,7 @@ To a publisher, editor, viewer, and the owner, the product behaves exactly as do
 
 **Modules** (approved with the user; deep modules behind interfaces, thin adapters isolated for fakeability):
 
-- **`ratelimit`** (deep) — `Allow(ctx, key string) (allowed bool, err error)`. Implements dual fixed-window counting (10/min + 30/hr) via a single house operation `IncrementWithTTL(ops)` that pipelines every window's `INCR` + `EXPIRE` into one round trip, where each key embeds a time-bucket step `floor(now/window)`. Fails open on any backing-store error. Backed by a thin, vendor-neutral **`redis`** RESP/TCP-pool adapter behind an interface, configured by a single `REDIS_URL` — `rediss://` for managed Upstash (the default provider) or `redis://` for a self-hosted instance, a URL swap with no code change.
+- **`ratelimit`** (deep) — `Allow(ctx, key string) (allowed bool, err error)`. Implements dual fixed-window counting (10/min + 30/hr) via a single house operation `IncrementWithTTL(ops)` that pipelines every window's `INCR` + `EXPIRE` into one round trip, where each key embeds a time-bucket step `floor(now/window)`. Fails open on any backing-store error. Backed by a thin, vendor-neutral **`redis`** RESP/TCP-pool adapter behind an interface, configured by a single `REDIS_URL` — `redis://` for the VM-local instance (the default) or `rediss://` for a managed endpoint, a URL swap with no code change.
 - **rate-limit middleware + client-IP resolver** (shallow, in `middleware`/`httpx`) — resolves the subject key (Edit Token from `Authorization` on update/delete; otherwise `CF-Connecting-IP`, trusted only from Cloudflare's published ranges since `RemoteAddr` is a Cloudflare edge IP), calls `ratelimit.Allow`, and on deny returns `429` with `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `Retry-After`. Wraps `publish/init`, `update/init`, and `DELETE /documents/:slug` only.
 - **`jobs`** (deep-ish) — a ticker-driven runner: `Register(name string, interval time.Duration, fn func(ctx))` + `Start`/`Stop`, with an injectable clock so ticks can be driven in tests. Started at boot, stopped on graceful shutdown.
 - **`service/gc`** (deep) — the hourly lifecycle sweep as pure logic over `db` and `storage` interfaces: (a) mark anon `published` rows past `expires_at` → `expired`; (b) mark `pending` rows older than the 1h grace → `abandoned`; (c) for rows needing blob deletion with `blobs_deleted_at IS NULL`, call `storage.DeletePrefix` then stamp `blobs_deleted_at`. Grace: 24h for `deleted`/`expired`, immediate for `abandoned`. Bounded batch per pass.
@@ -97,7 +100,7 @@ CREATE TABLE purge_queue (
 - Rate-limit `429` envelope is the standard `{"error":{code,message}}` plus the three rate-limit headers; CLI maps to exit code 5.
 - Purge covers exactly two prefixes per slug; success is not a commit precondition.
 
-**Compute / ops (ADR-0029):** Oracle Always Free ARM VM, always-on; all jobs in-process on tickers; no Cloudflare Worker/Cron trigger and no internal job endpoint. Portability constraints from ADR-0007 retained. Provisioning the VM, the Redis instance, and the Cloudflare API token are **manual HITL prerequisites**, not agent-run (see external-setup note below).
+**Compute / ops (ADR-0029):** Oracle Always Free ARM VM, always-on; all jobs in-process on tickers; no Cloudflare Worker/Cron trigger and no internal job endpoint. Portability constraints from ADR-0007 retained — they govern the Go process, so Redis running on the box with its own named Docker volume is consistent with them. Redis config is a file (`deploy/redis.conf`) rather than env vars because `requirepass` and `maxmemory-policy` are not env-readable; the *backend* still takes only `REDIS_URL`. Provisioning the VM and the Cloudflare API token are **manual HITL prerequisites**, not agent-run (see external-setup note below); Redis is now part of the compose stack rather than a console signup.
 
 ## Testing Decisions
 
@@ -115,7 +118,7 @@ CREATE TABLE purge_queue (
 ## Out of Scope
 
 - **Cross-Update orphaned-Asset GC** — deleting blobs whose refcount drops after an Update. Deferred per ADR-0017 (accepted leak); this PRD is delete/expiry/abandon only.
-- **Provisioning and edge config** — standing up the Oracle VM, the Redis instance (Upstash console or a local install), the Cloudflare API token/zone rules. These are manual HITL prerequisites (an AFK agent can't self-apply console/credential operations), tracked as separate setup steps, not code slices here.
+- **Provisioning and edge config** — standing up the Oracle VM, the Cloudflare API token/zone rules. These are manual HITL prerequisites (an AFK agent can't self-apply console/credential operations), tracked as separate setup steps, not code slices here.
 - **CLI distribution, CI/CD pipeline, self-host packaging** — separate concerns.
 - **Auth/session rate limiting** — v1 has no login on these paths; identity is the Edit Token or IP. Session-keyed limits arrive with OAuth (post-v1).
 - **DB read caches** — ruled out this session; the edge cache already keeps the DB off the view hot path.
@@ -123,5 +126,6 @@ CREATE TABLE purge_queue (
 ## Further Notes
 
 - **Every slice that touches an external service must ship setup guidance** — exact Cloudflare/Redis/Oracle/R2 setup steps, env vars, token scopes, and verification — because the owner runs all external setup by hand on the free tier. This is a standing project rule.
+- **Redis is no longer an external service.** Moving it onto the VM removed a vendor signup from the HITL prerequisite list and replaced it with compose config; the remaining console work is Oracle, Cloudflare, and R2.
 - **ADR bookkeeping:** ADR-0029 supersedes ADR-0007 (status line added); ADR-0031 supersedes the purge mechanism of ADR-0021 (amend note added). The `docs/issues/README.md` "Deployment & Production Hardening" section and its ADR-0028–0032 references are stale and will be rewritten when this PRD is cut into issues (`/to-issues`).
 - **Job correctness is independent of always-on:** the durable `purge_queue` and DB-tracked `blobs_deleted_at` survive reboots regardless; Oracle's always-on property only removes the external-trigger tax and the "will my goroutine be killed" hazard of a scale-to-zero host.

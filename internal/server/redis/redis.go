@@ -1,8 +1,9 @@
 // Package redis is the Redis-backed counter store for the write-path rate
 // limiter (ADR-0013). It holds a persistent RESP connection pool, so a request
 // spends one round trip on an already-open socket rather than a fresh HTTP
-// exchange. The URL selects the deployment — Upstash's TLS endpoint or a local
-// instance — so nothing here is vendor-specific.
+// exchange. The URL selects the deployment — the local instance on the
+// backend's VM by default, or a managed TLS endpoint — so nothing here is
+// vendor-specific.
 package redis
 
 import (

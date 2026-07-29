@@ -1,60 +1,122 @@
-# Redis setup for the write-path rate limiter (ADR-0028)
+# Redis setup for the write-path rate limiter (ADR-0013)
 
 The backend rate-limits `POST /v1/publish/init`, `POST /v1/update/init`, and
 `DELETE /v1/documents/{slug}` at 10/min and 30/hr per subject, counting in Redis
-over a pooled TCP connection. Nothing is pre-provisioned — do this by hand once.
+over a pooled TCP connection.
 
-The server reads **one** env var, `REDIS_URL`, so either backend below works with
-no code change:
+Redis is **self-hosted on the backend's own VM** (ADR-0003) as a sibling
+container — no vendor, no command quota, and a sub-millisecond hop instead of a
+10–50 ms TLS round trip on every write request. It is configured for durability
+so it can back state beyond the limiter later, even though the counters
+themselves are disposable.
 
-- **Upstash** (default) — `rediss://…`, managed, free tier, no ops.
-- **Self-hosted on the Oracle VM** — `redis://127.0.0.1:6379`, sub-millisecond,
-  no vendor. See §5.
+The server reads **one** env var, `REDIS_URL`, so a managed endpoint remains a
+URL swap with no code change if this ever needs to move off-box (§6).
 
-## 1. Create the Upstash database
+## 1. The Redis config file
 
-1. Sign in at <https://console.upstash.com> (GitHub/Google login is fine).
-2. **Redis** → **Create Database**.
-   - **Name**: `mdfly-ratelimit`
-   - **Type**: Regional (free tier). Global costs money and buys nothing here —
-     the limiter is called from one VM.
-   - **Region**: the region closest to the Oracle VM (ADR-0029). Every write
-     request pays this round trip once.
-   - **TLS**: enabled (default).
-3. Create. The free tier gives 500k commands/month and 256 MB; the limiter uses
-   4 commands per write request, so budget ~125k write requests/month.
+Create `deploy/redis.conf` alongside the compose file:
 
-## 2. Copy the TCP connection URL
+```conf
+# Reachable on the Docker bridge network only — the compose service publishes
+# no host port, so this is not internet-reachable. See §3.
+bind 0.0.0.0
+port 6379
+requirepass CHANGE_ME_LONG_RANDOM
 
-On the database page, use the **Redis (TCP)** connection tab — *not* the REST
-tab. Take the `rediss://` URL, which already embeds the password:
+# Ceiling so Redis can never grow until the Linux OOM killer picks a victim
+# (which might be the Go server, not Redis).
+maxmemory 512mb
+# Evict only keys that carry a TTL. Every limiter key does by construction;
+# durable data added later will not, so pressure sheds counters first and never
+# touches durable state. `allkeys-lru` would do the opposite.
+maxmemory-policy volatile-lru
+
+# Durability: append every write to a log, flushed once per second, so a crash
+# loses at most 1s. RDB snapshots alongside give a single copyable backup file.
+appendonly yes
+appendfsync everysec
+save 900 1
+dir /data
+```
+
+Generate the password with `openssl rand -base64 32` and keep it in
+`deploy/mdfly.env`, not in the config file, if you prefer — but note
+`requirepass` cannot read an env var, so it must be literal here. Keep
+`redis.conf` out of git if you inline a real password; commit a
+`redis.conf.example` instead.
+
+Nothing else needs tuning. Window sizes, limits, pool size, and timeouts are
+code constants in `internal/server/ratelimit` and `internal/server/redis`.
+
+## 2. The compose service
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - redis-data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+    restart: unless-stopped
+    # No `ports:` — deliberate. See §3.
+
+volumes:
+  redis-data:
+```
+
+Then in the backend's environment:
 
 ```
-REDIS_URL=rediss://default:<password>@<name>-<id>.upstash.io:6379
+REDIS_URL=redis://:CHANGE_ME_LONG_RANDOM@redis:6379
 ```
 
-The password is the read-write credential; the limiter runs `INCR` and `EXPIRE`,
-so a read-only token will not work.
+`redis` is the compose service name; Docker's embedded DNS resolves it on the
+project network.
 
-## 3. Set the env var on the backend
+**The named volume is the load-bearing detail.** A container's own filesystem is
+destroyed when the container is recreated, so without `redis-data:/data` Redis
+writes its AOF faithfully and the file disappears on every redeploy — you get
+the appearance of persistence with none of the substance. Named volume, not an
+anonymous one, not a bind mount into the container's ephemeral layer.
 
-Add it to the backend's environment (the systemd unit / `docker run --env-file`
-on the Oracle VM, per S44). No other config is needed: window sizes, limits, pool
-size, and timeouts are code constants in `internal/server/ratelimit` and
-`internal/server/redis`.
+## 3. Why no published port
 
-Leaving it unset is a supported mode: the server logs
-`redis not configured, write paths are unthrottled` at boot and runs without the
-limiter (local dev, tests). Production must set it — the Cloudflare edge rule
-alone is IP-only. A **malformed** URL is not a supported mode: it fails the boot
-rather than silently degrading to unthrottled.
+Docker only opens a host firewall path for ports listed under `ports:`. Omitting
+the key leaves Redis addressable on the compose bridge network — by the `app`
+and `migrate` containers — and unreachable from the internet, so `bind 0.0.0.0`
+here means "all interfaces *this container has*", not "the public internet".
+`requirepass` is defence in depth for the case where something else later joins
+that network. Never add a `6379:6379` mapping "to debug" — use
+`docker compose exec redis redis-cli` instead, which needs no exposure.
 
-If the URL parses but Redis is unreachable at boot, the server logs
-`redis unreachable at boot, rate limiter will fail open` and starts anyway.
+## 4. Behaviour under memory pressure
 
-## 4. Verify
+512 MB is roughly 25× what the limiter needs: two keys per subject per window,
+both TTL'd, so ~100k distinct subjects in an hour lands near 20 MB. The headroom
+exists so the cases below stay theoretical.
 
-After deploying with the var set:
+At `maxmemory` with `volatile-lru`, Redis evicts the least-recently-used
+TTL-bearing key to make room. Limiter keys are the entire eviction pool. An
+evicted counter means a subject silently gets a fresh allowance — the same
+outcome as fail-open, and acceptable.
+
+If the cap is reached with **no** volatile keys left to shed, writes get
+`OOM command not allowed when used memory > 'maxmemory'.` Reads keep working and
+Redis does not crash. The limiter treats that like any other Redis error and
+**fails open**, so the write path stays up and the Cloudflare edge limit (L1)
+still throttles floods. A future durable consumer would see the error
+explicitly, which is the point of choosing `volatile-lru` — better an error it
+can handle than an eviction it discovers later.
+
+Watch three numbers: `used_memory` against `maxmemory`, `evicted_keys`, and free
+disk on the volume. `docker compose exec redis redis-cli -a "$PASS" info memory`
+covers the first two.
+
+## 5. Verify
+
+### 5a. The limiter throttles
 
 ```sh
 # 11 rapid publishes from one IP — the 11th must come back 429.
@@ -74,40 +136,80 @@ curl -sD - -o /dev/null -X POST https://api.mdfly.dev/v1/publish/init \
 ```
 
 `X-RateLimit-Limit: 10`, `X-RateLimit-Remaining: 0`, `Retry-After: <seconds to
-the next minute>`. In the Upstash console, **Data Browser** shows the two keys
-one request creates, each with a TTL — for the anonymous curls above,
+the next minute>`.
+
+### 5b. The keys look right
+
+```sh
+docker compose exec redis redis-cli -a "$PASS" --scan --pattern 'rl:*'
+```
+
+Each request creates two keys, each with a TTL — for the anonymous curls above,
 `rl:ip:<addr>:1m:<step>` and `rl:ip:<addr>:1h:<step>`; an authenticated request
 writes `rl:token:<digest>:1m:<step>` and `rl:token:<digest>:1h:<step>` instead.
 Edit Tokens appear only as a digest prefix — the credential itself is never
 written to Redis. An IPv6 caller has its colons flattened to dots, so `::1`
 appears as `rl:ip:..1:1m:<step>` rather than splitting the key into more
-segments.
+segments. Confirm every key has a TTL (`redis-cli -a "$PASS" ttl <key>` returns
+a positive number, never `-1`) — a limiter key without one would be outside the
+`volatile-lru` eviction pool.
 
-To confirm fail-open, make Redis genuinely unreachable — the pool holds open
-connections, so rotating the password alone leaves the live sockets working and
-proves nothing. Drop the connections: block egress to the Redis port from the VM
-(`sudo iptables -A OUTPUT -p tcp --dport 6379 -j REJECT`), or for a self-hosted
-instance `sudo systemctl stop redis-server`. Writes must keep succeeding, with
-`rate limiter unavailable, allowing request` in the logs. Restore Redis
-afterwards (`sudo iptables -D OUTPUT …` / `systemctl start`) and re-run §4 to see
-the limiter throttle again.
-
-## 5. Alternative: self-host on the Oracle VM
-
-Because compute is an always-on VM (ADR-0029), a local Redis is a valid store and
-removes both the network hop and the vendor:
+### 5c. Persistence survives a restart
 
 ```sh
-sudo apt-get install -y redis-server
-sudo systemctl enable --now redis-server
+docker compose exec redis redis-cli -a "$PASS" set probe:persist ok
+docker compose restart redis
+docker compose exec redis redis-cli -a "$PASS" get probe:persist   # => "ok"
+docker compose exec redis redis-cli -a "$PASS" del probe:persist
 ```
 
-Then set `REDIS_URL=redis://127.0.0.1:6379` and restart the backend. Bind Redis to
-loopback only (the Ubuntu default) and leave it off the VM's public ingress rules.
-Verification in §4 is unchanged except that `redis-cli --scan --pattern 'rl:*'`
-replaces the Data Browser. The limiter's guarantee is unaffected: counters still
-survive a backend restart, since Redis is a separate process. They do not survive
-a VM rebuild: the counters reset, so a subject that had spent its allowance gets
-a fresh one and the replacement VM serves traffic unthrottled until the windows
-refill. Accepted — a rebuild is rare and operator-driven, and the Cloudflare edge
-limit still stands throughout.
+Then the stronger test — the one that catches a missing named volume:
+
+```sh
+docker compose exec redis redis-cli -a "$PASS" set probe:persist ok
+docker compose down && docker compose up -d
+docker compose exec redis redis-cli -a "$PASS" get probe:persist   # => "ok"
+```
+
+If the second returns `(nil)`, the volume is not attached. Fix that before
+believing anything is durable. Use a key with no TTL for this probe: a TTL'd key
+is eviction-eligible and proves less.
+
+### 5d. Fail-open
+
+Make Redis genuinely unreachable — the pool holds open connections, so rotating
+the password alone leaves live sockets working and proves nothing. Stop the
+container outright:
+
+```sh
+docker compose stop redis
+```
+
+Writes must keep succeeding, with `rate limiter unavailable, allowing request`
+in the logs. Restart (`docker compose start redis`) and re-run §5a to see the
+limiter throttle again.
+
+## 6. Boot-time modes
+
+Leaving `REDIS_URL` unset is a supported mode: the server logs
+`redis not configured, write paths are unthrottled` at boot and runs without the
+limiter (local dev, tests). Production must set it — the Cloudflare edge rule
+alone is IP-only.
+
+A **malformed** URL is not a supported mode: it fails the boot rather than
+silently degrading to unthrottled.
+
+If the URL parses but Redis is unreachable at boot, the server logs
+`redis unreachable at boot, rate limiter will fail open` and starts anyway.
+
+## 7. If this ever moves off-box
+
+A managed provider (Upstash, Redis Cloud, ElastiCache) works with no code
+change — take the provider's **RESP/TCP** `rediss://` URL, not a REST endpoint,
+since the adapter speaks RESP over a pooled connection, and set it as
+`REDIS_URL`. Sections 1–3 stop applying (the provider owns persistence and
+memory policy) and §5b/§5c move to the provider's own console and tooling.
+
+Two things to check before making that trade: the per-request latency cost of
+leaving the box, and whether the free tier's monthly command quota covers your
+write volume at ~1 command per write request.
