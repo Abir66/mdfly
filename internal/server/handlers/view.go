@@ -19,7 +19,7 @@ func View(svc *view.Service) http.HandlerFunc {
 }
 
 // ViewPath handles GET /{slug}/{path...}, rendering a nested page. A trailing
-// slash is 301-canonicalized to the slash-free form (ADR-0024) so every node has
+// slash is 301-canonicalized to the slash-free form (ADR-0010) so every node has
 // one URL.
 func ViewPath(svc *view.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

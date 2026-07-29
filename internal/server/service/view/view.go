@@ -47,7 +47,7 @@ func (s *Service) RenderRoot(ctx context.Context, slug string) (string, *httpx.E
 }
 
 // RenderPath renders a nested page for GET /{slug}/{path...}. rawPath is the
-// project-root-relative key with its extension intact (ADR-0024); up is the
+// project-root-relative key with its extension intact (ADR-0010); up is the
 // optional ?up=N count reconstructing a key above the project root.
 func (s *Service) RenderPath(ctx context.Context, slug, rawPath, up string) (string, *httpx.Error) {
 	if slug == "" {
@@ -86,7 +86,7 @@ func (s *Service) loadManifest(ctx context.Context, slug string) (manifest.Manif
 }
 
 // render resolves key against the bundle manifest and dispatches on node type
-// (ADR-0024). A markdown key renders to HTML; an image renders inline; another
+// (ADR-0010). A markdown key renders to HTML; an image renders inline; another
 // file renders a text preview or download card (S24); a directory prefix renders
 // a Directory Listing; anything else is a 404.
 func (s *Service) render(ctx context.Context, slug string, mfst manifest.Manifest, key string) (string, *httpx.Error) {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-// Cache lifetimes (seconds) for slug responses. Per ADR-0018, slug HTML is a pure
+// Cache lifetimes (seconds) for slug responses. Per ADR-0010, slug HTML is a pure
 // function of (slug, manifest_hash): a short browser max-age plus a long edge
 // s-maxage lets Cloudflare absorb the read fan-out. A 404 caches briefly only —
 // the slug might be created tomorrow.
@@ -16,7 +16,7 @@ const (
 )
 
 const (
-	// robotsTagSlug marks every slug response unindexable (CONTEXT.md / ADR-0021).
+	// robotsTagSlug marks every slug response unindexable (CONTEXT.md / ADR-0011).
 	robotsTagSlug = "noindex, nofollow"
 	// robotsTagNotFound omits nofollow — a 404 has no links to follow.
 	robotsTagNotFound = "noindex"

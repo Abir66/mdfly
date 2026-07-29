@@ -10,7 +10,7 @@ import (
 )
 
 // UpdateInit handles POST /v1/update/init: Edit-Token-authenticated presign of
-// only the blobs that changed since the stored manifest (ADR-0027).
+// only the blobs that changed since the stored manifest (ADR-0006).
 func UpdateInit(svc *publish.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req api.UpdateInitRequest

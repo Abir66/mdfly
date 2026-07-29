@@ -10,7 +10,7 @@ import (
 )
 
 // persistPublish records the freshly published document in Local State and
-// stores its Edit Token in the separate credentials file (ADR-0026/ADR-0015).
+// stores its Edit Token in the separate credentials file (ADR-0009/ADR-0008).
 // A file publish records the absolute source path; a Text Publish records a nil
 // path. It is called only after a successful commit.
 func persistPublish(stateDir string, src input.Source, bundle Bundle, commit api.CommitResponse, editToken string) error {

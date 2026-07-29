@@ -12,7 +12,7 @@ import (
 )
 
 // connectingIPHeader carries the real client IP through Cloudflare; the TCP peer
-// behind the proxy is a Cloudflare edge address, not the caller (ADR-0028).
+// behind the proxy is a Cloudflare edge address, not the caller (ADR-0013).
 const connectingIPHeader = "CF-Connecting-IP"
 
 // cloudflareRanges is Cloudflare's published edge address space
@@ -44,7 +44,7 @@ var cloudflareRanges = mustParsePrefixes(
 	"2c0f:f248::/32",
 )
 
-// rateLimitSubject identifies who to charge a request to (ADR-0028): the Edit
+// rateLimitSubject identifies who to charge a request to (ADR-0013): the Edit
 // Token when the caller carries one, otherwise the client IP. A token is
 // fingerprinted rather than used verbatim — the subject becomes a Redis key in a
 // third-party store, and a credential does not belong there.

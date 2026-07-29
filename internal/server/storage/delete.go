@@ -21,7 +21,7 @@ type objectStore interface {
 }
 
 // DeletePrefix removes every object under a slug's blob prefix. Blobs are
-// per-slug namespaced with no cross-Document sharing (ADR-0001), so the whole
+// per-slug namespaced with no cross-Document sharing (ADR-0004), so the whole
 // prefix is authoritative and no key ledger is needed. An empty prefix is a
 // no-op, which makes the call idempotent: a repeat pass after a crash finds
 // nothing to delete.

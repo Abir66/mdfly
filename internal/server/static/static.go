@@ -1,5 +1,5 @@
 // Package static embeds the Viewer chrome's CSS and JS and serves them as
-// content-hashed, immutable assets under the reserved /_static/ path (ADR-0024).
+// content-hashed, immutable assets under the reserved /_static/ path (ADR-0010).
 // The hash in each URL lets the CDN cache the bytes forever; a content change
 // mints a new URL. ssr references the hashed URLs so the template never inlines
 // the chrome (supersedes S19's inline <style>).

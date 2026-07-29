@@ -348,7 +348,7 @@ func (k *keyRecorder) all() []string {
 }
 
 // failFirstN wraps h so the first n calls return 503 before reaching h; retries
-// after n run the real handler, exercising server-side idempotency (ADR-0013).
+// after n run the real handler, exercising server-side idempotency (ADR-0006).
 // Every call records the request's idempotency_key (body preserved for h).
 func failFirstN(n int32, rec *keyRecorder, h http.HandlerFunc) (http.HandlerFunc, *int32) {
 	var calls int32
@@ -621,7 +621,7 @@ var _ = api.CommitResponse{URL: ""}
 // TestCLIDelete_gcRemovesBlobs is the lifecycle end of the blackbox path: two
 // documents are published, one is deleted through the CLI, its URL starts
 // serving 410, and a GC pass past the blob-delete grace removes exactly that
-// slug's blobs from R2 while the other document's blobs stay put (ADR-0030).
+// slug's blobs from R2 while the other document's blobs stay put (ADR-0005).
 func TestCLIDelete_gcRemovesBlobs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: requires docker")

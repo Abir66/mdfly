@@ -8,7 +8,7 @@ import (
 )
 
 // routes builds the server's HTTP handler: route table + global middleware. The
-// write endpoints additionally carry the app rate limiter (ADR-0028); read paths
+// write endpoints additionally carry the app rate limiter (ADR-0013); read paths
 // are edge-cached and never limited.
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Retry policy for init/commit per ADR-0013: bounded attempts with exponential
+// Retry policy for init/commit per ADR-0006: bounded attempts with exponential
 // backoff + jitter. Retries cover transient failures (5xx, connection timeout,
 // DNS failure, EOF mid-response); 4xx are user errors and never retried. The
 // caller reuses one idempotency_key across all attempts of a single publish, so

@@ -104,7 +104,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}, nil
 }
 
-// newPurge builds the CDN purge service (ADR-0031), or returns nil when
+// newPurge builds the CDN purge service (ADR-0012), or returns nil when
 // Cloudflare is unconfigured — local dev still enqueues purges durably, it just
 // never contacts the edge, rather than refusing to boot.
 func newPurge(cfg Config, pg *db.Client) *purge.Service {
@@ -123,7 +123,7 @@ func newPurge(cfg Config, pg *db.Client) *purge.Service {
 }
 
 // newLimiter builds the write-path rate limiter over a pooled Redis connection
-// (ADR-0028), returning both so the caller can close the pool. Both are nil when
+// (ADR-0013), returning both so the caller can close the pool. Both are nil when
 // REDIS_URL is unset — local dev runs unthrottled rather than refusing to boot,
 // and the Cloudflare edge limit still stands in production. A malformed URL is a
 // config error and does fail the boot.
@@ -139,7 +139,7 @@ func newLimiter(ctx context.Context, cfg RateLimitConfig) (middleware.Limiter, *
 	return ratelimit.New(client), client, nil
 }
 
-// registerJobs wires the periodic jobs onto runner (ADR-0029). Intervals and
+// registerJobs wires the periodic jobs onto runner (ADR-0003). Intervals and
 // grace windows come from cfg, so nothing about the schedule is hardcoded here.
 // A nil purger leaves the drain unregistered: with no Cloudflare credentials
 // every pass would fail, so queued rows simply wait for a configured process.

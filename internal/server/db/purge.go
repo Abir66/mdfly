@@ -12,7 +12,7 @@ type PurgeTask struct {
 	Attempts int
 }
 
-// EnqueuePurge records that slug's edge cache needs invalidating (ADR-0031).
+// EnqueuePurge records that slug's edge cache needs invalidating (ADR-0012).
 // Call it on a Tx that also carries the row flip, so a committed write can never
 // be left un-enqueued. The slug primary key deduplicates: a second write to the
 // same document reuses the row and resets its backoff, because the newest

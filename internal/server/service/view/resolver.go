@@ -19,7 +19,7 @@ const (
 )
 
 // nestedKey reconstructs the manifest key for GET /{slug}/{path...}. rest is the
-// project-root-relative path with its extension intact (ADR-0024 reverses the
+// project-root-relative path with its extension intact (ADR-0010 reverses the
 // strip-.md convention); up is the optional ?up=N count of "../" prefixes for
 // keys above the project root. ok is false for an empty path or an up value that
 // is malformed, negative, or above maxUp.
@@ -52,7 +52,7 @@ func resolveOGImage(ogPath string, resolve markdown.RefResolver) string {
 
 // pageResolver returns a resolver mapping a markdown reference to its final URL:
 // an in-bundle markdown file → /{slug}/{key with extension} (with ?up=N when
-// above root, per ADR-0024); an in-bundle asset → its public CDN URL. Empty,
+// above root, per ADR-0010); an in-bundle asset → its public CDN URL. Empty,
 // external, or unknown references return ok=false so the caller leaves them
 // verbatim. References are resolved relative to referrerDir (the rendered page's
 // directory).
@@ -81,7 +81,7 @@ func pageResolver(r2 *storage.Client, slug string, mfst manifest.Manifest, refer
 }
 
 // slugPageURL builds the viewer URL for a markdown manifest key. The key's
-// extension is kept (ADR-0024). A key above the project root (leading "../")
+// extension is kept (ADR-0010). A key above the project root (leading "../")
 // encodes its depth as ?up=N because browsers and proxies strip dot-segments
 // from the path.
 func slugPageURL(slug, key string) string {

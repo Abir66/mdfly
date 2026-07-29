@@ -16,7 +16,7 @@ import (
 
 // Purger runs the best-effort CDN purge that follows a delete. The queue row
 // written inside the delete transaction is the durable path, so a nil Purger only
-// delays invalidation to the next drain tick (ADR-0031).
+// delays invalidation to the next drain tick (ADR-0012).
 type Purger interface {
 	AttemptInline(ctx context.Context, slug string)
 }
@@ -64,7 +64,7 @@ func (s *Service) Delete(ctx context.Context, slug, token string) *httpx.Error {
 
 // softDelete flips the row to 'deleted' and enqueues its CDN purge in one
 // transaction, so a deleted document can never keep serving from the edge with no
-// pending purge (ADR-0031).
+// pending purge (ADR-0012).
 func (s *Service) softDelete(ctx context.Context, slug string) error {
 	tx, err := s.Db.Begin(ctx)
 	if err != nil {

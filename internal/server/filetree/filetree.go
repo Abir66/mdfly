@@ -1,7 +1,7 @@
 // Package filetree is the pure, I/O-free resolution core for the Viewer chrome.
 // It consumes the set of project-root-relative Bundle Manifest keys and a request
 // path and decides what the path addresses. project_root never enters this module
-// — that purity is the structural privacy guarantee (PRD: Viewer Chrome, ADR-0024).
+// — that purity is the structural privacy guarantee (PRD: Viewer Chrome, ADR-0010).
 package filetree
 
 import (

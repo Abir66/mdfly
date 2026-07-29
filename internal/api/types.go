@@ -5,17 +5,17 @@ package api
 // cannot drift. The CLI maps on these codes first, falling back to HTTP status.
 const (
 	// CodeIdempotencyPayloadMismatch is returned by /v1/publish/init (422) when
-	// an idempotency_key is reused with a different payload (ADR-0013).
+	// an idempotency_key is reused with a different payload (ADR-0006).
 	CodeIdempotencyPayloadMismatch = "idempotency_key_payload_mismatch"
 	// CodeBadBundle is returned (400) when the submitted bundle is malformed.
 	CodeBadBundle = "bad_bundle"
 	// CodeInvalidEditToken is returned (401/403) when the Edit Token is missing
-	// or does not match the document (ADR-0015).
+	// or does not match the document (ADR-0008).
 	CodeInvalidEditToken = "invalid_edit_token"
 	// CodeSlugTaken is returned (409) when the requested slug is already in use.
 	CodeSlugTaken = "slug_taken"
 	// CodeUpdateConflict is returned (409) when a concurrent update lost the
-	// optimistic-concurrency check (ADR-0012).
+	// optimistic-concurrency check (ADR-0006).
 	CodeUpdateConflict = "update_conflict"
 	// CodeBundleTooLarge is returned (413) when the bundle exceeds the server's
 	// tier quota.
@@ -87,7 +87,7 @@ type UpdateInitRequest struct {
 
 // UpdateInitResponse is the body of a successful POST /v1/update/init. It carries
 // presigned PUTs only for blobs whose (hash, ext) is absent from the stored
-// manifest (ADR-0027); an unchanged file or identical-bytes rename yields none.
+// manifest (ADR-0006); an unchanged file or identical-bytes rename yields none.
 type UpdateInitResponse struct {
 	PresignedURLs map[string]string `json:"presigned_urls"`
 }

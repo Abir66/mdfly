@@ -1,5 +1,5 @@
 // Package ratelimit enforces the application-level write-path rate limit
-// (ADR-0028): dual fixed windows per subject, counted in a shared store so the
+// (ADR-0013): dual fixed windows per subject, counted in a shared store so the
 // limit survives restarts. Counting is one INCR+EXPIRE per window against a key
 // that embeds the window's time bucket, so each window is a fresh self-resetting
 // key and the TTL only garbage-collects dead ones. All of a request's windows are
@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Per-subject request allowances (ADR-0028).
+// Per-subject request allowances (ADR-0013).
 const (
 	PerMinute = 10
 	PerHour   = 30
@@ -39,7 +39,7 @@ type Window struct {
 	Limit int
 }
 
-// DefaultWindows are the ADR-0028 allowances: 10/min and 30/hr per subject.
+// DefaultWindows are the ADR-0013 allowances: 10/min and 30/hr per subject.
 var DefaultWindows = []Window{
 	{Name: "1m", Size: time.Minute, Limit: PerMinute},
 	{Name: "1h", Size: time.Hour, Limit: PerHour},

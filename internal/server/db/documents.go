@@ -32,10 +32,10 @@ const (
 	// re-mintable) but the document serves 410 (CONTEXT.md "Delete").
 	StatusDeleted DocumentStatus = "deleted"
 	// StatusExpired is an anonymous row past its expires_at, flipped by the
-	// lifecycle GC. Serves 410 like StatusDeleted (ADR-0030).
+	// lifecycle GC. Serves 410 like StatusDeleted (ADR-0005).
 	StatusExpired DocumentStatus = "expired"
 	// StatusAbandoned is a pending row that never committed within the abandon
-	// grace. Serves 404 — no URL ever resolved it (ADR-0030).
+	// grace. Serves 404 — no URL ever resolved it (ADR-0005).
 	StatusAbandoned DocumentStatus = "abandoned"
 )
 
@@ -61,7 +61,7 @@ func (d *Document) ManifestHashHex() string {
 }
 
 // MatchesEditToken reports whether the plaintext token matches the row's stored
-// edit_token_hash via a constant-time compare (ADR-0015). Returns false when the
+// edit_token_hash via a constant-time compare (ADR-0008). Returns false when the
 // row has no stored hash or the token is empty; callers map those to 401/403.
 func (d *Document) MatchesEditToken(token string) bool {
 	if token == "" || len(d.EditTokenHash) == 0 {
@@ -73,7 +73,7 @@ func (d *Document) MatchesEditToken(token string) bool {
 
 // ManifestHash returns sha256(json.Marshal(m)), the canonical content hash
 // stored in the manifest_hash column. It is the single definition of payload
-// identity used for idempotency mismatch detection (ADR-0013).
+// identity used for idempotency mismatch detection (ADR-0006).
 func ManifestHash(m manifest.Manifest) ([]byte, error) {
 	_, h, err := marshalManifest(m)
 	return h, err
@@ -208,8 +208,8 @@ type UpdateManifestParams struct {
 
 // UpdateManifest atomically overwrites a published row's manifest and derived
 // counters (bytes_total, file_count), refreshing updated_at and expires_at;
-// slug and URL are unchanged (ADR-0027). When ParentManifestHash is non-nil the
-// UPDATE is guarded by manifest_hash = parent (optimistic concurrency, ADR-0012);
+// slug and URL are unchanged (ADR-0006). When ParentManifestHash is non-nil the
+// UPDATE is guarded by manifest_hash = parent (optimistic concurrency);
 // a nil parent (--force) drops the guard. Returns ErrNotFound when no published
 // row matches — the slug is gone, or a concurrent write moved manifest_hash off
 // the parent (which the caller maps to a 409 conflict).
@@ -258,7 +258,7 @@ RETURNING id, slug, idempotency_key, status,
 // GetBySlug returns the viewable document row for slug. A row that was once
 // public but is gone — 'deleted' or 'expired' — yields ErrGone (→ 410); a
 // missing row, or one that was never public ('pending', 'abandoned'), yields
-// ErrNotFound (→ 404). Only 'published' rows are served (ADR-0030).
+// ErrNotFound (→ 404). Only 'published' rows are served (ADR-0005).
 func (o *ops) GetBySlug(ctx context.Context, sl string) (*Document, error) {
 	doc, err := o.GetBySlugAny(ctx, sl)
 	if err != nil {
@@ -300,7 +300,7 @@ WHERE slug = $1`
 }
 
 // SoftDelete flips slug's row to 'deleted' and stamps deleted_at, keeping the
-// slug reserved (ADR-0002). Returns the updated row, or ErrNotFound if no row
+// slug reserved (ADR-0001). Returns the updated row, or ErrNotFound if no row
 // exists. Re-deleting an already-deleted row is a no-op that returns it as-is.
 func (o *ops) SoftDelete(ctx context.Context, sl string) (*Document, error) {
 	const q = `
@@ -326,7 +326,7 @@ RETURNING id, slug, idempotency_key, status,
 }
 
 // MarkExpired flips up to limit anonymous published rows whose expires_at is at
-// or before now to 'expired' (ADR-0030) and returns how many moved. Owned
+// or before now to 'expired' (ADR-0005) and returns how many moved. Owned
 // Documents carry no expires_at, so the predicate — which matches
 // documents_anon_expiry_idx — never selects them. The status guard keeps
 // repeated passes idempotent: an already-expired row is not re-selected.
@@ -358,7 +358,7 @@ WHERE d.id = c.id`
 }
 
 // MarkAbandoned flips up to limit pending rows created at or before olderThan to
-// 'abandoned' (ADR-0030) and returns how many moved. The predicate matches
+// 'abandoned' (ADR-0005) and returns how many moved. The predicate matches
 // documents_pending_gc_idx, and the status guard makes repeated passes
 // idempotent. Candidates are locked like MarkExpired's, so a concurrent Publish
 // or sweep on the same row is skipped rather than blocked.
@@ -393,7 +393,7 @@ type BlobGCCandidate struct {
 }
 
 // ListBlobGCCandidates returns up to limit terminal rows whose blobs still need
-// deleting, oldest transition first (ADR-0030). 'abandoned' rows qualify at
+// deleting, oldest transition first (ADR-0005). 'abandoned' rows qualify at
 // once — no URL ever served them — while 'deleted' and 'expired' rows wait
 // until their transition timestamp is at or before gracedBefore. The predicate
 // matches documents_blob_gc_idx, and rows already stamped with blobs_deleted_at

@@ -14,7 +14,7 @@ const pathDocuments = "/v1/documents"
 type DeleteOptions struct {
 	APIBase string
 	Slug    string
-	Token   string // Edit Token; sent as "Authorization: Bearer <token>" (ADR-0015)
+	Token   string // Edit Token; sent as "Authorization: Bearer <token>" (ADR-0008)
 }
 
 // DeleteDocument sends DELETE /v1/documents/{slug} with the Edit Token, retrying

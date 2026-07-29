@@ -1,5 +1,5 @@
 // Package cloudflare is a thin adapter for the Cloudflare API calls the backend
-// makes (ADR-0031). Today that is a single operation: purging the edge cache by
+// makes (ADR-0012). Today that is a single operation: purging the edge cache by
 // URL prefix.
 package cloudflare
 
