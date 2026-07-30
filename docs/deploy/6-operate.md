@@ -162,7 +162,7 @@ container means Caddy itself.
 **App container boots then exits**
 
 Almost always config. The server requires `DATABASE_URL`, `BASE_URL`, all four
-`R2_*`, and `CDN_BASE_URL`, and refuses to start without any one of them:
+`R2_*`, and `STORAGE_BASE_URL`, and refuses to start without any one of them:
 
 ```sh
 docker compose logs app | tail -20
@@ -184,7 +184,7 @@ app and every caller shares one bucket.
 
 **Images 404 or the Raw toggle errors in the console**
 
-R2. Check `CDN_BASE_URL` matches the custom domain, the custom domain is connected,
+R2. Check `STORAGE_BASE_URL` matches the custom domain, the custom domain is connected,
 and the CORS rule from step 3.5 exists.
 
 **Update serves stale content**

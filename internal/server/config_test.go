@@ -19,7 +19,7 @@ func setRequiredEnv(t *testing.T) {
 		"R2_ACCESS_KEY_ID":      "key",
 		"R2_SECRET_ACCESS_KEY":  "secret",
 		"R2_BUCKET":             "mdfly",
-		"CDN_BASE_URL":          "https://cdn.mdfly.dev",
+		"STORAGE_BASE_URL":      "https://storage.mdfly.dev",
 		"PURGE_DRAIN_INTERVAL":  "",
 		"LIFECYCLE_GC_INTERVAL": "",
 		"ABANDON_GRACE":         "",

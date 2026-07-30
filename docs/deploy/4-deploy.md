@@ -33,7 +33,7 @@ Then fill in `.env`:
 | `R2_ENDPOINT` | from step 3.5 |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | from step 3.5 |
 | `R2_BUCKET` | `mdfly` |
-| `CDN_BASE_URL` | `https://cdn.mdfly.dev` |
+| `STORAGE_BASE_URL` | `https://storage.mdfly.dev` |
 | `CLOUDFLARE_ZONE_ID` / `CLOUDFLARE_API_TOKEN` | from steps 3.1 and 3.9 |
 
 `redis` is a compose service name, resolved by Docker's embedded DNS — not

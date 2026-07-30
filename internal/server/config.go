@@ -92,7 +92,7 @@ func LoadConfig() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	cdnBase, err := requireEnv("CDN_BASE_URL")
+	storageBase, err := requireEnv("STORAGE_BASE_URL")
 	if err != nil {
 		return Config{}, err
 	}
@@ -123,7 +123,7 @@ func LoadConfig() (Config, error) {
 			AccessKeyID:     r2Key,
 			SecretAccessKey: r2Secret,
 			Bucket:          r2Bucket,
-			PublicBaseURL:   cdnBase,
+			PublicBaseURL:   storageBase,
 		},
 		Jobs:      jobs,
 		RateLimit: RateLimitConfig{URL: os.Getenv("REDIS_URL")},

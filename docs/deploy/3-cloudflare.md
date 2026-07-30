@@ -32,7 +32,7 @@ Everything pointing at the origin **must** be proxied. A grey-cloud record puts 
 origin IP in public DNS and lets callers bypass the edge entirely, which breaks both
 the WAF and the rate limiter's client-IP attribution.
 
-`cdn` is created for you in 3.5 — do not add it by hand.
+`storage` is created for you in 3.5 — do not add it by hand.
 
 The three email records exist because there is no transactional email in v1 and
 spammers probe new domains: null-MX (RFC 7505) plus a hard-fail SPF plus a rejecting
@@ -106,14 +106,14 @@ R2_BUCKET=mdfly
 The account ID is in the R2 overview page's S3 API endpoint.
 
 **Public domain** — **the bucket → Settings → Public access → Custom Domains →
-Connect Domain**, `cdn.mdfly.dev`. This creates the DNS record for you and serves
+Connect Domain**, `storage.mdfly.dev`. This creates the DNS record for you and serves
 GETs from the edge without ever touching the backend.
 
 ```
-CDN_BASE_URL=https://cdn.mdfly.dev
+STORAGE_BASE_URL=https://storage.mdfly.dev
 ```
 
-**CORS** — the Viewer's Raw toggle `fetch()`es the source blob from `cdn.` while the
+**CORS** — the Viewer's Raw toggle `fetch()`es the source blob from `storage.` while the
 page is on the apex, so add a rule under **the bucket → Settings → CORS Policy**:
 
 ```json
@@ -138,13 +138,13 @@ not overlap.
 | Rule | When | Then |
 |---|---|---|
 | `api-bypass` | hostname equals `api.mdfly.dev` | **Bypass cache** |
-| `cdn-immutable` | hostname equals `cdn.mdfly.dev` | Eligible for cache; **Edge TTL: override to 1 year**; Browser TTL 1 year |
+| `storage-immutable` | hostname equals `storage.mdfly.dev` | Eligible for cache; **Edge TTL: override to 1 year**; Browser TTL 1 year |
 | `apex-documents` | hostname equals `mdfly.dev` | Eligible for cache; Edge TTL **respect origin** |
 
 `api.` must never be cached — every response is either a mutation or carries an
 `Authorization`-scoped result.
 
-`cdn.` holds content-addressed blobs at `documents/<slug>/<hash>.<ext>`, so the URL
+`storage.` holds content-addressed blobs at `documents/<slug>/<hash>.<ext>`, so the URL
 changes whenever the bytes change and the object can be cached forever. **The Edge
 TTL override is doing real work here**: the presigned PUT does not set a
 `Cache-Control` header, so without this rule the objects fall back to Cloudflare's

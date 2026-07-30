@@ -4,7 +4,7 @@ package slug
 var reservedWords = map[string]struct{}{
 	// Routes (live in v1)
 	"api":     {},
-	"cdn":     {},
+	"storage": {},
 	"healthz": {},
 	"cli":     {},
 	"auth":    {},

@@ -292,19 +292,19 @@ func TestRenderPage_DirectoryListingWithReadme(t *testing.T) {
 
 func TestRenderPage_ImageCenter(t *testing.T) {
 	data := chromeData()
-	data.Image = &ssr.Asset{Name: "logo.png", URL: "https://cdn.mdfly.dev/documents/abc12345/ph.png"}
+	data.Image = &ssr.Asset{Name: "logo.png", URL: "https://storage.mdfly.dev/documents/abc12345/ph.png"}
 	out, err := ssr.RenderPage(data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `<img class="asset-image" src="https://cdn.mdfly.dev/documents/abc12345/ph.png" alt="logo.png">`) {
+	if !strings.Contains(out, `<img class="asset-image" src="https://storage.mdfly.dev/documents/abc12345/ph.png" alt="logo.png">`) {
 		t.Errorf("image center missing inline img:\n%s", out)
 	}
 }
 
 func TestRenderPage_DownloadCard(t *testing.T) {
 	data := chromeData()
-	data.Download = &ssr.Asset{Name: "report.pdf", URL: "https://cdn.mdfly.dev/documents/abc12345/dh.pdf", Size: 4096}
+	data.Download = &ssr.Asset{Name: "report.pdf", URL: "https://storage.mdfly.dev/documents/abc12345/dh.pdf", Size: 4096}
 	out, err := ssr.RenderPage(data)
 	if err != nil {
 		t.Fatal(err)
@@ -318,7 +318,7 @@ func TestRenderPage_DownloadCard(t *testing.T) {
 	if !strings.Contains(out, "4096 bytes") {
 		t.Errorf("download card missing size:\n%s", out)
 	}
-	if !strings.Contains(out, `href="https://cdn.mdfly.dev/documents/abc12345/dh.pdf" download`) {
+	if !strings.Contains(out, `href="https://storage.mdfly.dev/documents/abc12345/dh.pdf" download`) {
 		t.Errorf("download card missing CDN download link:\n%s", out)
 	}
 }
@@ -350,11 +350,11 @@ func TestRenderPage_DescriptionMeta(t *testing.T) {
 }
 
 func TestRenderPage_OGImage(t *testing.T) {
-	out, err := ssr.RenderPage(ssr.PageData{OGImageURL: "https://cdn.mdfly.dev/x.png", Body: template.HTML("<p>body</p>")})
+	out, err := ssr.RenderPage(ssr.PageData{OGImageURL: "https://storage.mdfly.dev/x.png", Body: template.HTML("<p>body</p>")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `og:image" content="https://cdn.mdfly.dev/x.png"`) {
+	if !strings.Contains(out, `og:image" content="https://storage.mdfly.dev/x.png"`) {
 		t.Errorf("missing og:image: %s", out)
 	}
 	if !strings.Contains(out, `twitter:card" content="summary_large_image"`) {
