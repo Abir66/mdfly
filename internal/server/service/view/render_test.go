@@ -16,7 +16,7 @@ import (
 func noFetchService() *Service {
 	return &Service{
 		Static:  static.New(),
-		Storage: storage.New(storage.Config{PublicBaseURL: "https://cdn.mdfly.dev"}),
+		Storage: storage.New(storage.Config{PublicBaseURL: "https://storage.mdfly.dev"}),
 	}
 }
 
@@ -64,7 +64,7 @@ func TestRender_imageInline(t *testing.T) {
 	if herr != nil {
 		t.Fatalf("render: %v", herr)
 	}
-	want := `<img class="asset-image" src="https://cdn.mdfly.dev/documents/slug123/ph.png"`
+	want := `<img class="asset-image" src="https://storage.mdfly.dev/documents/slug123/ph.png"`
 	if !strings.Contains(html, want) {
 		t.Errorf("image render missing inline img:\n%s", html)
 	}
@@ -90,7 +90,7 @@ func TestRender_oversizeTextDownloadCard(t *testing.T) {
 	if !strings.Contains(html, `class="download-card"`) {
 		t.Errorf("oversize text render missing download card:\n%s", html)
 	}
-	if !strings.Contains(html, `href="https://cdn.mdfly.dev/documents/slug123/th.txt"`) {
+	if !strings.Contains(html, `href="https://storage.mdfly.dev/documents/slug123/th.txt"`) {
 		t.Errorf("download card missing CDN link:\n%s", html)
 	}
 }

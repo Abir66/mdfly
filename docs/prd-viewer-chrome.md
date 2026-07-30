@@ -15,7 +15,7 @@ The author, meanwhile, has a privacy concern: their absolute project path (`/Use
 
 Every Document URL renders a documentation-site-style **Viewer chrome**: a collapsible left **file-tree sidebar** showing the whole Bundle (folders collapse/expand like a GitHub or VS Code tree), a **center** column that shows the addressed node, and a **breadcrumb** of the logical path across the top of the center. Click any file or folder in the sidebar to navigate to it (full-page reload, no SPA). The center dispatches on file type: markdown renders to HTML (with a **Raw** toggle that swaps in the byte-identical source); an image displays inline; a text or code file shows server-side syntax-highlighted source; anything else (PDF, archive, binary) shows a metadata card with a Download link; and a **directory** shows a GitHub-style listing of its folders and files, auto-rendering a `README.md`/`index.md` below it.
 
-Privacy is preserved by construction: the sidebar tree and breadcrumb are built **only** from project-root-relative [[Bundle Manifest]] keys; the absolute `project_root` is never emitted to the client. Speed is preserved by keeping the page a pure SSR function of `(slug, key, manifest_hash)` — fully CDN-cacheable per ADR-0018 — with the chrome's CSS/JS served as content-hashed `/_static/*` assets fetched once and reused across every navigation, and the Raw toggle fetching the source blob directly from `cdn.mdfly.dev` (zero backend involvement). Folder collapse uses native `<details>` (no JS); the only client JS is the mobile drawer, the Raw toggle, and persisting the sidebar's collapsed-rail state.
+Privacy is preserved by construction: the sidebar tree and breadcrumb are built **only** from project-root-relative [[Bundle Manifest]] keys; the absolute `project_root` is never emitted to the client. Speed is preserved by keeping the page a pure SSR function of `(slug, key, manifest_hash)` — fully CDN-cacheable per ADR-0018 — with the chrome's CSS/JS served as content-hashed `/_static/*` assets fetched once and reused across every navigation, and the Raw toggle fetching the source blob directly from `storage.mdfly.dev` (zero backend involvement). Folder collapse uses native `<details>` (no JS); the only client JS is the mobile drawer, the Raw toggle, and persisting the sidebar's collapsed-rail state.
 
 ## User Stories
 
@@ -96,7 +96,7 @@ Italicized = deep modules (logic-heavy, narrow interface, isolation-testable).
 ### Edge / IaC
 
 - Worker dispatch table gains `/_static/*` → backend origin (alongside the existing `/_landing/*` → Pages). Per ADR-0023 the table is code-generated from the reserved-words source, so adding the prefix there keeps it from drifting.
-- R2 bucket (`cdn.mdfly.dev`) gains a CORS rule allowing `Access-Control-Allow-Origin: https://mdfly.dev` so the Raw toggle's cross-origin `fetch()` of the source blob succeeds (ADR-0021 amendment).
+- R2 bucket (`storage.mdfly.dev`) gains a CORS rule allowing `Access-Control-Allow-Origin: https://mdfly.dev` so the Raw toggle's cross-origin `fetch()` of the source blob succeeds (ADR-0021 amendment).
 
 ### Caching / headers
 

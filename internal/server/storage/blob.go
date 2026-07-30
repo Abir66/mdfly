@@ -25,7 +25,7 @@ type Config struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	Bucket          string
-	PublicBaseURL   string // e.g. "https://cdn.mdfly.dev" — prepended to BlobKey in responses
+	PublicBaseURL   string // e.g. "https://storage.mdfly.dev" — prepended to BlobKey in responses
 }
 
 // Client wraps an AWS S3 client configured for R2/minio.

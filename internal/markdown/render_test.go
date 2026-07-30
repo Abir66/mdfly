@@ -167,7 +167,7 @@ func TestRenderRefs_rewritesImageAndLinkDestinations(t *testing.T) {
 	resolve := func(ref string) (string, bool) {
 		switch ref {
 		case "./logo.png":
-			return "https://cdn.mdfly.dev/documents/s/abc.png", true
+			return "https://storage.mdfly.dev/documents/s/abc.png", true
 		case "./y.md":
 			return "/s/y", true
 		}
@@ -179,7 +179,7 @@ func TestRenderRefs_rewritesImageAndLinkDestinations(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(got)
-	if !strings.Contains(s, `src="https://cdn.mdfly.dev/documents/s/abc.png"`) {
+	if !strings.Contains(s, `src="https://storage.mdfly.dev/documents/s/abc.png"`) {
 		t.Errorf("image dest not rewritten:\n%s", s)
 	}
 	if !strings.Contains(s, `href="/s/y"`) {

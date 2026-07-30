@@ -22,7 +22,7 @@ step 5 like everything else — ADR-0013 holds the reasoning behind it.
                     └──────┬───────────────────────┬───────────┘
                            │ 443                   │
                            ▼                       ▼
-                  ┌────────────────┐        cdn.mdfly.dev
+                  ┌────────────────┐        storage.mdfly.dev
                   │  Oracle VM     │        (R2 bucket, direct)
                   │  ┌──────────┐  │
                   │  │  Caddy   │  │  ← only published port

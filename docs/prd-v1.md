@@ -13,7 +13,7 @@ The developer also doesn't want to think about hosting. They don't want to spin 
 
 ## Solution
 
-A single CLI verb — `mdfly publish hello.md` — uploads the markdown and every reachable relative asset to mdfly's backend and prints a shareable URL on stdout in under three seconds for a typical bundle. The URL renders the markdown as a fully server-rendered HTML page on `mdfly.dev/<slug>` (an 8-character random base62 slug). Linked images load from `cdn.mdfly.dev` automatically; sibling `.md` files become clickable cross-document links within the same slug.
+A single CLI verb — `mdfly publish hello.md` — uploads the markdown and every reachable relative asset to mdfly's backend and prints a shareable URL on stdout in under three seconds for a typical bundle. The URL renders the markdown as a fully server-rendered HTML page on `mdfly.dev/<slug>` (an 8-character random base62 slug). Linked images load from `storage.mdfly.dev` automatically; sibling `.md` files become clickable cross-document links within the same slug.
 
 For this PRD the only identity is "anonymous" — no login, no account, no `claim`. A successful publish writes a per-slug Edit Token to `~/.mdfly/credentials` (stored for use by later PRDs' `update`/`delete`/`claim` flows; not consumed by any verb in this slice). Anonymous Documents expire 30 days after publish (cron sweep, out of scope for this PRD's verbs but the column is set at commit time so the expiry infrastructure has data to act on later).
 
@@ -126,7 +126,7 @@ Per `[[API Surface]]`, every `4xx`/`5xx` carries `{"error":{"code":"<enum>","mes
 
 ### Deployment shape
 
-Backend is a single Go binary built from `cmd/mdfly-server` and deployed to DO App Platform per ADR-0007. Postgres is DO Managed Postgres. R2 is a single bucket; `cdn.mdfly.dev` custom-domain wiring is deferred to the edge PRD — assets in this slice are served via a stable R2 dev URL referenced from rendered HTML. Final `mdfly.dev` apex routing (Cloudflare Worker per ADR-0023) is deferred; the slice runs against the raw DO hostname (or local dev) until the edge PRD lands. `goreleaser` for the CLI binary is wired now (homebrew tap can come later; binary download from GH Releases is enough for this slice).
+Backend is a single Go binary built from `cmd/mdfly-server` and deployed to DO App Platform per ADR-0007. Postgres is DO Managed Postgres. R2 is a single bucket; `storage.mdfly.dev` custom-domain wiring is deferred to the edge PRD — assets in this slice are served via a stable R2 dev URL referenced from rendered HTML. Final `mdfly.dev` apex routing (Cloudflare Worker per ADR-0023) is deferred; the slice runs against the raw DO hostname (or local dev) until the edge PRD lands. `goreleaser` for the CLI binary is wired now (homebrew tap can come later; binary download from GH Releases is enough for this slice).
 
 ## Testing Decisions
 
@@ -171,7 +171,7 @@ Explicitly deferred to follow-up PRDs:
 - **`update`, `delete`, `claim`.** All three require the Edit Token verification path (or session auth for owned) that this slice intentionally does not wire any endpoints for. The Edit Token *is* generated and persisted by this slice's publish — it just isn't consumed by any verb yet.
 - **`remove`, `list`.** Pure local-state verbs that this slice's CLI doesn't need to demonstrate the publish→view loop.
 - **The `/llm/<slug>` LLM twin.** Per ADR-0018, same backend resolution as human routes minus the HTML wrap. Deferred to its own PRD; not needed to validate human view.
-- **Final edge routing.** Cloudflare Worker at apex per ADR-0023, `api.mdfly.dev` subdomain, `cdn.mdfly.dev` custom-domain wiring, `www.mdfly.dev` redirect, `mdfly.dev/cli/login`, WAF/Bot Fight, rate-limit at the edge, Cloudflare Purge on commit, robots.txt at edge — all deferred to an edge PRD. The slice runs against raw DO + raw R2 dev URL until then.
+- **Final edge routing.** Cloudflare Worker at apex per ADR-0023, `api.mdfly.dev` subdomain, `storage.mdfly.dev` custom-domain wiring, `www.mdfly.dev` redirect, `mdfly.dev/cli/login`, WAF/Bot Fight, rate-limit at the edge, Cloudflare Purge on commit, robots.txt at edge — all deferred to an edge PRD. The slice runs against raw DO + raw R2 dev URL until then.
 - **Anonymous Document expiry cron.** The column `expires_at` is populated by this slice's commit. The cron that scans `documents_anon_expiry_idx` and soft-deletes expired rows is deferred — at v1 launch there will be no rows older than 30 days anyway.
 - **Pending-row GC cron.** Same reasoning: column-population is here, cron loop is later.
 - **Per-IP rate limit on `/v1/publish/init`.** Per ADR-0017 a crude token-bucket lives in v1; deferred to the abuse-protection PRD (it composes orthogonally with this slice's endpoints).

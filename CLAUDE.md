@@ -20,7 +20,7 @@ CONTEXT.md is the spec; ADRs are the why.
 
 - `mdfly.dev` — apex; Worker-routed between Cloudflare Pages (landing/legal) and backend (slugs + LLM twin)
 - `api.mdfly.dev/v1/*` — backend HTTP API
-- `cdn.mdfly.dev` — R2 assets
+- `storage.mdfly.dev` — R2 assets
 - `app.mdfly.dev` — v2 dashboard (NXDOMAIN in v1)
 - `www.mdfly.dev` — 301 → apex
 
