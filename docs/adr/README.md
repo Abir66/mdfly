@@ -8,7 +8,7 @@ There are no superseded ADRs in this directory. When a decision is reversed, the
 |---|---|
 | [0001](0001-document-shape-slug-visibility-namespace.md) | One mutable public Document per slug, flat global namespace |
 | [0002](0002-go-stack-and-monorepo-layout.md) | Go for both binaries, single-module monorepo layout |
-| [0003](0003-compute-always-free-vm-and-in-process-tickers.md) | Always-on free-tier VM, periodic work as in-process tickers |
+| [0003](0003-compute-always-free-vm-and-in-process-tickers.md) | Always-on free-tier VM, in-process tickers in a dedicated jobs process |
 | [0004](0004-content-hash-flat-storage-on-r2.md) | Content-hash flat storage on R2 with manifest indirection |
 | [0005](0005-postgres-metadata-store-schema-and-lifecycle.md) | Postgres metadata store: six tables, lifecycle GC, full DDL |
 | [0006](0006-publish-and-update-wire-protocols.md) | Publish and Update wire protocols, idempotency, concurrency |
@@ -20,3 +20,4 @@ There are no superseded ADRs in this directory. When a decision is reversed, the
 | [0012](0012-durable-cdn-purge-queue.md) | Durable CDN purge queue with retry |
 | [0013](0013-two-layer-identity-aware-rate-limiting.md) | Two-layer identity-aware rate limiting |
 | [0014](0014-v1-scope.md) | v1 milestone scope |
+| [0015](0015-prebuilt-images-and-blue-green-deploy.md) | Prebuilt images, operator-triggered blue-green deploy |

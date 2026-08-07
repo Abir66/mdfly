@@ -28,6 +28,7 @@ services:
       context: ..
       dockerfile: Dockerfile
     image: mdfly-server:local
+    command: ["serve"]
     restart: unless-stopped
     env_file: ../.env
     healthcheck:
@@ -39,6 +40,28 @@ services:
     depends_on:
       redis:
         condition: service_started
+
+  # The periodic work — lifecycle GC and CDN purge drain — in its own process
+  # (ADR-0003). Same image, same .env, no published port and no HTTP surface at
+  # all: it stamps each pass into the job_runs table, and that row is how its
+  # liveness is read. **Exactly one of these runs**, which is what preserves the
+  # single-writer premise behind the purge drain's lease-free claim.
+  #
+  # Its shutdown budget is its own and much larger than the web tier's: no caller
+  # waits on a GC pass, but killing one mid-batch throws the batch away. The
+  # invariant nothing enforces mechanically: stop_grace_period > SHUTDOWN_TIMEOUT,
+  # or Docker SIGKILLs the process before its drain can finish.
+  jobs:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: mdfly-server:local
+    command: ["jobs"]
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      SHUTDOWN_TIMEOUT: 115s
+    stop_grace_period: 120s
 
   redis:
     image: redis:7-alpine

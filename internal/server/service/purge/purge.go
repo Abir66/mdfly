@@ -149,16 +149,18 @@ func (s *Service) Drain(ctx context.Context) (Result, error) {
 	return res, errors.Join(errs...)
 }
 
-// Job adapts Drain to the jobs.Runner signature, logging per-pass counts.
-func (s *Service) Job(ctx context.Context) {
+// Job adapts Drain to the jobs.Runner signature, logging per-pass counts and
+// returning the failure so the runner's recorder can stamp it.
+func (s *Service) Job(ctx context.Context) error {
 	res, err := s.Drain(ctx)
 	if err != nil {
 		slog.Error("cdn purge drain failed", "err", err, "purged", res.Purged, "failed", res.Failed)
-		return
+		return err
 	}
 	if res.Purged > 0 {
 		slog.Info("cdn purge drain", "purged", res.Purged)
 	}
+	return nil
 }
 
 // prefixes returns the two prefixes covering slug: the human page and the LLM

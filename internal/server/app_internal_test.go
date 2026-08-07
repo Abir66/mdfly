@@ -2,9 +2,14 @@ package server
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/jobs"
@@ -12,17 +17,94 @@ import (
 	"github.com/Abir66/mdfly/internal/server/static"
 )
 
-// TestRunStartsAndStopsJobs boots the App's lifecycle without infrastructure:
-// a registered job must tick while Run blocks and stop once Run returns.
-func TestRunStartsAndStopsJobs(t *testing.T) {
-	runner := jobs.New(jobs.SystemClock{})
-	var runs atomic.Int64
-	runner.Register("probe", time.Millisecond, func(context.Context) { runs.Add(1) })
+// lazyPool returns a pool that never connects: pgxpool dials on first use, so
+// assembly can be exercised without infrastructure.
+func lazyPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), "postgres://mdfly:secret@127.0.0.1:1/mdfly")
+	if err != nil {
+		t.Fatalf("open lazy pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
 
+func TestParseRole(t *testing.T) {
+	for _, name := range []string{"serve", "jobs"} {
+		role, err := ParseRole(name)
+		if err != nil || string(role) != name {
+			t.Errorf("ParseRole(%q) = %q, %v", name, role, err)
+		}
+	}
+	for _, name := range []string{"", "server", "job", "SERVE"} {
+		if _, err := ParseRole(name); err == nil {
+			t.Errorf("ParseRole(%q) accepted an unknown subcommand", name)
+		}
+	}
+}
+
+// TestAssemble_webRoleTicksNothing pins the split (ADR-0003): the HTTP process
+// registers no tickers, so the two web processes that overlap during a deploy
+// swap cannot double every job.
+func TestAssemble_webRoleTicksNothing(t *testing.T) {
+	app, err := assemble(context.Background(), Config{BaseURL: "https://mdfly.dev"}, RoleServe, lazyPool(t))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if app.jobs != nil {
+		t.Errorf("web role registered a job runner: %v", app.jobs.Names())
+	}
+	if app.db == nil || app.storage == nil {
+		t.Error("web role must still wire the DB pool and the R2 client")
+	}
+	if app.publish == nil || app.view == nil || app.document == nil || app.static == nil {
+		t.Error("web role is missing the services its routes serve")
+	}
+}
+
+// TestAssemble_jobsRoleTicksAndServesNothing pins the other half: exactly the two
+// tickers, and no Redis — a malformed REDIS_URL would fail the boot if the jobs
+// role built a limiter at all.
+func TestAssemble_jobsRoleTicksAndServesNothing(t *testing.T) {
+	cfg := Config{
+		BaseURL:    "https://mdfly.dev",
+		Jobs:       JobsConfig{LifecycleGCInterval: time.Hour, PurgeDrainInterval: time.Minute},
+		RateLimit:  RateLimitConfig{URL: "not-a-redis-url"},
+		Cloudflare: CloudflareConfig{ZoneID: "zone", Token: "token"},
+	}
+
+	app, err := assemble(context.Background(), cfg, RoleJobs, lazyPool(t))
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	if app.jobs == nil {
+		t.Fatal("jobs role registered no job runner")
+	}
+	want := []string{jobLifecycleGC, jobPurgeDrain}
+	if got := app.jobs.Names(); !slices.Equal(got, want) {
+		t.Errorf("registered jobs = %v, want %v", got, want)
+	}
+	if app.limiter != nil || app.counter != nil {
+		t.Error("jobs role built a Redis limiter")
+	}
+	if app.db == nil || app.storage == nil {
+		t.Error("jobs role must still wire the DB pool and the R2 client")
+	}
+}
+
+// TestRun_jobsRoleStartsTickersAndOpensNoListener covers the jobs process's whole
+// lifecycle: tickers run while Run blocks, stop once it returns, and nothing ever
+// answers on cfg.Addr.
+func TestRun_jobsRoleStartsTickersAndOpensNoListener(t *testing.T) {
+	runner := jobs.New(jobs.SystemClock{}, nil)
+	var runs atomic.Int64
+	runner.Register("probe", time.Millisecond, func(context.Context) error { runs.Add(1); return nil })
+
+	addr := freeAddr(t)
 	app := &App{
-		cfg:    Config{Addr: "127.0.0.1:0", ShutdownTimeout: 5 * time.Second},
-		static: static.New(),
-		jobs:   runner,
+		role: RoleJobs,
+		cfg:  Config{Addr: addr, ShutdownTimeout: 5 * time.Second},
+		jobs: runner,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -32,6 +114,12 @@ func TestRunStartsAndStopsJobs(t *testing.T) {
 	go func() { done <- app.Run(ctx) }()
 
 	waitFor(t, func() bool { return runs.Load() > 0 })
+
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if err == nil {
+		conn.Close()
+		t.Fatalf("jobs role opened a listener on %s", addr)
+	}
 
 	cancel()
 	select {
@@ -48,6 +136,54 @@ func TestRunStartsAndStopsJobs(t *testing.T) {
 	if got := runs.Load(); got != after {
 		t.Fatalf("job kept running after shutdown: %d -> %d", after, got)
 	}
+}
+
+// TestRun_webRoleServes pins the other side of the same split: the HTTP process
+// answers on cfg.Addr and shuts down on context cancellation.
+func TestRun_webRoleServes(t *testing.T) {
+	addr := freeAddr(t)
+	app := &App{
+		role:   RoleServe,
+		cfg:    Config{Addr: addr, ShutdownTimeout: 5 * time.Second},
+		static: static.New(),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	done := make(chan error, 1)
+	go func() { done <- app.Run(ctx) }()
+
+	waitFor(t, func() bool {
+		resp, err := http.Get("http://" + addr + "/healthz")
+		if err != nil {
+			return false
+		}
+		resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	})
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after context cancellation")
+	}
+}
+
+// freeAddr returns a loopback address nothing is listening on.
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve port: %v", err)
+	}
+	addr := l.Addr().String()
+	l.Close()
+	return addr
 }
 
 // fakeClock hands out one ticker the test drives by hand, publishing the
@@ -108,7 +244,7 @@ func TestRegisterJobs_lifecycleGC(t *testing.T) {
 		blobsBefore:     make(chan time.Time, 1),
 	}
 
-	runner := jobs.New(clock)
+	runner := jobs.New(clock, nil)
 	registerJobs(runner, JobsConfig{
 		LifecycleGCInterval: interval,
 		AbandonGrace:        grace,
@@ -158,7 +294,7 @@ func TestRegisterJobs_purgeDrain(t *testing.T) {
 	}
 
 	clock := &fakeClock{ticks: make(chan time.Time), created: make(chan time.Duration, 2)}
-	runner := jobs.New(clock)
+	runner := jobs.New(clock, nil)
 	registerJobs(runner, cfg, &fakeGCStore{}, fakeBlobDeleter{}, &purge.Service{})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -179,7 +315,7 @@ func TestRegisterJobs_purgeDrain(t *testing.T) {
 	}
 
 	bareClock := &fakeClock{ticks: make(chan time.Time), created: make(chan time.Duration, 2)}
-	bareRunner := jobs.New(bareClock)
+	bareRunner := jobs.New(bareClock, nil)
 	registerJobs(bareRunner, cfg, &fakeGCStore{}, fakeBlobDeleter{}, nil)
 	bareRunner.Start(ctx)
 

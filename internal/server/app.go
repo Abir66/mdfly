@@ -1,6 +1,7 @@
 // Package server assembles the mdfly-server runtime: configuration, infrastructure
-// clients, domain services, HTTP routes, and graceful lifecycle. cmd/mdfly-server
-// is a thin entrypoint over server.New + App.Run.
+// clients, domain services, HTTP routes, and graceful lifecycle. It assembles in
+// one of two Roles — the process that serves HTTP or the one that ticks (ADR-0003)
+// — and cmd/mdfly-server is a thin entrypoint over server.New + App.Run.
 package server
 
 import (
@@ -43,10 +44,34 @@ const (
 	jobPurgeDrain  = "purge-drain"
 )
 
+// Role selects which half of the binary an App is (ADR-0003): the process that
+// serves HTTP, or the single process that ticks. One binary, two subcommands, so
+// the two can never disagree about the schema or the query layer.
+type Role string
+
+const (
+	RoleServe Role = "serve"
+	RoleJobs  Role = "jobs"
+)
+
+// ParseRole maps a subcommand to its Role. There is deliberately no default: a
+// mistyped or missing subcommand must fail loudly rather than silently starting
+// the wrong process.
+func ParseRole(name string) (Role, error) {
+	switch role := Role(name); role {
+	case RoleServe, RoleJobs:
+		return role, nil
+	default:
+		return "", fmt.Errorf("unknown subcommand %q, want %q or %q", name, RoleServe, RoleJobs)
+	}
+}
+
 // App holds the assembled server: infrastructure clients + domain services.
-// Build with New, run with Run, release resources with Close.
+// Build with New, run with Run, release resources with Close. Which of its
+// fields are populated depends on the Role it was built for.
 type App struct {
 	cfg      Config
+	role     Role
 	pool     *pgxpool.Pool
 	db       *db.Client
 	storage  *storage.Client
@@ -59,49 +84,74 @@ type App struct {
 	counter  *redis.Client
 }
 
-// New wires the App from cfg: opens the DB pool, pings it, builds the R2 client,
-// and constructs domain services. Returns an error on any failure; the caller
-// owns shutdown via App.Close.
-func New(ctx context.Context, cfg Config) (*App, error) {
+// New wires the App for role from cfg: opens the DB pool, pings it, builds the
+// R2 client, and constructs whatever that role runs. Returns an error on any
+// failure; the caller owns shutdown via App.Close.
+func New(ctx context.Context, cfg Config, role Role) (*App, error) {
 	pool, err := openPool(ctx, cfg.Database.URL)
 	if err != nil {
 		return nil, err
 	}
 
-	limiter, counter, err := newLimiter(ctx, cfg.RateLimit)
+	app, err := assemble(ctx, cfg, role, pool)
 	if err != nil {
 		pool.Close()
 		return nil, err
 	}
+	return app, nil
+}
 
-	r2 := storage.New(cfg.R2)
-	pg := db.New(pool)
-	assets := static.New()
-
-	purger := newPurge(cfg, pg)
-	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: cfg.BaseURL}
-	docSvc := &document.Service{Db: pg}
-	if purger != nil {
-		pubSvc.Purge = purger
-		docSvc.Purge = purger
+// assemble wires the infrastructure both roles need — the DB pool and the R2
+// client — then hands off to the role's own wiring. Split from New so assembly
+// is exercisable without a reachable database.
+func assemble(ctx context.Context, cfg Config, role Role, pool *pgxpool.Pool) (*App, error) {
+	app := &App{
+		cfg:     cfg,
+		role:    role,
+		pool:    pool,
+		db:      db.New(pool),
+		storage: storage.New(cfg.R2),
 	}
+	if role == RoleJobs {
+		app.wireJobs()
+		return app, nil
+	}
+	return app, app.wireWeb(ctx)
+}
 
-	runner := jobs.New(jobs.SystemClock{})
-	registerJobs(runner, cfg.Jobs, pg, r2, purger)
+// wireWeb builds what the HTTP process serves with: the rate limiter, the static
+// assets, and the domain services behind the routes. It registers no tickers —
+// periodic work lives in the jobs process, because a deploy swap keeps two web
+// processes alive at once and would otherwise double every job (ADR-0003).
+func (a *App) wireWeb(ctx context.Context) error {
+	limiter, counter, err := newLimiter(ctx, a.cfg.RateLimit)
+	if err != nil {
+		return err
+	}
+	a.limiter, a.counter = limiter, counter
+	a.static = static.New()
 
-	return &App{
-		cfg:      cfg,
-		pool:     pool,
-		db:       pg,
-		storage:  r2,
-		static:   assets,
-		publish:  pubSvc,
-		view:     &view.Service{Db: pg, Storage: r2, Static: assets},
-		document: docSvc,
-		jobs:     runner,
-		limiter:  limiter,
-		counter:  counter,
-	}, nil
+	a.publish = &publish.Service{Db: a.db, Storage: a.storage, BaseURL: a.cfg.BaseURL}
+	a.document = &document.Service{Db: a.db}
+	a.view = &view.Service{Db: a.db, Storage: a.storage, Static: a.static}
+
+	// The best-effort purge fired inline after a write (ADR-0012) belongs where
+	// the write happens. It is deliberately outside the drain's wait group and is
+	// killed at a deploy swap; that is harmless only because the purge_queue row
+	// is the durable path and the jobs process drains it.
+	if purger := newPurge(a.cfg, a.db); purger != nil {
+		a.publish.Purge = purger
+		a.document.Purge = purger
+	}
+	return nil
+}
+
+// wireJobs builds the ticking process: the lifecycle GC and purge services, and
+// the runner they hang off, recording every pass to Postgres. No listener and no
+// Redis — the jobs process answers nothing.
+func (a *App) wireJobs() {
+	a.jobs = jobs.New(jobs.SystemClock{}, a.db)
+	registerJobs(a.jobs, a.cfg.Jobs, a.db, a.storage, newPurge(a.cfg, a.db))
 }
 
 // newPurge builds the CDN purge service (ADR-0012), or returns nil when
@@ -157,13 +207,42 @@ func registerJobs(runner *jobs.Runner, cfg JobsConfig, store gc.Store, blobs gc.
 	}
 }
 
-// Run starts the periodic jobs and the HTTP server, then blocks until ctx is
-// cancelled or a SIGINT/SIGTERM arrives. On shutdown signal, drains in-flight
-// requests and running jobs within cfg.ShutdownTimeout, then returns.
+// Run runs the App's role until ctx is cancelled or a SIGINT/SIGTERM arrives,
+// then drains within cfg.ShutdownTimeout and returns.
 func (a *App) Run(ctx context.Context) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if a.role == RoleJobs {
+		return a.runJobs(ctx)
+	}
+	return a.runWeb(ctx)
+}
+
+// runJobs starts the tickers and blocks until shutdown, then lets a running pass
+// finish within cfg.ShutdownTimeout. That budget is the jobs container's own and
+// far larger than the web tier's (ADR-0015): nobody is waiting on a GC pass, but
+// killing one mid-batch throws the batch away.
+func (a *App) runJobs(ctx context.Context) error {
+	slog.Info("mdfly-server jobs started", "jobs", a.jobs.Names())
+
+	// Jobs get a context detached from the signal so a SIGTERM doesn't abort a
+	// job mid-transaction; the shutdown timeout bounds the wait instead.
+	a.jobs.Start(context.WithoutCancel(ctx))
+	<-ctx.Done()
+	slog.Info("shutdown signal received, draining jobs")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), a.cfg.ShutdownTimeout)
+	defer cancel()
+	if err := a.jobs.Stop(shutdownCtx); err != nil {
+		return fmt.Errorf("stop jobs: %w", err)
+	}
+	return nil
+}
+
+// runWeb serves HTTP until shutdown, then drains in-flight requests within
+// cfg.ShutdownTimeout. It ticks nothing.
+func (a *App) runWeb(ctx context.Context) error {
 	server := &http.Server{
 		Addr:              a.cfg.Addr,
 		Handler:           a.routes(),
@@ -172,10 +251,6 @@ func (a *App) Run(ctx context.Context) error {
 		WriteTimeout:      serverWriteTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}
-
-	// Jobs get a context detached from the signal so a SIGTERM doesn't abort a
-	// job mid-transaction; the shutdown timeout bounds the wait instead.
-	a.jobs.Start(context.WithoutCancel(ctx))
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -194,27 +269,21 @@ func (a *App) Run(ctx context.Context) error {
 		slog.Info("shutdown signal received, draining")
 	}
 
-	if err := a.shutdown(server); err != nil && serveFailure == nil {
+	if err := a.drainRequests(server); err != nil && serveFailure == nil {
 		return err
 	}
 	return serveFailure
 }
 
-// shutdown drains in-flight requests, then stops the job runner, both bounded
-// by cfg.ShutdownTimeout. The runner is always stopped, even if draining
-// requests fails; the HTTP error wins when both fail.
-func (a *App) shutdown(server *http.Server) error {
+// drainRequests lets in-flight requests finish, bounded by cfg.ShutdownTimeout.
+func (a *App) drainRequests(server *http.Server) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), a.cfg.ShutdownTimeout)
 	defer cancel()
 
-	var serverErr error
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		serverErr = fmt.Errorf("shutdown: %w", err)
+		return fmt.Errorf("shutdown: %w", err)
 	}
-	if err := a.jobs.Stop(shutdownCtx); err != nil && serverErr == nil {
-		return fmt.Errorf("stop jobs: %w", err)
-	}
-	return serverErr
+	return nil
 }
 
 // Close releases infrastructure resources. Safe to call after Run returns.
