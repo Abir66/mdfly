@@ -19,11 +19,29 @@ services:
       - ./tls:/etc/caddy/tls:ro
       - caddy-data:/data
       - caddy-config:/config
-    depends_on:
-      app:
-        condition: service_started
+    # No depends_on a web slot: the Caddyfile names both permanently and health
+    # checks decide which is reachable, so Caddy must be able to boot with either
+    # one absent — and depending on a slot would resurrect the one a swap just
+    # stopped.
 
-  app:
+  # The web tier is two fixed slots, `app_blue` and `app_green` (ADR-0015),
+  # identical apart from name and both running `serve`. A deploy starts the idle
+  # slot, waits for its /healthz, then stops the live one; Caddy's config is not
+  # touched.
+  #
+  # Only blue is in the default profile, so a bare `docker compose up -d` brings
+  # up one web slot plus jobs, Redis and Caddy — never both slots. Green is
+  # started explicitly: `docker compose --profile green up -d app_green`. Caddy
+  # prefers blue whenever it is healthy, so a bare `up -d` while green is the live
+  # slot takes traffic back to blue's image; after a swap onto green, leave blue
+  # stopped until the next deploy.
+  #
+  # Both slots carry the tail of the deploy timeout chain, which must strictly
+  # increase and which nothing enforces mechanically:
+  #   request ceiling 30s (serverWriteTimeout) < SHUTDOWN_TIMEOUT 35s < stop_grace_period 45s
+  # Below the drain budget, an in-flight request outlives its slot being stopped;
+  # above the grace period, Docker SIGKILLs the process mid-drain.
+  app_blue:
     build:
       context: ..
       dockerfile: Dockerfile
@@ -31,6 +49,31 @@ services:
     command: ["serve"]
     restart: unless-stopped
     env_file: ../.env
+    environment:
+      SHUTDOWN_TIMEOUT: 35s
+    stop_grace_period: 45s
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      redis:
+        condition: service_started
+
+  app_green:
+    profiles: ["green"]
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: mdfly-server:local
+    command: ["serve"]
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      SHUTDOWN_TIMEOUT: 35s
+    stop_grace_period: 45s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 30s

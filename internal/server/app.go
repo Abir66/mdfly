@@ -34,8 +34,13 @@ import (
 const (
 	serverReadHeaderTimeout = 5 * time.Second
 	serverReadTimeout       = 30 * time.Second
-	serverWriteTimeout      = 60 * time.Second
-	serverIdleTimeout       = 120 * time.Second
+	// The longest a request may run, and the first link of the deploy timeout
+	// chain (ADR-0015): request ceiling < SHUTDOWN_TIMEOUT < stop_grace_period,
+	// the other two set per web slot in deploy/compose.yaml. Keeping it under the
+	// drain budget is what makes a swap complete every request it accepted rather
+	// than severing the slow ones.
+	serverWriteTimeout = 30 * time.Second
+	serverIdleTimeout  = 120 * time.Second
 
 	dbConnectTimeout = 5 * time.Second
 	dbPingTimeout    = 5 * time.Second
