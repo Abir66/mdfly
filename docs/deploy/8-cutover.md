@@ -309,20 +309,27 @@ things:
 
 ```sh
 # always reaches the origin: api.mdfly.dev is Bypass cache (step 3.6)
+: > /tmp/loop-api.log
 while true; do
   curl -s -o /dev/null -w '%{http_code}\n' https://api.mdfly.dev/healthz
   sleep 0.1
-done | sort | uniq -c
+done | tee -a /tmp/loop-api.log
 ```
 
 ```sh
 # a real slug, with a cache-buster so the edge cannot answer for the origin
+: > /tmp/loop-slug.log
 i=0; while true; do
   i=$((i+1))
   curl -s -o /dev/null -w '%{http_code}\n' "https://mdfly.dev/<slug>?cb=$i"
   sleep 0.1
-done | sort | uniq -c
+done | tee -a /tmp/loop-slug.log
 ```
+
+Codes scroll past live, and the count comes from the file afterwards. Do **not**
+pipe the loop straight into `sort | uniq -c`: `sort` cannot emit anything until
+its input ends, and the Ctrl-C that ends the loop kills `sort` along with it — so
+the count you were waiting for never prints.
 
 The `?cb=` is not decoration. `mdfly.dev` is cacheable (step 3.6), so a plain loop
 against a slug would be answered by Cloudflare and would stay green with the
@@ -340,7 +347,14 @@ cd ~/mdfly/deploy
 ./deploy.sh
 ```
 
-Stop the loop (Ctrl-C) once `deploy.sh` returns. The result must be **one line**:
+Stop the loop (Ctrl-C) once `deploy.sh` returns, then count:
+
+```sh
+sort /tmp/loop-api.log | uniq -c
+sort /tmp/loop-slug.log | uniq -c
+```
+
+The result must be **one line** each:
 
 ```
    412 200
