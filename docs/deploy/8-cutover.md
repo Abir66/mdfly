@@ -162,11 +162,25 @@ The old `app` service no longer exists in `deploy/compose.yaml`, so Compose will
 treat its container as an orphan and leave it running. It has to go first, for the
 single-ticker reason in §8.0.
 
+First, prove there is something to move *to*. This removal takes the site down,
+and a box whose registry holds no image has no way forward:
+
 ```sh
-docker compose logs app --tail 20        # a last look, if you want one
+docker pull ghcr.io/abir66/mdfly:$(git -C ~/mdfly rev-parse HEAD)
+```
+
+If that does not end in `Downloaded newer image` or `Image is up to date`, stop —
+re-read the prerequisite at the top of this page. Do not run the next command.
+
+```sh
+docker logs mdfly-app-1 --tail 20        # a last look, if you want one
 docker rm -f $(docker ps -q --filter label=com.docker.compose.project=mdfly \
                             --filter label=com.docker.compose.service=app)
 ```
+
+`docker logs`, not `docker compose logs`: `app` is gone from `compose.yaml`, which
+is exactly why the container is an orphan — Compose no longer knows the name and
+answers `no such service: app`.
 
 **The site is down from this moment until §8.4 finishes** — a few minutes, and the
 one unavoidable outage of the cutover. Caddy and Redis keep running and are not
@@ -573,31 +587,31 @@ alone, and they are gitignored.
 ## Checklist
 
 - [ ] A `read:packages`-only classic token exists, named `mdfly-box-pull`, with an
-      expiry on your calendar
+  expiry on your calendar
 - [ ] The box pulls the current tag, and still does after a reboot with no
-      re-authentication
+  re-authentication
 - [ ] The pre-pipeline `app` container is gone before `jobs` ever started
 - [ ] Caddy was restarted after the pull that changed its config
 - [ ] `--dry-run` was read before the first real deploy, and its path matched what
-      happened
+  happened
 - [ ] The first deploy left four containers with only `caddy` publishing a port
 - [ ] A code-only deploy under a request loop returned `200` and nothing else, on
-      both `api.mdfly.dev/healthz` and a real slug with a cache-buster
+  both `api.mdfly.dev/healthz` and a real slug with a cache-buster
 - [ ] Exactly one web slot remains after the swap
 - [ ] Rollback returned to the previous tag with no non-2xx, and rolling forward
-      worked
+  worked
 - [ ] The schema deploy printed `schema change — migrate, then recreate the live
       slot`, ran the migration before any container was touched, and cost seconds
 - [ ] `deploy.sh rollback` refused to cross that migration, and `--force` was not
-      used
+  used
 - [ ] `lifecycle gc pass` appears in the `jobs` container and zero times in the web
-      slot
+  slot
 - [ ] `job_runs` holds a fresh `last_success_at` for both jobs with
-      `consecutive_failures = 0`
+  `consecutive_failures = 0`
 - [ ] Stopping `jobs` mid-pass exited `0`, not `137`
 - [ ] Package storage is under 500 MB and the prune step's output was read
 - [ ] `docker images ghcr.io/abir66/mdfly` shows exactly two tags, and the
-      locally built image is deleted
+  locally built image is deleted
 - [ ] Every correction is a commit, not box-local knowledge
 
 Back to [6. Operate](6-operate.md) for the day-to-day runbook.
