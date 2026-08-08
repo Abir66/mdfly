@@ -34,7 +34,7 @@ func TestRaw_bytesIdenticalAndHeaders(t *testing.T) {
 	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
 
 	const rootPath = "notes.md"
-	content := []byte("# Notes\n\n<script>not sanitized here</script>\n\nRaw bytes: \x00\x01\xff done.\n")
+	content := []byte("# Notes\n\n<script>not sanitized here</script>\n\nRaw & <b>bytes</b> pass through.\n")
 	files := map[string][]byte{rootPath: content}
 	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-ffffffffff01", "/proj", rootPath, files)
 
@@ -71,6 +71,80 @@ func TestRaw_bytesIdenticalAndHeaders(t *testing.T) {
 	// Raw does not negotiate, so it carries no Vary: Accept.
 	if v := resp.Header.Get("Vary"); v != "" {
 		t.Errorf("Vary=%q, want empty (raw does not negotiate)", v)
+	}
+	// A text/plain file is served inline, so it carries no Content-Disposition.
+	if d := resp.Header.Get("Content-Disposition"); d != "" {
+		t.Errorf("Content-Disposition=%q, want empty (inline)", d)
+	}
+}
+
+// TestRaw_pngServedInlineImage confirms the whitelist wins over the binary sniff:
+// a PNG (whose bytes sniff binary) is served as image/png inline, byte-identical,
+// never as an octet-stream download.
+func TestRaw_pngServedInlineImage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d}
+	files := map[string][]byte{
+		"index.md": []byte("# Index\n"),
+		"logo.png": png,
+	}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-ffffffffff07", "/proj", "index.md", files)
+
+	resp := getRaw(t, srv.URL+"/raw/"+slug+"/logo.png", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type=%q, want image/png", ct)
+	}
+	if d := resp.Header.Get("Content-Disposition"); d != "" {
+		t.Errorf("Content-Disposition=%q, want empty (image is inline)", d)
+	}
+	if body := readAll(t, resp.Body); !bytesEqual(body, png) {
+		t.Errorf("png bytes differ:\n got %q\nwant %q", body, png)
+	}
+}
+
+// TestRaw_binaryServedAsOctetAttachment confirms binary content under a
+// non-whitelisted extension is served as an octet-stream attachment whose
+// filename is the publisher's basename, byte-identical.
+func TestRaw_binaryServedAsOctetAttachment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration: requires docker")
+	}
+
+	dsn := startPostgres(t)
+	env := startMinio(t)
+	srv := newTestServer(t, dsn, env, "https://mdfly.dev")
+
+	blob := []byte{0x00, 0x01, 0x02, 0xff, 0xfe, 0x00}
+	files := map[string][]byte{
+		"index.md": []byte("# Index\n"),
+		"data.bin": blob,
+	}
+	slug := publishFiles(t, srv, "aaaaaaaa-bbbb-cccc-dddd-ffffffffff08", "/proj", "index.md", files)
+
+	resp := getRaw(t, srv.URL+"/raw/"+slug+"/data.bin", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("Content-Type=%q, want application/octet-stream", ct)
+	}
+	if d := resp.Header.Get("Content-Disposition"); d != "attachment; filename=data.bin" {
+		t.Errorf("Content-Disposition=%q, want attachment; filename=data.bin", d)
+	}
+	if body := readAll(t, resp.Body); !bytesEqual(body, blob) {
+		t.Errorf("binary bytes differ:\n got %q\nwant %q", body, blob)
 	}
 }
 

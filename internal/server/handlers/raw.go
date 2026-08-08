@@ -60,6 +60,9 @@ func writeRawResult(w http.ResponseWriter, r *http.Request, f *raw.File, herr *h
 	h.Set("X-Content-Type-Options", contentTypeOptionsNoSniff)
 	h.Set("Content-Security-Policy", rawCSP)
 	h.Set("ETag", etag)
+	if f.Disposition != "" {
+		h.Set("Content-Disposition", f.Disposition)
+	}
 
 	if ifNoneMatch(r.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
