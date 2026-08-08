@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/cli/publish"
@@ -42,14 +43,11 @@ func TestForSingleFile(t *testing.T) {
 	if f.Hash != wantHash {
 		t.Errorf("Hash=%q, want %q", f.Hash, wantHash)
 	}
-	if f.DiskPath != path {
-		t.Errorf("DiskPath=%q, want %q", f.DiskPath, path)
-	}
 	if f.Size != int64(len(content)) {
 		t.Errorf("Size=%d, want %d", f.Size, len(content))
 	}
 	if string(f.Content) != string(content) {
-		t.Errorf("Content=%q, want preloaded small file", f.Content)
+		t.Errorf("Content=%q, want the bytes read from disk", f.Content)
 	}
 }
 
@@ -57,6 +55,41 @@ func TestForSingleFile_notFound(t *testing.T) {
 	_, err := publish.ForSingleFile("/nonexistent/path/file.md")
 	if err == nil {
 		t.Error("want error for nonexistent file, got nil")
+	}
+}
+
+// A file edited on disk after the bundle is built must not change what upload
+// PUTs: Content is the snapshot Hash was computed over, and nothing re-reads
+// DiskPath. The file is deliberately large, since the old size-based inlining
+// dropped Content above 256 KB and re-read it at upload.
+func TestForBundle_contentSnapshotSurvivesDiskEdit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "big.md")
+	original := []byte("# Big\n\n" + strings.Repeat("original ", 64*1024))
+	if err := os.WriteFile(path, original, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := publish.ForBundle(path)
+	if err != nil {
+		t.Fatalf("ForBundle: %v", err)
+	}
+	f := b.FilesByPath["big.md"]
+
+	edited := []byte("# Big\n\n" + strings.Repeat("modified ", 64*1024))
+	if len(edited) != len(original) {
+		t.Fatalf("test setup: edit must keep size (%d vs %d)", len(edited), len(original))
+	}
+	if err := os.WriteFile(path, edited, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if string(f.Content) != string(original) {
+		t.Error("Content changed after disk edit; upload would send bytes the server was not told about")
+	}
+	sum := sha256.Sum256(f.Content)
+	if hex.EncodeToString(sum[:]) != f.Hash {
+		t.Errorf("Content does not hash to Hash=%q", f.Hash)
 	}
 }
 

@@ -165,6 +165,22 @@ func TestRun_textPublishPersistsNilPath(t *testing.T) {
 	}
 }
 
+// A Text Publish has no file on disk, so its bytes must be carried in memory
+// all the way to upload regardless of size. The old size-based inlining dropped
+// Content past 256 KB and left upload re-reading an empty DiskPath.
+func TestRun_largeTextPublishUploadsInMemoryBytes(t *testing.T) {
+	content := []byte("# Inline\n\n" + strings.Repeat("word ", 128*1024))
+	srv := mockServer(t, "index.md", content)
+
+	if _, err := publish.Run(publish.Options{
+		APIBase:  srv.URL,
+		StateDir: t.TempDir(),
+		Source:   input.Source{Kind: input.KindText, Content: content},
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
 func TestRun_parallelUploadWithinCap(t *testing.T) {
 	root := imageHeavyBundle(t, 20)
 	var tr uploadTracker

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -38,12 +37,8 @@ func uploadBlobs(ctx context.Context, client *http.Client, bundle Bundle, presig
 	for path, presignedURL := range presigned {
 		f := bundle.FilesByPath[path]
 		g.Go(func() error {
-			content, err := blobContent(f)
-			if err != nil {
-				return err
-			}
 			if _, err := withRetry(ctx, func() (struct{}, error) {
-				return struct{}{}, putBlob(ctx, client, presignedURL, content)
+				return struct{}{}, putBlob(ctx, client, presignedURL, f.Content)
 			}); err != nil {
 				return fmt.Errorf("upload blob %s: %w", f.Path, err)
 			}
@@ -57,17 +52,4 @@ func uploadBlobs(ctx context.Context, client *http.Client, bundle Bundle, presig
 		})
 	}
 	return g.Wait()
-}
-
-// blobContent returns f's bytes, using the preloaded content for small files
-// and re-reading from disk otherwise.
-func blobContent(f BundleFile) ([]byte, error) {
-	if f.Content != nil {
-		return f.Content, nil
-	}
-	content, err := os.ReadFile(f.DiskPath)
-	if err != nil {
-		return nil, fmt.Errorf("read file %s: %w", f.Path, err)
-	}
-	return content, nil
 }

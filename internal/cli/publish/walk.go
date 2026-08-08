@@ -54,7 +54,7 @@ func ForBundle(rootPath string) (Bundle, error) {
 func bundleFromWalk(res walk.Result) Bundle {
 	files := make(map[string]BundleFile, len(res.Files))
 	for key, f := range res.Files {
-		files[key] = newBundleFile(f.LogicalPath, f.DiskPath, f.Content)
+		files[key] = newBundleFile(f.LogicalPath, f.Content)
 	}
 	return Bundle{
 		RootPath:    res.RootPath,
