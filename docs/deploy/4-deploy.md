@@ -100,14 +100,11 @@ un-deployed stack fail at the pull instead of starting something stale.
 
 ## 4.3 Migrations
 
-Run these **before** the first deploy, for two reasons. The lifecycle-GC ticker
-fires shortly after the `jobs` container boots and logs a loud
-`relation "documents" does not exist` if the schema is not there yet — harmless,
-but it buries the real first-boot output. More importantly, `deploy.sh` picks its
-path by comparing `migrations/` against the applied version: with the schema
-empty it takes the **schema path**, which recreates one web slot and assumes the
-rest of the stack is already up. With migrations applied first, it takes the
-**cold-start path** and brings up the whole default profile — Caddy included.
+Run these **before** the first deploy. `deploy.sh` would apply them itself — it
+migrates before starting anything on either schema path — but doing it here proves
+`DATABASE_URL` reaches the database while there is still nothing to debug around
+it, and it keeps the lifecycle-GC ticker from logging a loud
+`relation "documents" does not exist` over the real first-boot output.
 
 ```sh
 docker compose run --rm migrate

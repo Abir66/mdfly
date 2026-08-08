@@ -64,7 +64,11 @@ if [ "$1" = "compose" ]; then
 		esac
 	done
 	if [ -n "${exec_migrate:-}" ]; then
+		case "$*" in *version*) reading_version=1 ;; esac
 		if [ "$STUB_APPLIED_VERSION" = "none" ]; then
+			# Only the read reports "no migration"; an `up` against an empty
+			# schema succeeds, which is the whole point of a first deploy.
+			[ -z "${reading_version:-}" ] && exit 0
 			echo "error: no migration" >&2
 			exit 1
 		fi
@@ -72,7 +76,7 @@ if [ "$1" = "compose" ]; then
 			echo 'error: dial postgres://mdfly:hunter2@db.example:5432/mdfly' >&2
 			exit 1
 		fi
-		if [ "$STUB_APPLIED_VERSION" = "migrate-fails" ] && [ "${*}" != "${*/version/}" ]; then
+		if [ "$STUB_APPLIED_VERSION" = "migrate-fails" ] && [ -n "${reading_version:-}" ]; then
 			echo "1" >&2
 			exit 0
 		fi
@@ -133,6 +137,7 @@ assert_output_has() { [[ "$OUTPUT" == *"$1"* ]] || fail "expected output to cont
 assert_output_lacks() { [[ "$OUTPUT" != *"$1"* ]] || fail "expected output NOT to contain '$1'"; }
 assert_status() { [ "$STATUS" = "$1" ] || fail "expected exit $1, got $STATUS"; }
 assert_called() { grep -qF -- "$1" "$STUB_LOG" || fail "expected a call matching '$1'"; }
+assert_called_exactly() { grep -qxF -- "$1" "$STUB_LOG" || fail "expected the exact call '$1'"; }
 assert_not_called() { grep -qF -- "$1" "$STUB_LOG" && fail "expected NO call matching '$1'"; return 0; }
 
 # Asserts the first line matching $1 comes before the first matching $2.
@@ -185,6 +190,22 @@ test_dry_run_cold_start() {
 	assert_status 0
 	assert_output_has "cold start"
 	assert_output_has "app_blue"
+	teardown
+}
+
+test_cold_box_with_pending_migrations_starts_the_whole_stack() {
+	setup "a cold box with a pending migration migrates, then starts everything"
+	STUB_APPLIED_VERSION=none
+	run_deploy
+
+	assert_status 0
+	assert_output_has "cold start"
+	# shellcheck disable=SC2016  # matching the literal command line, not expanding it
+	assert_call_order '-database="$DATABASE_URL" up' "docker compose up --detach"
+	# The whole default profile, not one slot — Caddy is in it and nothing else
+	# would start it.
+	assert_called_exactly "docker compose up --detach"
+	assert_not_called "--force-recreate"
 	teardown
 }
 

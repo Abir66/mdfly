@@ -39,7 +39,7 @@ cd ~/mdfly/deploy
 
 `deploy.sh` pulls the repo (for `compose.yaml`, the Caddyfile and `migrations/` —
 the things not baked into the image), pulls `ghcr.io/abir66/mdfly:<tag>`, writes
-that tag into `deploy/.env`, and then takes one of three paths **it picks itself**.
+that tag into `deploy/.env`, and then takes one of four paths **it picks itself**.
 There is no flag for the path, deliberately: a flag is forgotten exactly when you
 are tired, and the failure it prevents is old code meeting a schema it does not
 understand while visitors are on the site.
@@ -49,6 +49,7 @@ understand while visitors are on the site.
 | code-only | `migrations/` matches the applied version | start the idle slot, wait for its `/healthz`, stop the live one — no dropped requests |
 | schema change | `migrations/` has outrun it | run `migrate`, then recreate the single live slot in place — a few seconds of downtime (ADR-0015) |
 | cold start | nothing is serving | bring the whole default profile up |
+| cold start with a schema change | both of the above — a first deploy | migrate, then bring the whole default profile up |
 
 Read `--dry-run`'s first line before every deploy; it is the only place the path is
 announced.

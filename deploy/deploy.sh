@@ -100,7 +100,11 @@ execute() {
 	case "$path" in
 	swap) swap_slots "$LIVE_SLOT" "$IDLE_SLOT" "$CURRENT_TAG" ;;
 	cold-start) cold_start "$IDLE_SLOT" ;;
-	migrate) migrate_in_place "${LIVE_SLOT:-$IDLE_SLOT}" ;;
+	migrate) migrate_in_place "$LIVE_SLOT" ;;
+	cold-migrate)
+		run_migrations
+		cold_start "$IDLE_SLOT"
+		;;
 	esac
 	refresh_jobs
 	prune_images "$tag" "$CURRENT_TAG"
@@ -125,15 +129,22 @@ swap_slots() {
 # No overlap, because a migration would otherwise have to be readable by both
 # versions at once (ADR-0015). Costs a few seconds of downtime.
 migrate_in_place() {
-	local slot=$1 out
+	local slot=$1
+	run_migrations
+	start_slot "$slot" --force-recreate
+	await_health "$slot" ||
+		die "$slot did not come back after the migration — the site is down, fix forward"
+}
+
+# Always before any new code starts, on both schema paths: the schema moves first
+# and only one version ever meets it. A failure here has started nothing.
+run_migrations() {
+	local out
 	if ! out=$(docker compose run --rm -T migrate \
 		'migrate -path=/migrations -database="$DATABASE_URL" up' 2>&1); then
 		printf '%s\n' "$out" | redact >&2
 		die "the migration failed; no new code was started"
 	fi
-	start_slot "$slot" --force-recreate
-	await_health "$slot" ||
-		die "$slot did not come back after the migration — the site is down, fix forward"
 }
 
 # Nothing is serving, so there is no slot to preserve: bring the whole default
@@ -200,7 +211,7 @@ prune_images() {
 # migration is marked, because rollback only moves code.
 bookmark() {
 	local previous=$1 path=$2 crossed=no
-	[ "$path" = migrate ] && crossed=yes
+	case "$path" in migrate | cold-migrate) crossed=yes ;; esac
 	cat >"$STATE_FILE" <<EOF
 PREVIOUS_TAG=$previous
 CROSSED_MIGRATION=$crossed
@@ -280,7 +291,9 @@ slot_tag() {
 }
 
 # Sets DEPLOY_PATH: "migrate" when migrations/ has outrun the applied version,
-# "swap" for a code-only deploy with an overlap, "cold-start" when nothing serves.
+# "swap" for a code-only deploy with an overlap, "cold-start" when nothing serves,
+# and "cold-migrate" for both at once — a first deploy, where recreating a single
+# slot would leave the rest of the stack, Caddy included, unstarted.
 # Nothing about this is a flag the operator has to remember.
 detect_deploy_path() {
 	local latest
@@ -288,6 +301,7 @@ detect_deploy_path() {
 	read_applied_version
 	if [ "$latest" -gt "$APPLIED_VERSION" ]; then
 		DEPLOY_PATH=migrate
+		[ -n "$LIVE_SLOT" ] || DEPLOY_PATH=cold-migrate
 	elif [ -z "$LIVE_SLOT" ]; then
 		DEPLOY_PATH=cold-start
 	else
@@ -331,8 +345,8 @@ print_plan() {
 	echo "current: $CURRENT_TAG"
 	echo "target:  $target"
 	case "$path" in
-	swap | cold-start) echo "serving: $IDLE_SLOT (was ${LIVE_SLOT:-none})" ;;
-	migrate) echo "serving: ${LIVE_SLOT:-$IDLE_SLOT} (recreated in place)" ;;
+	swap | cold-start | cold-migrate) echo "serving: $IDLE_SLOT (was ${LIVE_SLOT:-none})" ;;
+	migrate) echo "serving: $LIVE_SLOT (recreated in place)" ;;
 	esac
 }
 
@@ -341,6 +355,7 @@ path_description() {
 	swap) echo "code-only — start the idle slot, then stop the live one" ;;
 	migrate) echo "schema change — migrate, then recreate the live slot" ;;
 	cold-start) echo "cold start — no slot is serving" ;;
+	cold-migrate) echo "cold start with a schema change — migrate, then start the stack" ;;
 	esac
 }
 
