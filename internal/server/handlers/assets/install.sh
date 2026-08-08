@@ -149,7 +149,13 @@ main() {
 	base="https://github.com/$REPO/releases/download/v${VERSION}"
 
 	tmp=$(mktemp -d)
-	trap 'rm -rf "$tmp"' EXIT INT TERM
+	# A signal trap that only cleans up would return to the next command with the
+	# temp dir already gone, so an interrupted install carries on and can still
+	# exit 0. The signal handlers therefore exit themselves, with the usual
+	# 128+signo status.
+	trap 'rm -rf "$tmp"' EXIT
+	trap 'rm -rf "$tmp"; exit 130' INT
+	trap 'rm -rf "$tmp"; exit 143' TERM
 
 	info "downloading $BINARY v$VERSION ($PLATFORM)"
 	download_file "$base/$archive" "$tmp/$archive" ||
