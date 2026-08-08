@@ -84,6 +84,14 @@ func TestView_returnsRenderedMarkdown(t *testing.T) {
 	if !strings.Contains(bodyStr, `<footer class="site-footer">`) {
 		t.Errorf("single-file bundle missing footer: %s", bodyStr)
 	}
+	// The footer dates the page from the document row's updated_at.
+	if !strings.Contains(bodyStr, "Last updated: ") {
+		t.Errorf("footer missing publish time: %s", bodyStr)
+	}
+	// A single-file bundle addresses a one-entry tree, so no breadcrumb either.
+	if strings.Contains(bodyStr, `class="breadcrumb"`) {
+		t.Errorf("single-file bundle must omit the breadcrumb: %s", bodyStr)
+	}
 }
 
 func TestView_titleFromFrontmatter(t *testing.T) {

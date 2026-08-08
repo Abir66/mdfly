@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Abir66/mdfly/internal/server/filetree"
 )
@@ -38,9 +39,9 @@ type PageData struct {
 	// Breadcrumb come from the filetree package; CSSURL/JSURL are the hashed
 	// /_static asset URLs.
 	Slug string
-	// Sidebar gates the file-tree sidebar and its mobile drawer top bar. It is
-	// false for a single-file bundle, where the tree would list one entry —
-	// the page then renders full-width chrome (breadcrumb, content, footer).
+	// Sidebar gates the file-tree sidebar, its mobile drawer top bar, and the
+	// breadcrumb. It is false for a single-file bundle, where all three would
+	// address a one-entry tree — the page then renders content plus footer only.
 	Sidebar bool
 	// CodeFile marks a whole-file source view (S24 text preview). It renders full
 	// width in a dedicated .code-file container with a line-number gutter, rather
@@ -50,6 +51,9 @@ type PageData struct {
 	Breadcrumb []filetree.Crumb
 	CSSURL     string
 	JSURL      string
+	// UpdatedAt is the bundle's last publish time, shown in the footer. A zero
+	// value omits the line.
+	UpdatedAt time.Time
 	// Listing is the addressed directory's immediate children (S23). When set,
 	// the center renders a Directory Listing above Body; Body then carries the
 	// directory's rendered index document (README/index.md), or is empty.
@@ -78,14 +82,19 @@ type nodePair struct {
 	Node  *filetree.TreeNode
 }
 
-// pageView is PageData plus the computed boot + rail snippets passed to the
-// template. BootScript is empty for documents with no Mermaid/KaTeX placeholders;
-// RailScript is empty when no chrome is rendered.
+// pageView is PageData plus the computed boot + rail snippets and footer
+// timestamp passed to the template. BootScript is empty for documents with no
+// Mermaid/KaTeX placeholders; RailScript is empty when no chrome is rendered;
+// UpdatedLabel is empty when PageData.UpdatedAt is unset.
 type pageView struct {
 	PageData
-	BootScript template.HTML
-	RailScript template.HTML
+	BootScript   template.HTML
+	RailScript   template.HTML
+	UpdatedLabel string
 }
+
+// updatedLayout renders the footer timestamp in UTC, e.g. "Apr 20, 2026 at 2:45 PM UTC".
+const updatedLayout = "Jan 2, 2006 at 3:04 PM MST"
 
 // railStorageKey is the localStorage key holding the collapsed-rail boolean.
 const railStorageKey = "mdfly:sidebar-rail"
@@ -99,14 +108,23 @@ const railSnippet = "(function(){try{if(localStorage.getItem('" + railStorageKey
 func RenderPage(data PageData) (string, error) {
 	var buf bytes.Buffer
 	view := pageView{
-		PageData:   data,
-		BootScript: bootScript(data.EnrichMermaid, data.EnrichMath),
-		RailScript: railScript(data.Tree != nil),
+		PageData:     data,
+		BootScript:   bootScript(data.EnrichMermaid, data.EnrichMath),
+		RailScript:   railScript(data.Tree != nil),
+		UpdatedLabel: updatedLabel(data.UpdatedAt),
 	}
 	if err := pageTmpl.Execute(&buf, view); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+// updatedLabel formats t for the footer, or returns "" when t is unset.
+func updatedLabel(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(updatedLayout)
 }
 
 // railScript wraps railSnippet in a <script> tag when the chrome is rendered.
