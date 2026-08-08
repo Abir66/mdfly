@@ -583,13 +583,27 @@ docker system df
 df -h /
 ```
 
-On a state-B box the locally built image is still there and `deploy.sh` will never
-touch it — its prune only knows the `ghcr.io/abir66/mdfly` repository:
+On a state-B box two things survive the cutover that `deploy.sh` will never touch,
+because its prune only knows the `ghcr.io/abir66/mdfly` repository. Both are dead
+weight the moment the box stops compiling.
+
+The locally built image — the tag is whatever the old workflow used, so read it
+rather than assuming:
 
 ```sh
-docker images | grep -v ghcr.io          # look for mdfly-server:latest & friends
-docker rmi mdfly-server:latest
+docker images | grep -v ghcr.io          # e.g. mdfly-server:local
+docker rmi mdfly-server:<the tag you saw>
 ```
+
+And the build cache, which is the larger of the two and the one nothing else will
+ever reclaim:
+
+```sh
+docker system df                         # Build Cache, often ~1 GB
+docker builder prune -af
+```
+
+Safe by construction: nothing on this box builds an image any more.
 
 Steady, not growing, is the claim: note `docker system df` here, deploy twice more
 over the following days, and check that **Images** total has not moved beyond two
