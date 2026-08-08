@@ -74,6 +74,11 @@ changelog:
       - "^ci:"
 
 release:
+  # Pinned rather than inferred from the git remote, so the cask's download URLs
+  # are identical no matter which clone or fork the release runs from.
+  github:
+    owner: Abir66
+    name: mdfly
   footer: |
     ## Install
 
