@@ -9,6 +9,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-08
+
 ### Fixed
 
 - Uploaded assets are now stored with a `Content-Type`, so an SVG referenced from a
