@@ -91,8 +91,13 @@ func TestRenderPage_FooterUpdatedAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Last updated: Apr 20, 2026 at 2:45 PM UTC") {
+	// The UTC label is the no-JS fallback; the machine-readable instant lets the
+	// client rewrite it in the reader's own zone.
+	if !strings.Contains(out, "Last updated: ") || !strings.Contains(out, "Apr 20, 2026 at 2:45 PM UTC") {
 		t.Errorf("footer missing formatted update time:\n%s", out)
+	}
+	if !strings.Contains(out, `datetime="2026-04-20T14:45:00Z"`) {
+		t.Errorf("footer time missing machine-readable instant:\n%s", out)
 	}
 }
 

@@ -407,7 +407,6 @@ body {
   align-items: center;
   gap: .35rem;
   padding: 2.25rem 2rem 2rem;
-  border-top: 1px solid var(--border);
   text-align: center;
 }
 .footer-brand {

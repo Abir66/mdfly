@@ -88,8 +88,8 @@
         {{template "ic-logo-footer"}}
         <span class="footer-credit">Published with <span class="wordmark-text">MdFly</span></span>
       </a>
-      {{- if .UpdatedLabel}}
-      <p class="footer-updated">Last updated: {{.UpdatedLabel}}</p>
+      {{- with .Updated}}
+      <p class="footer-updated">Last updated: <time datetime="{{.ISO}}" data-local-time>{{.Label}}</time></p>
       {{- end}}
     </footer>
   </main>

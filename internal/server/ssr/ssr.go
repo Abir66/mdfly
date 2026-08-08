@@ -85,12 +85,20 @@ type nodePair struct {
 // pageView is PageData plus the computed boot + rail snippets and footer
 // timestamp passed to the template. BootScript is empty for documents with no
 // Mermaid/KaTeX placeholders; RailScript is empty when no chrome is rendered;
-// UpdatedLabel is empty when PageData.UpdatedAt is unset.
+// Updated is nil when PageData.UpdatedAt is unset.
 type pageView struct {
 	PageData
-	BootScript   template.HTML
-	RailScript   template.HTML
-	UpdatedLabel string
+	BootScript template.HTML
+	RailScript template.HTML
+	Updated    *updatedTime
+}
+
+// updatedTime is the footer timestamp in both forms the page needs: ISO for the
+// <time datetime> attribute the client rewrites into the reader's own zone, and
+// a UTC label that stands as the rendered text when scripts don't run.
+type updatedTime struct {
+	ISO   string
+	Label string
 }
 
 // updatedLayout renders the footer timestamp in UTC, e.g. "Apr 20, 2026 at 2:45 PM UTC".
@@ -108,10 +116,10 @@ const railSnippet = "(function(){try{if(localStorage.getItem('" + railStorageKey
 func RenderPage(data PageData) (string, error) {
 	var buf bytes.Buffer
 	view := pageView{
-		PageData:     data,
-		BootScript:   bootScript(data.EnrichMermaid, data.EnrichMath),
-		RailScript:   railScript(data.Tree != nil),
-		UpdatedLabel: updatedLabel(data.UpdatedAt),
+		PageData:   data,
+		BootScript: bootScript(data.EnrichMermaid, data.EnrichMath),
+		RailScript: railScript(data.Tree != nil),
+		Updated:    newUpdatedTime(data.UpdatedAt),
 	}
 	if err := pageTmpl.Execute(&buf, view); err != nil {
 		return "", err
@@ -119,12 +127,13 @@ func RenderPage(data PageData) (string, error) {
 	return buf.String(), nil
 }
 
-// updatedLabel formats t for the footer, or returns "" when t is unset.
-func updatedLabel(t time.Time) string {
+// newUpdatedTime renders t for the footer, or returns nil when t is unset.
+func newUpdatedTime(t time.Time) *updatedTime {
 	if t.IsZero() {
-		return ""
+		return nil
 	}
-	return t.UTC().Format(updatedLayout)
+	utc := t.UTC()
+	return &updatedTime{ISO: utc.Format(time.RFC3339), Label: utc.Format(updatedLayout)}
 }
 
 // railScript wraps railSnippet in a <script> tag when the chrome is rendered.
