@@ -7,6 +7,28 @@ mdfly publish foo.md
 # → https://mdfly.dev/abc12345
 ```
 
+## Install
+
+Homebrew (macOS, Linux):
+
+```sh
+brew install Abir66/mdfly/mdfly
+```
+
+Shell installer (macOS, Linux) — verifies the download against the release checksums:
+
+```sh
+curl -fsSL https://mdfly.dev/install.sh | sh
+```
+
+Go toolchain:
+
+```sh
+go install github.com/Abir66/mdfly/cmd/mdfly@latest
+```
+
+Windows: download the archive from [Releases](https://github.com/Abir66/mdfly/releases).
+
 ## Development
 
 ```sh

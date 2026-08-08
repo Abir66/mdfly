@@ -12,6 +12,10 @@ builds:
     binary: mdfly
     env:
       - CGO_ENABLED=0
+    # Without this the released binary reports the compiled-in default "dev",
+    # and the once-per-24h update check can never conclude it is current.
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
     goos:
       - linux
       - darwin
@@ -26,6 +30,55 @@ builds:
 archives:
   - id: default
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # scripts/install.sh only ever fetches .tar.gz, but a Windows user unpacks
+    # by hand and expects a zip.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
 
 checksum:
   name_template: checksums.txt
+
+# The cask, not the deprecated `brews` formula. Lives in a sibling tap repo
+# because Homebrew resolves `Abir66/mdfly/mdfly` to `Abir66/homebrew-mdfly`.
+homebrew_casks:
+  - name: mdfly
+    binaries: [mdfly]
+    description: CLI-driven markdown sharing service
+    homepage: https://mdfly.dev
+    repository:
+      owner: Abir66
+      name: homebrew-mdfly
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: goreleaser
+      email: noreply@mdfly.dev
+    # The binary is neither signed nor notarized, so Gatekeeper quarantines it
+    # on download and every invocation dies until the attribute is cleared.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr",
+                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/mdfly"]
+          end
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  footer: |
+    ## Install
+
+    ```sh
+    brew install Abir66/mdfly/mdfly
+    # or
+    curl -fsSL https://mdfly.dev/install.sh | sh
+    ```

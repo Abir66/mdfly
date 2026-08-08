@@ -1,0 +1,37 @@
+name: Release
+
+# Tag-driven, not branch-driven: the tag is the version, and goreleaser refuses
+# to run on a dirty or untagged tree. Tag only commits that already passed CI.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Shallow clones break changelog generation: goreleaser diffs against
+          # the previous tag, which a depth-1 fetch does not contain.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          # Uploads the Release to this repo.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Writes the cask into Abir66/homebrew-mdfly. GITHUB_TOKEN cannot
+          # reach a second repository, so this is a fine-grained PAT scoped to
+          # contents:write on the tap repo and nothing else.
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
