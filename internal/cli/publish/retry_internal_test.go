@@ -52,7 +52,7 @@ func TestPutBlob_retriesTransient503(t *testing.T) {
 	defer srv.Close()
 
 	_, err := withRetry(context.Background(), func() (struct{}, error) {
-		return struct{}{}, putBlob(context.Background(), srv.Client(), srv.URL, []byte("blob"))
+		return struct{}{}, putBlob(context.Background(), srv.Client(), srv.URL, "a.png", []byte("blob"))
 	})
 	if err != nil {
 		t.Fatalf("withRetry(putBlob) failed despite retryable 503s: %v", err)

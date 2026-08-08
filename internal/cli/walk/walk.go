@@ -4,6 +4,11 @@
 // Publish. Only a markdown Root is parsed for references; a non-markdown Root
 // (text, code, binary) has no links to follow and yields a single-file bundle.
 //
+// References are markdown images and links plus their raw-HTML equivalents:
+// `<a href>`, the `src` of `<img>`, `<source>`, `<video>` and `<audio>`,
+// `<video poster>`, and every `srcset` candidate — the markup READMEs use for
+// centred logos, theme-aware images, and embedded demos.
+//
 // Reference gating follows ADR-0010 and CONTEXT.md: non-`.md` assets directly
 // referenced by an included file are always pulled in; linked `.md` files are
 // followed transitively only under Options.Recursive, as are folder references,
@@ -182,10 +187,13 @@ func (w *walker) dirTargets(dir string) []string {
 }
 
 // targets resolves every local reference in a markdown file to an in-root
-// on-disk path. External refs are left untouched; refs whose resolved target
-// escapes the project root are skipped with a warning.
+// on-disk path. Markdown images and links count, as does every raw-HTML
+// reference markdown.HTMLRefs reports — anchor hrefs, media `src`, `<video
+// poster>`, and srcset candidates. External refs are left untouched; refs whose
+// resolved target escapes the project root are skipped with a warning.
 func (w *walker) targets(referrerDir string, content []byte) []string {
 	refs := append(markdown.ImageRefs(content), markdown.LinkRefs(content)...)
+	refs = append(refs, markdown.HTMLRefs(content)...)
 	var out []string
 	for _, ref := range refs {
 		ref = stripFragment(ref)

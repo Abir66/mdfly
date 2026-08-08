@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/blobmeta"
 	"github.com/Abir66/mdfly/internal/server/db"
 	"github.com/Abir66/mdfly/internal/server/handlers"
 	"github.com/Abir66/mdfly/internal/server/service/document"
@@ -401,16 +403,24 @@ func getString(t *testing.T, url string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
-// putBlob uploads via a presigned URL the way the real CLI does: body and
-// Content-Length only. The SHA256 checksum lives in the signed query of the URL,
-// so no checksum header is sent.
+// putBlob uploads via a presigned URL the way the real CLI does: body,
+// Content-Length, and the blob metadata signed into the URL. The SHA256 checksum
+// lives in the signed query, so no checksum header is sent. The content type is
+// taken from the URL's own key, which carries the same extension the server
+// signed and the CLI derives from its logical path.
 func putBlob(t *testing.T, presignedURL string, content []byte) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPut, presignedURL, bytes.NewReader(content))
 	if err != nil {
 		t.Fatalf("build PUT request: %v", err)
 	}
+	key, err := url.Parse(presignedURL)
+	if err != nil {
+		t.Fatalf("parse presigned URL: %v", err)
+	}
 	req.ContentLength = int64(len(content))
+	req.Header.Set("Content-Type", blobmeta.ContentType(key.Path))
+	req.Header.Set("Cache-Control", blobmeta.CacheControl)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
