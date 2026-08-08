@@ -153,7 +153,15 @@ func (s *Service) open(ctx context.Context, slug string, m manifest.Manifest, ra
 	}
 
 	br := bufio.NewReader(rc)
-	peek, _ := br.Peek(peekBytes) // short files yield io.EOF; the bytes are still valid
+	peek, err := br.Peek(peekBytes)
+	// A short file yields io.EOF with the available bytes intact; anything else is
+	// a failed storage read, so the stream is closed rather than handed to a
+	// handler that has already written a 200.
+	if err != nil && !errors.Is(err, io.EOF) {
+		rc.Close()
+		slog.Error("raw peek failed", "slug", slug, "key", key, "hash", f.Hash, "err", err)
+		return nil, httpx.Internal("internal error")
+	}
 	contentType, attachment := classify(key, peek)
 	disposition := ""
 	if attachment {

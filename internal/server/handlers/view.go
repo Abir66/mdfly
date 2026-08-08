@@ -48,7 +48,7 @@ func ViewPath(svc *view.Service) http.HandlerFunc {
 // is ever introduced; the Cache-Control still lets the edge absorb repeats — the
 // common case is a shared link carrying tracking parameters.
 func redirectCanonicalQuery(w http.ResponseWriter, r *http.Request) bool {
-	canonical, changed := canonicalizeQuery(r.URL.Query())
+	canonical, changed := canonicalizeQuery(r.URL.RawQuery)
 	if !changed {
 		return false
 	}
@@ -62,14 +62,19 @@ func redirectCanonicalQuery(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // canonicalizeQuery returns the canonical query string retaining only the first
-// "up" value, and whether the input differed from it.
-func canonicalizeQuery(q url.Values) (string, bool) {
+// "up" value, and whether raw differed from it. The comparison is against the
+// raw string, not a re-encoded parse, so an alternate spelling of the same query
+// ("%75p=1", "up=a%20b") is non-canonical and redirects — one URL per node means
+// one cache key. A parse error yields whatever pairs survived, which is never
+// byte-equal to raw, so malformed queries redirect too.
+func canonicalizeQuery(raw string) (string, bool) {
+	q, _ := url.ParseQuery(raw)
 	canonical := url.Values{}
 	if q.Has(canonicalQueryParam) {
 		canonical.Set(canonicalQueryParam, q.Get(canonicalQueryParam))
 	}
 	encoded := canonical.Encode()
-	return encoded, encoded != q.Encode()
+	return encoded, encoded != raw
 }
 
 // redirectTrailingSlash issues a 301 to the trailing-slash-free path (query

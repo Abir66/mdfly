@@ -1,9 +1,6 @@
 package handlers
 
-import (
-	"net/url"
-	"testing"
-)
+import "testing"
 
 func TestCanonicalizeQuery(t *testing.T) {
 	cases := []struct {
@@ -19,14 +16,12 @@ func TestCanonicalizeQuery(t *testing.T) {
 		{"repeated up collapses to first", "up=1&up=2", "up=1", true},
 		{"empty-valued junk stripped", "foo=", "", true},
 		{"empty-valued up kept", "up=", "up=", false},
+		{"noncanonical percent-encoded key", "%75p=1", "up=1", true},
+		{"malformed escape drops to bare path", "up=%zz", "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			q, err := url.ParseQuery(tc.raw)
-			if err != nil {
-				t.Fatalf("parse %q: %v", tc.raw, err)
-			}
-			got, changed := canonicalizeQuery(q)
+			got, changed := canonicalizeQuery(tc.raw)
 			if got != tc.want || changed != tc.changed {
 				t.Errorf("canonicalizeQuery(%q) = (%q, %v), want (%q, %v)", tc.raw, got, changed, tc.want, tc.changed)
 			}

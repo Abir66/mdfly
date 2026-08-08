@@ -44,6 +44,8 @@ func TestQueryCanonicalization_bothReadPaths(t *testing.T) {
 		{"raw junk stripped", "/raw/doc?utm=x", "/raw/doc"},
 		{"raw junk beside up keeps up", "/raw/doc?up=2&utm=x", "/raw/doc?up=2"},
 		{"raw nested junk stripped", "/raw/doc/a.md?ref=y", "/raw/doc/a.md"},
+		{"view noncanonical up encoding", "/doc?%75p=1", "/doc?up=1"},
+		{"raw noncanonical up encoding", "/raw/doc?%75p=1", "/raw/doc?up=1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
