@@ -61,6 +61,99 @@ func TestWalk_imageAlwaysPulledIn(t *testing.T) {
 	}
 }
 
+func TestWalk_rawHTMLImageAlwaysPulledIn(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "hello.md")
+	logo := []byte("<svg/>")
+	writeFile(t, root, []byte("<div align=\"center\">\n<img src=\"assets/logo.svg\" width=\"72\" />\n</div>\n"))
+	writeFile(t, filepath.Join(dir, "assets", "logo.svg"), logo)
+
+	res, err := walk.Walk(root, walk.Options{})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	f, ok := res.Files["assets/logo.svg"]
+	if !ok {
+		t.Fatalf("raw HTML image must be pulled in; have %v", keys(res.Files))
+	}
+	if !bytes.Equal(f.Content, logo) {
+		t.Errorf("logo.svg content mismatch")
+	}
+}
+
+func TestWalk_rawHTMLAnchorFollowed(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "hello.md")
+	writeFile(t, root, []byte("See <a href=\"LICENSE\">license</a> and <a href=\"y.md\">y</a>.\n"))
+	writeFile(t, filepath.Join(dir, "LICENSE"), []byte("Apache 2.0"))
+	writeFile(t, filepath.Join(dir, "y.md"), []byte("# Y\n"))
+
+	res, err := walk.Walk(root, walk.Options{})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if _, ok := res.Files["LICENSE"]; !ok {
+		t.Errorf("raw HTML anchor asset must be pulled in; have %v", keys(res.Files))
+	}
+	if _, ok := res.Files["y.md"]; ok {
+		t.Errorf("linked markdown must stay gated by -r; have %v", keys(res.Files))
+	}
+
+	res, err = walk.Walk(root, walk.Options{Recursive: true})
+	if err != nil {
+		t.Fatalf("Walk recursive: %v", err)
+	}
+	if _, ok := res.Files["y.md"]; !ok {
+		t.Errorf("raw HTML linked markdown must be followed under -r; have %v", keys(res.Files))
+	}
+}
+
+func TestWalk_rawHTMLMediaPulledIn(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "hello.md")
+	writeFile(t, root, []byte("<picture>\n"+
+		"<source srcset=\"assets/logo-dark.svg\" media=\"(prefers-color-scheme: dark)\" />\n"+
+		"<source srcset=\"assets/logo-1x.png 1x, assets/logo-2x.png 2x\" />\n"+
+		"<img src=\"assets/logo.svg\" />\n"+
+		"</picture>\n\n"+
+		"<video src=\"demo.mp4\" poster=\"thumb.png\" controls></video>\n\n"+
+		"<audio src=\"clip.mp3\" controls></audio>\n"))
+	for _, name := range []string{
+		"assets/logo-dark.svg", "assets/logo-1x.png", "assets/logo-2x.png",
+		"assets/logo.svg", "demo.mp4", "thumb.png", "clip.mp3",
+	} {
+		writeFile(t, filepath.Join(dir, filepath.FromSlash(name)), []byte(name))
+	}
+
+	res, err := walk.Walk(root, walk.Options{})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	for _, name := range []string{
+		"assets/logo-dark.svg", "assets/logo-1x.png", "assets/logo-2x.png",
+		"assets/logo.svg", "demo.mp4", "thumb.png", "clip.mp3",
+	} {
+		if _, ok := res.Files[name]; !ok {
+			t.Errorf("%s must be pulled in; have %v", name, keys(res.Files))
+		}
+	}
+}
+
+func TestWalk_rawHTMLRefInFencedCodeIgnored(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "hello.md")
+	writeFile(t, root, []byte("```html\n<img src=\"assets/logo.svg\" />\n```\n"))
+	writeFile(t, filepath.Join(dir, "assets", "logo.svg"), []byte("<svg/>"))
+
+	res, err := walk.Walk(root, walk.Options{})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if _, ok := res.Files["assets/logo.svg"]; ok {
+		t.Errorf("ref inside a fenced code block must not be uploaded; have %v", keys(res.Files))
+	}
+}
+
 func TestWalk_linkedMarkdownGatedByRecursive(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "index.md")

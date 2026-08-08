@@ -3,6 +3,7 @@ package markdown
 import (
 	"bytes"
 	"errors"
+	stdhtml "html"
 	"regexp"
 	"strings"
 	"time"
@@ -39,9 +40,10 @@ type RefResolver func(ref string) (string, bool)
 // transformer can rewrite references without rebuilding the parser per render.
 var refResolverKey = parser.NewContextKey()
 
-// refTransformer rewrites every image and link destination through the
+// refTransformer rewrites every markdown image and link destination through the
 // RefResolver found in the parser context, before HTML generation. With no
 // resolver in context it is a no-op (e.g. ImageRefs/LinkRefs raw parses).
+// Raw-HTML references are out of its reach and handled by rewriteHTMLRefs.
 type refTransformer struct{}
 
 func (refTransformer) Transform(node *ast.Document, _ text.Reader, pc parser.Context) {
@@ -73,6 +75,31 @@ var (
 	reImgSrc      = regexp.MustCompile(`<img[^>]+src="([^"]+)"`)
 	reTags        = regexp.MustCompile(`<[^>]+>`)
 	reFrontmatter = regexp.MustCompile(`(?s)^\s*---\n(.*?)\n---\n?`)
+	reAlignValue  = regexp.MustCompile(`^(?i)(left|right|center|justify)$`)
+)
+
+// alignElements are the elements allowed to keep an `align` attribute.
+var alignElements = []string{"div", "p", "h1", "h2", "h3", "h4", "h5", "h6"}
+
+// URL-shaped attribute values the sanitizer may keep: an http(s) URL, a
+// data:image URI, or a scheme-less relative/root-absolute path. Any other
+// scheme — javascript:, vbscript:, data:text/html — fails to match and the
+// attribute is dropped. bluemonday applies its own URL policy to `src` and
+// `href` but not to `srcset`, `poster`, or `src` on `<source>`, so these carry
+// the check for us.
+const (
+	urlScheme     = `(?:https?://|data:image/)`
+	urlTail       = `[^\s"'<>]*`
+	urlTailNC     = `[^\s"'<>,]*` // no comma: srcset candidates are comma-separated
+	srcSetDescr   = `(?:\s+[0-9.]+[wx])?`
+	safeURL       = `(?:` + urlScheme + urlTail + `|[^:\s"'<>/?#]*[/?#]` + urlTail + `|[^:\s"'<>]*)`
+	safeSrcSetURL = `(?:` + urlScheme + urlTailNC + `|[^:\s"'<>,/?#]*[/?#]` + urlTailNC + `|[^:\s"'<>,]*)`
+)
+
+var (
+	reSafeURL    = regexp.MustCompile(`^(?i)\s*` + safeURL + `\s*$`)
+	reSafeSrcSet = regexp.MustCompile(`^(?i)\s*` + safeSrcSetURL + srcSetDescr +
+		`(?:\s*,\s*` + safeSrcSetURL + srcSetDescr + `)*\s*$`)
 )
 
 func init() {
@@ -101,6 +128,18 @@ func init() {
 	policy.AllowAttrs("id").Matching(regexp.MustCompile(`^[a-zA-Z0-9\-_:]+$`)).OnElements("h1", "h2", "h3", "h4", "h5", "h6")
 	policy.AllowAttrs("tabindex").Matching(regexp.MustCompile(`^\d+$`)).OnElements("pre")
 	policy.AllowAttrs("style").Matching(regexp.MustCompile(`^[\w\s:;#()\.,%-]+$`)).OnElements("span", "pre", "code")
+	// READMEs centre logos and badges with <div align="center"> / <p align="center">.
+	policy.AllowAttrs("align").Matching(reAlignValue).OnElements(alignElements...)
+	// Raw-HTML media: <picture>/<source> for theme-aware logos, <video>/<audio>
+	// for embedded demos. Every attribute is allowlisted, so no event handler
+	// survives, and the standard URL policy still gates the schemes.
+	policy.AllowElements("picture", "source", "video", "audio")
+	policy.AllowAttrs("src").Matching(reSafeURL).OnElements("source", "video", "audio")
+	policy.AllowAttrs("poster").Matching(reSafeURL).OnElements("video")
+	policy.AllowAttrs("srcset").Matching(reSafeSrcSet).OnElements("source", "img")
+	policy.AllowAttrs("sizes", "media", "type").OnElements("source", "img")
+	policy.AllowAttrs("controls", "loop", "muted", "preload").OnElements("video", "audio")
+	policy.AllowAttrs("autoplay", "playsinline", "width", "height").OnElements("video")
 	// Allow task-list checkboxes rendered by GFM extension.
 	policy.AllowElements("input")
 	policy.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
@@ -171,6 +210,7 @@ func renderCore(md []byte, resolve RefResolver) ([]byte, Meta, error) {
 	ctx.Set(enrichFlagsKey, flags)
 	if resolve != nil {
 		ctx.Set(refResolverKey, resolve)
+		body = rewriteHTMLRefs(body, resolve)
 	}
 	if err := mdParser.Convert(body, &buf, parser.WithContext(ctx)); err != nil {
 		return nil, Meta{}, err
@@ -181,6 +221,54 @@ func renderCore(md []byte, resolve RefResolver) ([]byte, Meta, error) {
 	meta.HasMermaid = flags.mermaid
 	meta.HasMath = flags.math
 	return sanitized, meta, nil
+}
+
+// rewriteHTMLRefs rewrites every raw-HTML reference inside the body's HTML
+// spans through resolve, returning the amended source: `<a href>`, the `src` of
+// `<img>`, `<source>`, `<video>` and `<audio>`, `<video poster>`, and each
+// candidate of an `<img>`/`<source>` srcset. The parser cannot rewrite these in
+// the AST because raw HTML is opaque to it, so they are patched in the source
+// before rendering; only parser-identified HTML ranges are touched, leaving
+// refs inside fenced code verbatim.
+func rewriteHTMLRefs(body []byte, resolve RefResolver) []byte {
+	spans := htmlSpans(body)
+	if len(spans) == 0 {
+		return body
+	}
+
+	var out bytes.Buffer
+	prev := 0
+	for _, sp := range spans {
+		out.Write(body[prev:sp.start])
+		out.Write(rewriteHTMLSpan(body[sp.start:sp.stop], resolve))
+		prev = sp.stop
+	}
+	out.Write(body[prev:])
+	return out.Bytes()
+}
+
+// rewriteHTMLSpan replaces every reference in one raw-HTML span with its
+// resolved URL. References the resolver rejects are left verbatim. srcset
+// candidates are rewritten individually, so their descriptors survive.
+func rewriteHTMLSpan(span []byte, resolve RefResolver) []byte {
+	refs := htmlRefsIn(span)
+	if len(refs) == 0 {
+		return span
+	}
+
+	var out bytes.Buffer
+	prev := 0
+	for _, r := range refs {
+		url, ok := resolve(r.ref)
+		if !ok {
+			continue
+		}
+		out.Write(span[prev:r.start])
+		out.WriteString(stdhtml.EscapeString(url))
+		prev = r.stop
+	}
+	out.Write(span[prev:])
+	return out.Bytes()
 }
 
 func parseFrontmatter(md []byte) (frontmatterFields, []byte) {

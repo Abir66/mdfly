@@ -23,9 +23,11 @@ const (
 // ContentSecurityPolicy is the CSP for SSR view pages. It allows the jsdelivr
 // CDN for the Mermaid/KaTeX shims (script + style + fonts) and pins the inline
 // boot snippet by SHA256 hash (one per deterministic variant) instead of
-// 'unsafe-inline', while keeping everything else same-origin.
+// 'unsafe-inline'. Images and media are allowed over https so bundle assets
+// load from the R2 CDN; everything else stays same-origin.
 var ContentSecurityPolicy = "default-src 'self'; " +
 	"img-src 'self' https: data:; " +
+	"media-src 'self' https: data:; " +
 	"connect-src 'self'; " +
 	"style-src 'self' 'unsafe-inline' " + cdnBase + "; " +
 	"font-src " + cdnBase + " data:; " +
