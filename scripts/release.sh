@@ -12,6 +12,7 @@ set -Eeuo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION_FILE="$REPO_ROOT/VERSION"
+CHANGELOG_SCRIPT="$REPO_ROOT/scripts/changelog.sh"
 RELEASE_BRANCH=main
 REMOTE=origin
 # Bare MAJOR.MINOR.PATCH with an optional prerelease suffix (0.2.0-rc.1). This is
@@ -28,7 +29,7 @@ usage() {
 usage: release.sh [--dry-run] [-y]
 
 Reads VERSION, verifies the repo is in a releasable state, then tags and pushes.
-  --dry-run   run every check and print the tag, but create nothing
+  --dry-run   run every check (CHANGELOG.md included) and print the tag, create nothing
   -y          skip the confirmation prompt
 EOF
 }
@@ -58,6 +59,7 @@ main() {
 	tag="v$version"
 
 	require_releasable_worktree
+	require_changelog_entry "$version"
 	require_synced_with_remote
 	require_tag_available "$tag"
 
@@ -85,6 +87,17 @@ read_version() {
 	[[ $raw =~ $SEMVER_RE ]] || die "VERSION is not a semantic version: '$raw' (expected e.g. 0.2.0)"
 
 	printf '%s' "$raw"
+}
+
+# The release notes are hand-written, and the workflow reads them out of
+# CHANGELOG.md at tag time. Nothing downstream can notice they are missing — the
+# Release just publishes with an empty body — so the only place to catch a
+# forgotten section is before the tag exists.
+require_changelog_entry() {
+	local version=$1
+
+	"$CHANGELOG_SCRIPT" extract "$version" >/dev/null 2>&1 ||
+		die "CHANGELOG.md has no '## [$version]' section with content; write the release notes first"
 }
 
 require_releasable_worktree() {
