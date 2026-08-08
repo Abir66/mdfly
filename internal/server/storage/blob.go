@@ -14,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+
+	"github.com/Abir66/mdfly/internal/blobmeta"
 )
 
 // ErrBlobMissing is returned when HeadBlob cannot find the object.
@@ -78,13 +80,17 @@ func (c *Client) BlobPublicURL(key string) string {
 	return c.publicBase + "/" + key
 }
 
-// PresignPUT returns a presigned PUT URL for a blob. ContentLength is a signed
-// header, so the upload size is pinned (wrong size → broken signature → 403).
+// PresignPUT returns a presigned PUT URL for a blob. ContentLength, ContentType
+// and CacheControl are all signed headers, so the upload is pinned to the size
+// and the metadata storage.mdfly.dev will serve back (any mismatch → 403). The
+// type comes from key's extension, which the CLI derives the same way.
 func (c *Client) PresignPUT(ctx context.Context, key string, size int64, ttl time.Duration) (string, error) {
 	req, err := c.presignClient.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(c.bucket),
 		Key:           aws.String(key),
 		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(blobmeta.ContentType(key)),
+		CacheControl:  aws.String(blobmeta.CacheControl),
 	}, s3.WithPresignExpires(ttl))
 	if err != nil {
 		return "", fmt.Errorf("presign put: %w", err)

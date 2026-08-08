@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/Abir66/mdfly/internal/api"
+	"github.com/Abir66/mdfly/internal/blobmeta"
 )
 
 func postJSON[T any](ctx context.Context, client *http.Client, url string, body any) (T, error) {
@@ -50,12 +51,18 @@ func postJSONAuth[T any](ctx context.Context, client *http.Client, url, token st
 	return result, nil
 }
 
-func putBlob(ctx context.Context, client *http.Client, presignedURL string, content []byte) error {
+// putBlob uploads one blob through its presigned URL. Content-Type and
+// Cache-Control are signed into that URL, so they are sent verbatim from
+// blobmeta against the same logical path the server keyed the blob by — an
+// omitted or differing header is a 403, not a missing header.
+func putBlob(ctx context.Context, client *http.Client, presignedURL, path string, content []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, presignedURL, bytes.NewReader(content))
 	if err != nil {
 		return err
 	}
 	req.ContentLength = int64(len(content))
+	req.Header.Set("Content-Type", blobmeta.ContentType(path))
+	req.Header.Set("Cache-Control", blobmeta.CacheControl)
 
 	resp, err := client.Do(req)
 	if err != nil {

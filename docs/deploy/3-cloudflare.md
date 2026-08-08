@@ -145,10 +145,10 @@ not overlap.
 `Authorization`-scoped result.
 
 `storage.` holds content-addressed blobs at `documents/<slug>/<hash>.<ext>`, so the URL
-changes whenever the bytes change and the object can be cached forever. **The Edge
-TTL override is doing real work here**: the presigned PUT does not set a
-`Cache-Control` header, so without this rule the objects fall back to Cloudflare's
-default TTL rather than caching forever.
+changes whenever the bytes change and the object can be cached forever. The presigned
+PUT already stores `Cache-Control: public, max-age=31536000, immutable` on every blob
+(`internal/blobmeta`), so this rule is belt-and-braces — it pins the edge TTL for blobs
+uploaded before that landed, which carry no `Cache-Control` at all.
 
 The apex respects the backend's own `max-age=300, s-maxage=86400` on slug
 responses (ADR-0010), which is what keeps the origin off the per-view hot path.
@@ -205,6 +205,33 @@ Free, and a WAF skip rule does not apply to it (the configurable version, Super 
 Fight Mode, is Pro and above). Once you have confirmed the false positive in the
 events log, the remedy is to **turn Bot Fight Mode off** and lean on Managed Rules
 plus the rate limit — or upgrade, if the bot protection is worth the plan.
+
+### SVG sandbox on `storage.mdfly.dev` — required
+
+Published `.svg` blobs are stored as `image/svg+xml`, because the browser refuses to
+content-sniff SVG and an `<img>` pointing at one otherwise renders nothing. That type
+also makes the blob an *active document* on direct navigation: without this rule,
+opening `storage.mdfly.dev/documents/<slug>/<hash>.svg` runs uploader-supplied script
+on your domain. **Add the rule before publishing is open to anyone but you.**
+
+Rules are **zone-scoped**, so open `mdfly.dev` first — they do not appear in the
+account-level sidebar you land on from R2. Then **Rules → Overview → Create rule →
+Response Header Transform Rule**, or go straight to
+`https://dash.cloudflare.com/?to=/:account/:zone/rules/overview`.
+
+| Field | Value |
+|---|---|
+| Name | `storage-sandbox` |
+| When incoming requests match | Custom filter expression: `http.host eq "storage.mdfly.dev"` |
+| Then → Set static | `Content-Security-Policy` = `sandbox` |
+| Then → Set static | `X-Content-Type-Options` = `nosniff` |
+
+`sandbox` with no `allow-scripts` token drops the response into an opaque origin with
+scripting off, so a direct visit still draws the image's shapes and styles but cannot
+run script, submit a form, or navigate the top frame. Embedding is unaffected — CSP on
+a response is enforced only when that response is a document, and an `<img>`
+subresource never is. `nosniff` keeps the non-media blobs (stored as
+`application/octet-stream`, see `internal/blobmeta`) from being sniffed into markup.
 
 ## 3.9 Purge token
 

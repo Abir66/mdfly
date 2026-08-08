@@ -9,7 +9,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Uploaded assets are now stored with a `Content-Type`, so an SVG referenced from a
+  published page renders instead of silently failing. Browsers do not content-sniff
+  SVG, and every blob was previously stored with no type at all. Blobs uploaded
+  before this change keep their missing type — re-publish to fix an existing page.
+- Uploaded assets now carry `Cache-Control: public, max-age=31536000, immutable`,
+  which the docs had claimed was set at upload but never was.
+
 ### Changed
+
+- **Breaking, CLI and server must be upgraded together.** `Content-Type` and
+  `Cache-Control` are now signed into the presigned upload URL, so a CLI older than
+  this release fails every upload against a current server with
+  `403 AccessDenied`. Reinstall with
+  `curl -fsSL https://mdfly.dev/install.sh | sh` before publishing again.
 
 - The shell installer is now `curl -fsSL https://mdfly.dev/install.sh | sh`. The
   old `raw.githubusercontent.com/.../scripts/install.sh` URL — including the copy

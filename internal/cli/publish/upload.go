@@ -38,7 +38,7 @@ func uploadBlobs(ctx context.Context, client *http.Client, bundle Bundle, presig
 		f := bundle.FilesByPath[path]
 		g.Go(func() error {
 			if _, err := withRetry(ctx, func() (struct{}, error) {
-				return struct{}{}, putBlob(ctx, client, presignedURL, f.Content)
+				return struct{}{}, putBlob(ctx, client, presignedURL, f.Path, f.Content)
 			}); err != nil {
 				return fmt.Errorf("upload blob %s: %w", f.Path, err)
 			}
