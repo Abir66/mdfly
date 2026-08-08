@@ -14,9 +14,14 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION_FILE="$REPO_ROOT/VERSION"
 RELEASE_BRANCH=main
 REMOTE=origin
-# Bare MAJOR.MINOR.PATCH with an optional prerelease suffix (0.2.0-rc.1). Build
-# metadata (+foo) is excluded: it is legal semver but not a legal git ref.
-SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+# Bare MAJOR.MINOR.PATCH with an optional prerelease suffix (0.2.0-rc.1). This is
+# the semver.org grammar, not an approximation of it: leading zeros (01.2.3,
+# 1.2.3-01) and empty prerelease identifiers (1.2.3-alpha..1) are rejected, since
+# each would tag a version that no semver comparator orders the way we meant.
+# Build metadata (+foo) is excluded: it is legal semver but not a legal git ref.
+SEMVER_IDENT='0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*'
+SEMVER_NUM='0|[1-9][0-9]*'
+SEMVER_RE="^($SEMVER_NUM)\.($SEMVER_NUM)\.($SEMVER_NUM)(-($SEMVER_IDENT)(\.($SEMVER_IDENT))*)?\$"
 
 usage() {
 	cat <<'EOF'

@@ -27,7 +27,8 @@ Go toolchain:
 go install github.com/Abir66/mdfly/cmd/mdfly@latest
 ```
 
-Windows: download the archive from [Releases](https://github.com/Abir66/mdfly/releases).
+Windows: download the `mdfly_<version>_windows_amd64.zip` archive from
+[Releases](https://github.com/Abir66/mdfly/releases). Windows arm64 is not published in v1.
 
 ## Development
 

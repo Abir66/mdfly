@@ -114,6 +114,34 @@ test_rejects_non_semver() {
 	teardown
 }
 
+# Shapes a loose "digits and dots" regex would wave through, each of which sorts
+# wrong or not at all under a real semver comparator.
+test_rejects_malformed_semver() {
+	for bad in 01.2.3 1.2.3-01 1.2.3-alpha..1; do
+		setup "rejects_malformed_semver:$bad"
+		echo "$bad" >"$WORK/VERSION"
+		git -C "$WORK" commit --quiet -am "bad"
+		git -C "$WORK" push --quiet origin main
+
+		run_release -y
+		assert_status 1
+		assert_output_has "not a semantic version"
+		teardown
+	done
+}
+
+test_accepts_prerelease() {
+	setup accepts_prerelease
+	echo "0.2.0-rc.1" >"$WORK/VERSION"
+	git -C "$WORK" commit --quiet -am "bump"
+	git -C "$WORK" push --quiet origin main
+
+	run_release -y
+	assert_status 0
+	assert_tag_pushed v0.2.0-rc.1
+	teardown
+}
+
 test_rejects_empty_version() {
 	setup rejects_empty_version
 	: >"$WORK/VERSION"
