@@ -1,7 +1,7 @@
 #!/bin/sh
-# mdfly installer. Served at https://mdfly.dev/install.sh
+# mdfly installer.
 #
-#   curl -fsSL https://mdfly.dev/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Abir66/mdfly/main/scripts/install.sh | sh
 #
 # Overrides:
 #   MDFLY_VERSION      tag to install, with or without the leading v (default: latest)

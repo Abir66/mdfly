@@ -18,7 +18,7 @@ brew install Abir66/mdfly/mdfly
 Shell installer (macOS, Linux) — verifies the download against the release checksums:
 
 ```sh
-curl -fsSL https://mdfly.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Abir66/mdfly/main/scripts/install.sh | sh
 ```
 
 Go toolchain:
