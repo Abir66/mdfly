@@ -63,12 +63,12 @@ homebrew_casks:
                            args: ["-dr", "com.apple.quarantine", "#{staged_path}/mdfly"]
           end
 
-# No generated changelog: the release notes are the hand-written CHANGELOG.md
-# section for this version, which the workflow extracts and hands to goreleaser
-# via --release-notes. A commit log cannot say why a release is worth installing,
-# and filtering one only ever approximates that.
-changelog:
-  disable: true
+# No `changelog:` block on purpose, and specifically NOT `disable: true`. The
+# release notes are the hand-written CHANGELOG.md section, passed in by the
+# workflow as --release-notes — and that flag is read *inside* the changelog pipe,
+# which `disable: true` skips wholesale. Setting both silently publishes a Release
+# with an empty body, which is exactly what v0.2.0 shipped with. The flag already
+# suppresses generation on its own, so there is nothing left to turn off here.
 
 release:
   # Pinned rather than inferred from the git remote, so the cask's download URLs
