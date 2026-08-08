@@ -127,7 +127,7 @@ func newPublishCmd(app *appContext) *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.BoolVarP(&recursive, "recursive", "r", false, "follow linked .md files transitively")
+	f.BoolVarP(&recursive, "recursive", "r", false, "follow linked .md files and linked folders transitively")
 	f.StringVarP(&message, "message", "m", "", "publish inline text instead of a file")
 	f.BoolVar(&open, "open", false, "open the resulting URL in the browser after publishing")
 	return cmd

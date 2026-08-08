@@ -105,6 +105,64 @@ func TestWalk_transitiveUnderRecursive(t *testing.T) {
 	}
 }
 
+func TestWalk_folderRefExpandsRecursivelyUnderRecursive(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.md"), []byte("[d](./docs)\n"))
+	writeFile(t, filepath.Join(dir, "docs", "a.md"), []byte("# A\n"))
+	writeFile(t, filepath.Join(dir, "docs", "a.png"), []byte("img"))
+	writeFile(t, filepath.Join(dir, "docs", "sub", "b.txt"), []byte("txt"))
+
+	res, err := walk.Walk(filepath.Join(dir, "index.md"), walk.Options{Recursive: true})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	for _, k := range []string{"index.md", "docs/a.md", "docs/a.png", "docs/sub/b.txt"} {
+		if _, ok := res.Files[k]; !ok {
+			t.Errorf("missing key %q; have %v", k, keys(res.Files))
+		}
+	}
+}
+
+func TestWalk_folderRefGatedByRecursive(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.md"), []byte("[d](./docs)\n"))
+	writeFile(t, filepath.Join(dir, "docs", "a.md"), []byte("# A\n"))
+	writeFile(t, filepath.Join(dir, "docs", "a.png"), []byte("img"))
+
+	res, err := walk.Walk(filepath.Join(dir, "index.md"), walk.Options{})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(res.Files) != 1 {
+		t.Errorf("folder ref must not expand without -r; have %v", keys(res.Files))
+	}
+}
+
+func TestWalk_folderRefSymlinkEscapeSkipped(t *testing.T) {
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "proj")
+	secretBytes := []byte("TOP-SECRET-DO-NOT-UPLOAD")
+	writeFile(t, filepath.Join(dir, "secret.txt"), secretBytes)
+	writeFile(t, filepath.Join(proj, "index.md"), []byte("[d](./docs)\n"))
+	writeFile(t, filepath.Join(proj, "docs", "a.md"), []byte("# A\n"))
+	if err := os.Symlink(filepath.Join(dir, "secret.txt"), filepath.Join(proj, "docs", "leak.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := walk.Walk(filepath.Join(proj, "index.md"), walk.Options{Recursive: true})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if _, ok := res.Files["docs/leak.txt"]; ok {
+		t.Errorf("escaping symlink inside folder must be skipped; have %v", keys(res.Files))
+	}
+	for k, f := range res.Files {
+		if bytes.Contains(f.Content, secretBytes) {
+			t.Fatalf("secret bytes leaked into %q", k)
+		}
+	}
+}
+
 func TestWalk_nonMarkdownRootNoWalk(t *testing.T) {
 	dir := t.TempDir()
 	root := filepath.Join(dir, "main.go")

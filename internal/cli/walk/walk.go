@@ -6,9 +6,10 @@
 //
 // Reference gating follows ADR-0010 and CONTEXT.md: non-`.md` assets directly
 // referenced by an included file are always pulled in; linked `.md` files are
-// followed transitively only under Options.Recursive. References that resolve
-// outside the project root — via `../`, an absolute path, `file://`, or a
-// symlink whose resolved target escapes the root — are skipped with a warning
+// followed transitively only under Options.Recursive, as are folder references,
+// which expand into every file in that folder's subtree. References that
+// resolve outside the project root — via `../`, an absolute path, `file://`, or
+// a symlink whose resolved target escapes the root — are skipped with a warning
 // and left verbatim; `http`/`https`/`data:` and other external schemes are
 // never fetched. Symlinks are resolved before the boundary check so an escaping
 // link's target bytes are never read.
@@ -124,6 +125,16 @@ func (w *walker) crawl(seedDir string, seedContent []byte) {
 		}
 		w.visited[cur] = true
 
+		info, err := os.Stat(cur)
+		if err != nil {
+			slog.Warn("referenced file not found, leaving link verbatim", "path", cur, "err", err)
+			continue
+		}
+		if info.IsDir() {
+			queue = append(queue, w.dirTargets(cur)...)
+			continue
+		}
+
 		md := isMarkdown(cur)
 		if md && !w.recursive {
 			continue
@@ -141,6 +152,29 @@ func (w *walker) crawl(seedDir string, seedContent []byte) {
 			queue = append(queue, w.targets(filepath.Dir(cur), content)...)
 		}
 	}
+}
+
+// dirTargets lists a referenced folder's children as further walk targets, so a
+// folder reference expands into the whole subtree. Expansion happens only under
+// recursive; without it the link is left verbatim. Children are boundary-checked
+// so a symlink inside the folder cannot escape the project root.
+func (w *walker) dirTargets(dir string) []string {
+	if !w.recursive {
+		slog.Warn("folder reference needs -r to be followed, leaving link verbatim", "path", dir)
+		return nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		slog.Warn("referenced folder unreadable, leaving link verbatim", "path", dir, "err", err)
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if target, ok := w.resolveInRoot(dir, e.Name()); ok {
+			out = append(out, target)
+		}
+	}
+	return out
 }
 
 // targets resolves every local reference in a markdown file to an in-root

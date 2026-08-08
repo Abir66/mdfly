@@ -47,7 +47,7 @@ func newUpdateCmd(app *appContext) *cobra.Command {
 	fl := cmd.Flags()
 	fl.StringVar(&f.slug, "slug", "", "target document by slug (for text updates, recovery, or disambiguation)")
 	fl.StringVarP(&f.message, "message", "m", "", "update with inline text instead of a file")
-	fl.BoolVarP(&f.recursive, "recursive", "r", false, "follow linked .md files transitively")
+	fl.BoolVarP(&f.recursive, "recursive", "r", false, "follow linked .md files and linked folders transitively")
 	fl.BoolVar(&f.force, "force", false, "overwrite without the optimistic-concurrency check")
 	fl.BoolVar(&f.open, "open", false, "open the resulting URL in the browser after updating")
 	return cmd

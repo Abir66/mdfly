@@ -10,8 +10,8 @@ import (
 
 // bundleForSource builds a Bundle from a resolved content source: a file walk
 // rooted at the file's directory, or a Text Publish walk anchored at the cwd
-// with a synthetic index.md root. recursive follows linked .md files
-// transitively (-r); assets are always pulled in.
+// with a synthetic index.md root. recursive follows linked .md files and linked
+// folders transitively (-r); assets are always pulled in.
 func bundleForSource(src input.Source, recursive bool) (Bundle, error) {
 	opts := walk.Options{Recursive: recursive}
 	switch src.Kind {
@@ -39,8 +39,8 @@ func bundleForSource(src input.Source, recursive bool) (Bundle, error) {
 // ForBundle walks the root file at rootPath into a Bundle keyed by
 // project-root-relative logical path. It delegates selection to the walk module
 // (see internal/cli/walk) and adapts the result into BundleFiles with content
-// hashes. The walk runs recursively so linked `.md` files are followed
-// transitively; the -r flag is wired through Run via bundleForSource.
+// hashes. The walk runs recursively so linked `.md` files and linked folders are
+// followed transitively; the -r flag is wired through Run via bundleForSource.
 func ForBundle(rootPath string) (Bundle, error) {
 	res, err := walk.Walk(rootPath, walk.Options{Recursive: true})
 	if err != nil {
