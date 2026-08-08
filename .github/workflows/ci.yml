@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version-file: go.mod
           cache: false
       - uses: golangci/golangci-lint-action@v6
         with:
@@ -27,12 +27,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version-file: go.mod
       - run: go test -short ./...
       # deploy.sh is the one piece of the deploy that carries branching logic, and
       # its tests stub docker and git, so they need nothing but bash.
-      - run: shellcheck deploy/deploy.sh deploy/deploy_test.sh
+      - run: shellcheck deploy/deploy.sh deploy/deploy_test.sh scripts/install.sh scripts/release.sh scripts/release_test.sh
       - run: make test-deploy
+      - run: make test-release
 
   migrate:
     name: Migrate
@@ -95,8 +96,23 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version-file: go.mod
       - run: make build
+
+  # A malformed .goreleaser.yaml would otherwise surface only after a tag is
+  # pushed, when the version is already spent and has to be deleted to retry.
+  release-config:
+    name: Release config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
 
   # Publishes the ARM image the box pulls (ADR-0015). Gated on every other job,
   # and on main only: a branch you are still hacking on must not produce a

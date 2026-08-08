@@ -1,21 +1,32 @@
-.PHONY: build test test-deploy lint migrate-up migrate-down dev-seed
+.PHONY: build test test-deploy test-release lint release migrate-up migrate-down dev-seed
 
 BIN_DIR := bin
 DEV_DB_URL := postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable
 DATABASE_URL ?= $(DEV_DB_URL)
+# Single source of truth for the version. `make release` turns this into the git
+# tag; goreleaser then reads the tag. The -dev suffix keeps a local build from
+# claiming to be the released artifact of the same number.
+VERSION := $(shell tr -d '[:space:]' < VERSION)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
 build: $(BIN_DIR)
-	go build -o $(BIN_DIR)/mdfly ./cmd/mdfly
+	go build -ldflags "-X main.version=$(VERSION)-dev" -o $(BIN_DIR)/mdfly ./cmd/mdfly
 	go build -o $(BIN_DIR)/mdfly-server ./cmd/mdfly-server
+
+# Tags VERSION and pushes, which is what starts the release workflow.
+release:
+	./scripts/release.sh
 
 test:
 	go test ./...
 
 test-deploy:
 	./deploy/deploy_test.sh
+
+test-release:
+	./scripts/release_test.sh
 
 lint:
 	golangci-lint run ./...
