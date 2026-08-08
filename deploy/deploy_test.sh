@@ -145,8 +145,9 @@ assert_call_order() {
 	local first second
 	first=$(grep -nF -- "$1" "$STUB_LOG" | head -1 | cut -d: -f1)
 	second=$(grep -nF -- "$2" "$STUB_LOG" | head -1 | cut -d: -f1)
-	[ -n "$first" ] && [ -n "$second" ] && [ "$first" -lt "$second" ] ||
+	if [ -z "$first" ] || [ -z "$second" ] || [ "$first" -ge "$second" ]; then
 		fail "expected '$1' before '$2'"
+	fi
 }
 
 # --- tests ------------------------------------------------------------------
