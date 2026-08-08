@@ -1,7 +1,10 @@
 #!/bin/sh
 # mdfly installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Abir66/mdfly/main/scripts/install.sh | sh
+#   curl -fsSL https://mdfly.dev/install.sh | sh
+#
+# The server embeds this file and serves it at that URL; this copy is the only
+# one, so editing it here changes what users pipe into sh on the next deploy.
 #
 # Overrides:
 #   MDFLY_VERSION      tag to install, with or without the leading v (default: latest)
@@ -146,7 +149,13 @@ main() {
 	base="https://github.com/$REPO/releases/download/v${VERSION}"
 
 	tmp=$(mktemp -d)
-	trap 'rm -rf "$tmp"' EXIT INT TERM
+	# A signal trap that only cleans up would return to the next command with the
+	# temp dir already gone, so an interrupted install carries on and can still
+	# exit 0. The signal handlers therefore exit themselves, with the usual
+	# 128+signo status.
+	trap 'rm -rf "$tmp"' EXIT
+	trap 'rm -rf "$tmp"; exit 130' INT
+	trap 'rm -rf "$tmp"; exit 143' TERM
 
 	info "downloading $BINARY v$VERSION ($PLATFORM)"
 	download_file "$base/$archive" "$tmp/$archive" ||
