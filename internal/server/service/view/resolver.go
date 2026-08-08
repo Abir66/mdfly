@@ -11,33 +11,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/storage"
 )
 
-const (
-	markdownExt = ".md"
-	// maxUp caps ?up=N so a malicious request can't force a huge
-	// strings.Repeat("../", N) allocation. No real bundle nests this deep.
-	maxUp = 16
-)
-
-// nestedKey reconstructs the manifest key for GET /{slug}/{path...}. rest is the
-// project-root-relative path with its extension intact (ADR-0010 reverses the
-// strip-.md convention); up is the optional ?up=N count of "../" prefixes for
-// keys above the project root. ok is false for an empty path or an up value that
-// is malformed, negative, or above maxUp.
-func nestedKey(rest, up string) (string, bool) {
-	rest = strings.Trim(rest, "/")
-	if rest == "" {
-		return "", false
-	}
-	n := 0
-	if up != "" {
-		parsed, err := strconv.Atoi(up)
-		if err != nil || parsed < 0 || parsed > maxUp {
-			return "", false
-		}
-		n = parsed
-	}
-	return strings.Repeat("../", n) + rest, true
-}
+const markdownExt = ".md"
 
 // resolveOGImage maps the document's OG-image path to an absolute URL. External
 // refs (and body images already rewritten to a CDN URL) are used verbatim;

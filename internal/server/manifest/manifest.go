@@ -2,12 +2,40 @@ package manifest
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 
 	"github.com/Abir66/mdfly/internal/api"
 )
 
 // ErrRootPathNotFound is returned when a BundleDTO's RootPath is not present in Files.
 var ErrRootPathNotFound = errors.New("root path not found in bundle files")
+
+// MaxUp caps ?up=N so a malicious request can't force a huge
+// strings.Repeat("../", N) allocation. No real bundle nests this deep.
+const MaxUp = 16
+
+// NestedKey reconstructs the manifest key for a nested read path shared by the
+// view and raw surfaces. rest is the project-root-relative path with its
+// extension intact (ADR-0010 reverses the strip-.md convention); up is the
+// optional ?up=N count of "../" prefixes for keys above the project root. ok is
+// false for an empty path or an up value that is malformed, negative, or above
+// MaxUp.
+func NestedKey(rest, up string) (string, bool) {
+	rest = strings.Trim(rest, "/")
+	if rest == "" {
+		return "", false
+	}
+	n := 0
+	if up != "" {
+		parsed, err := strconv.Atoi(up)
+		if err != nil || parsed < 0 || parsed > MaxUp {
+			return "", false
+		}
+		n = parsed
+	}
+	return strings.Repeat("../", n) + rest, true
+}
 
 // ManifestFile is one file in a stored Manifest, keyed by its logical path.
 type ManifestFile struct {

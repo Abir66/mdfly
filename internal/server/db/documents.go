@@ -276,6 +276,23 @@ func (o *ops) GetBySlug(ctx context.Context, sl string) (*Document, error) {
 	}
 }
 
+// GetManifestBySlug returns the viewable document row for slug together with its
+// decoded Bundle Manifest. It layers manifest unmarshalling onto GetBySlug so the
+// view and raw read paths share one loader and one error vocabulary — ErrNotFound
+// (→ 404) and ErrGone (→ 410) pass through, and a malformed stored manifest (a
+// server-side invariant break) surfaces as a wrapped error.
+func (o *ops) GetManifestBySlug(ctx context.Context, sl string) (*Document, manifest.Manifest, error) {
+	doc, err := o.GetBySlug(ctx, sl)
+	if err != nil {
+		return nil, manifest.Manifest{}, err
+	}
+	var m manifest.Manifest
+	if err := json.Unmarshal(doc.ManifestJSON, &m); err != nil {
+		return nil, manifest.Manifest{}, fmt.Errorf("unmarshal manifest for %s: %w", sl, err)
+	}
+	return doc, m, nil
+}
+
 // GetBySlugAny returns the document row for slug regardless of status, or
 // ErrNotFound if no row exists. Used by the delete workflow, which must read a
 // terminal row to stay idempotent.

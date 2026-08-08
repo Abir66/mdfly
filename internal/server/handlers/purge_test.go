@@ -160,7 +160,7 @@ func TestPurgeQueue_writePathsEnqueueAndDrain(t *testing.T) {
 }
 
 // TestPurgeQueue_inlineAttemptClearsRow covers the post-commit fast path: the
-// detached goroutine purges both prefixes and clears the queue row without
+// detached goroutine purges all three prefixes and clears the queue row without
 // waiting for a drain tick.
 func TestPurgeQueue_inlineAttemptClearsRow(t *testing.T) {
 	if testing.Short() {
@@ -178,7 +178,7 @@ func TestPurgeQueue_inlineAttemptClearsRow(t *testing.T) {
 	if cdn.callCount() == 0 {
 		t.Fatal("inline purge never reached the CDN")
 	}
-	want := []string{purgeHost + "/" + slug, purgeHost + "/llm/" + slug}
+	want := []string{purgeHost + "/" + slug, purgeHost + "/llm/" + slug, purgeHost + "/raw/" + slug}
 	got := cdn.lastCall()
 	if len(got) != len(want) {
 		t.Fatalf("purged %v, want %v", got, want)

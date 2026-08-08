@@ -26,6 +26,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/service/gc"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/purge"
+	"github.com/Abir66/mdfly/internal/server/service/raw"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
@@ -83,6 +84,7 @@ type App struct {
 	static   *static.Assets
 	publish  *publish.Service
 	view     *view.Service
+	raw      *raw.Service
 	document *document.Service
 	jobs     *jobs.Runner
 	limiter  middleware.Limiter
@@ -139,6 +141,7 @@ func (a *App) wireWeb(ctx context.Context) error {
 	a.publish = &publish.Service{Db: a.db, Storage: a.storage, BaseURL: a.cfg.BaseURL}
 	a.document = &document.Service{Db: a.db}
 	a.view = &view.Service{Db: a.db, Storage: a.storage, Static: a.static}
+	a.raw = &raw.Service{Db: a.db, Storage: a.storage}
 
 	// The best-effort purge fired inline after a write (ADR-0012) belongs where
 	// the write happens. It is deliberately outside the drain's wait group and is
