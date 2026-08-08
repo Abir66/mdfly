@@ -130,7 +130,8 @@ The CLI checks these before uploading and aborts early; the server re-validates.
 - **Password-protected docs** *(exploring)* — a shared-secret gate for documents you
   don't want readable by anyone with the link.
 - **LLM Twin** - `/llm/slug` return raw markdown with internal links rewritten for better navigation
-- **Skill** - Create a skill AI agents 
+- **Skill** - Create a skill for AI agents
+- **Dark Mode** - Add dark mode to published docs
 
 
 ## License
