@@ -34,6 +34,8 @@ tmp/
 # Filled-in deploy config (examples are tracked)
 deploy/redis.conf
 deploy/tls/
+# Written by deploy.sh on the box: the rollback bookmark
+deploy/.deploy-state
 
 # macOS
 .DS_Store

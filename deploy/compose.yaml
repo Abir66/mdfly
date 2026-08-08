@@ -2,8 +2,11 @@
 # publishes a host port. Postgres is not here — it is managed and off-box, reached
 # through DATABASE_URL (ADR-0005).
 #
-# Values come from the repo-root .env. No `${...}` interpolation anywhere, so no
-# command needs --env-file and no host-shell variable can leak in. Run compose from
+# Values come from the repo-root .env, and no command needs --env-file. The one
+# `${...}` here is MDFLY_IMAGE, which deploy.sh writes into this directory's own
+# .env — a generated, secret-free file Compose reads for interpolation only. Its
+# fallback is a name that cannot exist, so an un-deployed stack fails at the pull
+# with an obvious message rather than starting something stale. Run compose from
 # this directory, or point it here with -f.
 
 name: mdfly
@@ -42,10 +45,7 @@ services:
   # Below the drain budget, an in-flight request outlives its slot being stopped;
   # above the grace period, Docker SIGKILLs the process mid-drain.
   app_blue:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: mdfly-server:local
+    image: ${MDFLY_IMAGE:-mdfly-server:unset}
     command: ["serve"]
     restart: unless-stopped
     env_file: ../.env
@@ -64,10 +64,7 @@ services:
 
   app_green:
     profiles: ["green"]
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: mdfly-server:local
+    image: ${MDFLY_IMAGE:-mdfly-server:unset}
     command: ["serve"]
     restart: unless-stopped
     env_file: ../.env
@@ -95,10 +92,7 @@ services:
   # invariant nothing enforces mechanically: stop_grace_period > SHUTDOWN_TIMEOUT,
   # or Docker SIGKILLs the process before its drain can finish.
   jobs:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: mdfly-server:local
+    image: ${MDFLY_IMAGE:-mdfly-server:unset}
     command: ["jobs"]
     restart: unless-stopped
     env_file: ../.env
