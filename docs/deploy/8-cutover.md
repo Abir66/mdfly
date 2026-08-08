@@ -7,6 +7,21 @@ the pipeline claims.
 **You produce**: a box that pulls, swaps, and rolls back — with each of those
 observed once, calmly, rather than learned during an incident.
 
+> **The pipeline must be on `main` before any of this works.** The `publish` job
+> is gated on `push` to `main` (step 7), so until the blue/green slots, the
+> `Dockerfile` and `deploy/deploy.sh` are merged, **no image exists** and §8.2's
+> pull fails with `manifest unknown` no matter how good the token is. Confirm
+> before starting:
+>
+> ```sh
+> git ls-tree origin/main deploy/deploy.sh          # must print a line
+> git show origin/main:deploy/compose.yaml | grep -c app_blue   # must be > 0
+> ```
+>
+> If either comes back empty, merge that work first, wait for **Actions → CI →
+> Publish image** to go green, and confirm the version on the package's
+> **Versions** tab. Only then continue.
+
 Every command here runs as you, on the box, from `~/mdfly/deploy` unless it says
 otherwise. Two commands are run in a **second terminal** and say so.
 
