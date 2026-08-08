@@ -3,7 +3,6 @@ package localstate
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // writeAtomic writes data to a temp file in the same directory then renames it
@@ -35,19 +34,20 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(tmpName, path)
 }
 
-// lock acquires an exclusive advisory lock on the named lock file and returns
-// an unlock function. Concurrent mutators block until the holder unlocks.
+// lock acquires an exclusive lock on the named lock file and returns an unlock
+// function. Concurrent mutators block until the holder unlocks. The platform
+// primitive lives in lock_unix.go / lock_windows.go.
 func (s *Store) lock(name string) (func(), error) {
 	f, err := os.OpenFile(filepath.Join(s.dir, name), os.O_CREATE|os.O_RDWR, FileMode)
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(f); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return func() {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		unlockFile(f)
 		f.Close()
 	}, nil
 }
