@@ -13,7 +13,7 @@ import (
 
 const (
 	// DefaultAPIBase is the compiled-in fallback API base URL.
-	DefaultAPIBase = "http://localhost:8080"
+	DefaultAPIBase = "https://api.mdfly.dev"
 	// DefaultStateDirName is the state directory created under the user's home.
 	DefaultStateDirName = ".mdfly"
 	// ConfigFileName is the opt-in config file inside the state directory.

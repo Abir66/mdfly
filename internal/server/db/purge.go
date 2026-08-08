@@ -32,10 +32,12 @@ SET enqueued_at = now(),
 }
 
 // ClaimPurgeDue returns up to limit queued slugs whose next attempt is due at
-// or before now, soonest first. It reads without leasing the rows: ticks of one
-// job never overlap (the runner invokes them sequentially), and a purge is
-// idempotent anyway, so a slug claimed twice costs one redundant Cloudflare call
-// and nothing else.
+// or before now, soonest first. It reads without leasing the rows, which rests
+// on two premises: ticks of one job never overlap (the runner invokes them
+// sequentially), and **exactly one jobs container runs** (ADR-0003) — the web
+// tier may run several processes, including the two that overlap during a deploy
+// swap, but none of them ticks. A purge is idempotent anyway, so a slug claimed
+// twice costs one redundant Cloudflare call and nothing else.
 func (o *ops) ClaimPurgeDue(ctx context.Context, now time.Time, limit int) ([]PurgeTask, error) {
 	const q = `
 SELECT slug, attempts

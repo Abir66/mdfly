@@ -1,4 +1,4 @@
-.PHONY: build test lint migrate-up migrate-down dev-seed
+.PHONY: build test test-deploy lint migrate-up migrate-down dev-seed
 
 BIN_DIR := bin
 DEV_DB_URL := postgres://mdfly:secret@localhost:5432/mdfly?sslmode=disable
@@ -13,6 +13,9 @@ build: $(BIN_DIR)
 
 test:
 	go test ./...
+
+test-deploy:
+	./deploy/deploy_test.sh
 
 lint:
 	golangci-lint run ./...

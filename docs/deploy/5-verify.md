@@ -13,6 +13,22 @@ alias rcli='docker compose exec -T -e REDISCLI_AUTH redis redis-cli'
 export DATABASE_URL=$(grep -m1 '^DATABASE_URL=' ../.env | cut -d= -f2-)
 ```
 
+The web tier is two slots and only one of them is serving, so name it once rather
+than guessing per command:
+
+```sh
+export SLOT=$(docker ps --filter label=com.docker.compose.project=mdfly \
+  --format '{{.Label "com.docker.compose.service"}}' | grep -m1 '^app_')
+echo "$SLOT"                      # app_blue, or app_green after a swap
+slotc() { case "$SLOT" in app_green) docker compose --profile green "$@" ;;
+                         *) docker compose "$@" ;; esac; }
+```
+
+`app_green` sits behind a compose profile, so any `docker compose` command that
+*names* it needs `--profile green` — that is all `slotc` does. Never add the
+profile to a bare `up`: it would start both slots at once, which Caddy resolves by
+preferring blue and `deploy.sh` refuses to reason about at all.
+
 ## 5a. Healthy through Cloudflare
 
 ```sh
@@ -49,19 +65,46 @@ would show a certificate error. Confirm **SSL/TLS → Overview** reads Full (str
 
 ## 5c. Tickers are running
 
+The tickers are in the **`jobs` container**, not the web slots (ADR-0003). A web
+slot logs nothing periodic at all, so grepping it proves nothing.
+
 ```sh
-docker compose logs app | grep -E 'lifecycle gc pass|cdn purge drain'
+docker compose logs jobs | grep -E 'jobs started|lifecycle gc pass|cdn purge drain'
 ```
 
 `lifecycle gc pass` appears within `LIFECYCLE_GC_INTERVAL` (default 1h) of boot. To
 see it now rather than in an hour, temporarily set `LIFECYCLE_GC_INTERVAL=30s` in
-`.env` and `docker compose up -d app`, then put it back.
+`.env` and `docker compose up -d jobs`, then put it back.
 
 If you left the Cloudflare values empty in step 4, `purge-drain` is **not
 registered** — with no credentials every pass would fail, so the job is skipped and
 you get `cloudflare not configured, cdn purges will stay queued` at boot instead.
 Slugs still enqueue transactionally, so nothing is lost; they drain once a
 configured process runs.
+
+### The `job_runs` stamps, which outlive the logs
+
+Logs are the wrong instrument for "is the GC still alive next month?" — they roll
+over, and a container that died an hour ago still has yesterday's happy lines.
+Every pass upserts its outcome into `job_runs` (one row per job, not a history),
+and that row is the only answer:
+
+```sh
+psql "$DATABASE_URL" -c 'SELECT name, last_success_at, last_failure_at, consecutive_failures FROM job_runs'
+```
+
+What each column means:
+
+- **No row for a job** — it has not completed a pass yet. Expected in the first
+  hour; not expected after `LIFECYCLE_GC_INTERVAL` has elapsed.
+- **`last_success_at` older than the interval** — the pass is failing or the
+  container is not running. `last_error` holds the reason.
+- **`consecutive_failures` climbing** — the pass fails every time. Zero resets on
+  the next success.
+
+Exactly one `jobs` container may run (ADR-0003) — the purge drain's claim is
+lease-free and assumes a single writer. `docker compose ps jobs` showing more than
+one is a bug, not headroom.
 
 ## 5d. Rate limiting returns 429
 
@@ -123,7 +166,7 @@ docker compose stop redis
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   https://api.mdfly.dev/v1/publish/init -H 'Content-Type: application/json' -d '{}'
 # => 400 — not 429, not 5xx
-docker compose logs app --tail 5 | grep 'rate limiter unavailable'
+slotc logs "$SLOT" --tail 5 | grep 'rate limiter unavailable'
 docker compose start redis
 ```
 
@@ -148,6 +191,11 @@ rcli del probe:persist
 `(nil)` means `redis-data:/data` is not attached — fix that before believing
 anything is durable. Use a key with **no TTL**; a TTL'd key is eviction-eligible and
 proves less.
+
+`down` removes every container in the project, green included, and the following
+`up -d` starts only the default profile — so if green was the live slot you come
+back on blue. Same image either way, since both slots read `MDFLY_IMAGE`; it is
+the *slot* that moves, and `deploy.sh` will detect blue as live next time.
 
 **Never `docker compose down -v`** — that deletes the volume.
 
@@ -207,16 +255,81 @@ psql "$DATABASE_URL" -c 'SELECT slug, attempts, next_attempt_at FROM purge_queue
 
 A healthy system keeps this table empty or near-empty. A climbing `attempts` means
 Cloudflare is rejecting the purge — check the token, then the zone ID, then the
-rejection message in `docker compose logs app`.
+rejection message in `docker compose logs jobs` — the drain runs there.
 
 If an image in the document fails to load, or the Raw toggle errors in the browser
 console, that is the R2 CORS rule from step 3.5.
+
+## 5j. A code-only deploy drops nothing
+
+The claim being tested is narrow and worth stating: on the **swap path** — no new
+migration — the idle slot is started and health-checked *before* the live one is
+stopped, and Caddy's `lb_policy first` moves traffic the instant the live slot goes
+away. No request should see a 5xx.
+
+Two terminals. The first hammers the site through Cloudflare for the duration:
+
+```sh
+while true; do
+  curl -s -o /dev/null -w '%{http_code}\n' https://mdfly.dev/healthz
+  sleep 0.1
+done | sort | uniq -c
+```
+
+The second runs a deploy of a commit that changes no migration — redeploying the
+current tag is enough:
+
+```sh
+cd ~/mdfly/deploy
+./deploy.sh --dry-run             # must say "code-only", not "schema change"
+./deploy.sh
+```
+
+Stop the loop after `deploy.sh` returns. The count must be **one line, `200`**. A
+handful of `502`s means the fall-through is not working: check that both slots are
+in `deploy/Caddyfile` and that `health_uri /healthz` is present.
+
+Confirm the slot actually moved, rather than the deploy having done nothing:
+
+```sh
+docker ps --filter label=com.docker.compose.project=mdfly \
+  --format '{{.Label "com.docker.compose.service"}}\t{{.Image}}'
+# the serving slot is the other colour, on the new tag; the old slot is gone
+```
+
+An in-flight request survives its slot being stopped for a separate reason — the
+drain — and that is the timeout chain in step 4.1, not the swap.
+
+## 5k. A schema deploy is a short, visible outage
+
+On the **schema path** there is deliberately no overlap: a migration would
+otherwise have to be readable by both versions at once, and ADR-0015 buys ~5
+seconds of downtime rather than a permanent expand/contract rule. Verify the shape
+of it so it is not a surprise at 1am.
+
+With the same request loop running, deploy a commit that adds a migration:
+
+```sh
+./deploy.sh --dry-run
+# path:    schema change — migrate, then recreate the live slot
+./deploy.sh
+```
+
+Expected: a **short run of `502`s** — seconds, not minutes — while the single slot
+is recreated, then `200` again. That is the documented cost, not a fault. What must
+*not* happen is the migration failing and code starting anyway; `deploy.sh` runs
+`migrate` first and aborts before touching a container if it fails.
+
+**Rollback cannot undo this.** The bookmark holds a tag, and a tag cannot un-apply
+a migration, so `deploy.sh rollback` refuses to cross one without `--force`. A bad
+schema deploy is fixed forward.
 
 ## Checklist
 
 - [ ] `/healthz` returns 200 through Cloudflare on both `mdfly.dev` and `api.mdfly.dev`
 - [ ] Origin cert is Cloudflare Origin CA; SSL mode is Full (strict)
-- [ ] `lifecycle gc pass` in the logs
+- [ ] `lifecycle gc pass` in the **jobs** container's logs
+- [ ] `job_runs` holds a row per registered job with a recent `last_success_at`
 - [ ] Eleventh rapid publish returns 429 with `X-RateLimit-*` and `Retry-After`
 - [ ] Redis keys show real client IPs, all with TTLs
 - [ ] A spoofed `CF-Connecting-IP` at the origin is ignored
@@ -225,5 +338,8 @@ console, that is the R2 CORS rule from step 3.5.
 - [ ] 6379, 8080, and 80 all refuse from outside; only 443 connects
 - [ ] A published document renders and its images load
 - [ ] An update invalidates the edge cache and `purge_queue` drains to empty
+- [ ] A code-only `./deploy.sh` under a request loop returns `200` and nothing else
+- [ ] A schema `./deploy.sh` returns to `200` within seconds, and rollback refuses
+      to cross the migration
 
 Next: [6. Operate](6-operate.md).

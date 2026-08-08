@@ -63,9 +63,14 @@ Easiest path by far: generate a password with no punctuation, e.g.
 `openssl rand -hex 32`. Neither problem can then occur.
 
 If the provider offers **both a pooled and a direct endpoint**, use the pooled one
-for `DATABASE_URL` (the app has its own pool and opens long-lived connections) and
-the direct one for migrations, which run DDL. Step 4 shows how to pass the direct
-URL to `migrate` without touching `.env`.
+for `DATABASE_URL` (each process has its own pool and opens long-lived connections)
+and the direct one for migrations, which run DDL. Step 4 shows how to pass the
+direct URL to `migrate` without touching `.env`.
+
+Budget for **three** pools, not one: a web slot, the `jobs` container, and — for
+the few seconds of a blue-green swap — a second web slot. The plan's connection
+limit is the ceiling everything else is fitted under, and a swap is when it is
+briefly tightest.
 
 ## 2.4 Check
 

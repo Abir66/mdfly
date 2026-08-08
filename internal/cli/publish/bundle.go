@@ -9,19 +9,14 @@ import (
 	"github.com/Abir66/mdfly/internal/api"
 )
 
-// maxInlineContentBytes is the per-file size below which ForSingleFile keeps the
-// file content in memory to avoid a second read at upload time.
-const maxInlineContentBytes = 256 * 1024
-
-// BundleFile is one file in a local Bundle. Content is preloaded for small
-// files (<= maxInlineContentBytes) and nil otherwise, in which case the file is
-// re-read from DiskPath at upload.
+// BundleFile is one file in a local Bundle. Content holds the exact bytes Hash
+// was computed over and is what the upload phase PUTs, so a file edited between
+// hashing and upload cannot desync the bundle from what the server was told.
 type BundleFile struct {
-	Path     string // logical path within the bundle (sent on the wire)
-	DiskPath string // path on disk for reading the bytes
-	Hash     string // hex-encoded SHA256 of the file content
-	Size     int64
-	Content  []byte
+	Path    string // logical path within the bundle (sent on the wire)
+	Hash    string // hex-encoded SHA256 of Content
+	Size    int64
+	Content []byte
 }
 
 // Bundle is the CLI-local view of a publish bundle, keyed by project-root-relative
@@ -44,7 +39,7 @@ func ForSingleFile(filePath string) (Bundle, error) {
 		return Bundle{}, err
 	}
 	logicalPath := filepath.Base(absPath)
-	f := newBundleFile(logicalPath, absPath, content)
+	f := newBundleFile(logicalPath, content)
 	return Bundle{
 		RootPath:    logicalPath,
 		ProjectRoot: filepath.Dir(absPath),
@@ -53,19 +48,15 @@ func ForSingleFile(filePath string) (Bundle, error) {
 }
 
 // newBundleFile builds a BundleFile from content already read into memory,
-// preloading Content for small files (<= maxInlineContentBytes).
-func newBundleFile(logicalPath, diskPath string, content []byte) BundleFile {
+// retaining the bytes so upload never re-reads from disk.
+func newBundleFile(logicalPath string, content []byte) BundleFile {
 	sum := sha256.Sum256(content)
-	f := BundleFile{
-		Path:     logicalPath,
-		DiskPath: diskPath,
-		Hash:     hex.EncodeToString(sum[:]),
-		Size:     int64(len(content)),
+	return BundleFile{
+		Path:    logicalPath,
+		Hash:    hex.EncodeToString(sum[:]),
+		Size:    int64(len(content)),
+		Content: content,
 	}
-	if f.Size <= maxInlineContentBytes {
-		f.Content = content
-	}
-	return f
 }
 
 // TotalBytes is the summed size of every file in the bundle.

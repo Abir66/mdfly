@@ -75,12 +75,115 @@ func recv(tb testing.TB, ch <-chan string) string {
 	}
 }
 
+// fakeRecorder captures every outcome the runner reports, and can fail the way
+// a database-backed recorder would.
+type fakeRecorder struct {
+	runs   chan run
+	err    error
+	panics bool
+}
+
+type run struct {
+	name   string
+	runErr error
+	at     time.Time
+}
+
+func newFakeRecorder() *fakeRecorder { return &fakeRecorder{runs: make(chan run, 4)} }
+
+func (r *fakeRecorder) RecordJobRun(_ context.Context, name string, runErr error, at time.Time) error {
+	r.runs <- run{name: name, runErr: runErr, at: at}
+	if r.panics {
+		panic("recorder exploded")
+	}
+	return r.err
+}
+
+func (r *fakeRecorder) recv(tb testing.TB) run {
+	tb.Helper()
+	select {
+	case v := <-r.runs:
+		return v
+	case <-time.After(waitFor):
+		tb.Fatal("timed out waiting for a recorded run")
+		return run{}
+	}
+}
+
+func TestRecorderSeesSuccessfulTick(t *testing.T) {
+	clock := newFakeClock()
+	recorder := newFakeRecorder()
+	runner := jobs.New(clock, recorder)
+
+	runner.Register("purge-drain", time.Minute, func(context.Context) error { return nil })
+	runner.Start(context.Background())
+	t.Cleanup(func() { _ = runner.Stop(context.Background()) })
+
+	before := time.Now()
+	clock.ticker(t, time.Minute).tick(t)
+
+	got := recorder.recv(t)
+	if got.name != "purge-drain" {
+		t.Errorf("recorded job = %q, want %q", got.name, "purge-drain")
+	}
+	if got.runErr != nil {
+		t.Errorf("recorded error = %v, want nil", got.runErr)
+	}
+	if got.at.Before(before) {
+		t.Errorf("recorded at = %s, want at or after %s", got.at, before)
+	}
+}
+
+func TestRecorderSeesFailedTick(t *testing.T) {
+	clock := newFakeClock()
+	recorder := newFakeRecorder()
+	runner := jobs.New(clock, recorder)
+
+	failure := errors.New("drain failed")
+	runner.Register("purge-drain", time.Minute, func(context.Context) error { return failure })
+	runner.Start(context.Background())
+	t.Cleanup(func() { _ = runner.Stop(context.Background()) })
+
+	clock.ticker(t, time.Minute).tick(t)
+
+	if got := recorder.recv(t); !errors.Is(got.runErr, failure) {
+		t.Fatalf("recorded error = %v, want %v", got.runErr, failure)
+	}
+}
+
+// TestBrokenRecorderKeepsTickerAlive pins that the recorder only observes: a
+// recorder that errors or panics must not stop the job it is watching.
+func TestBrokenRecorderKeepsTickerAlive(t *testing.T) {
+	for name, recorder := range map[string]*fakeRecorder{
+		"erroring":  {runs: make(chan run, 2), err: errors.New("insert failed")},
+		"panicking": {runs: make(chan run, 2), panics: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			clock := newFakeClock()
+			runner := jobs.New(clock, recorder)
+
+			fired := make(chan string, 2)
+			runner.Register("drain", time.Minute, func(context.Context) error { fired <- "drain"; return nil })
+			runner.Start(context.Background())
+			t.Cleanup(func() { _ = runner.Stop(context.Background()) })
+
+			ticker := clock.ticker(t, time.Minute)
+			ticker.tick(t)
+			recv(t, fired)
+			ticker.tick(t)
+			if got := recv(t, fired); got != "drain" {
+				t.Fatalf("job stopped ticking after a %s recorder, got %q", name, got)
+			}
+		})
+	}
+}
+
 func TestJobFiresOnEveryTick(t *testing.T) {
 	clock := newFakeClock()
-	runner := jobs.New(clock)
+	runner := jobs.New(clock, nil)
 
 	fired := make(chan string, 2)
-	runner.Register("purge-drain", time.Minute, func(context.Context) { fired <- "purge-drain" })
+	runner.Register("purge-drain", time.Minute, func(context.Context) error { fired <- "purge-drain"; return nil })
 	runner.Start(context.Background())
 	t.Cleanup(func() { _ = runner.Stop(context.Background()) })
 
@@ -103,18 +206,18 @@ func TestRegisterRejectsNonPositiveInterval(t *testing.T) {
 					t.Fatalf("Register accepted interval %s", interval)
 				}
 			}()
-			jobs.New(newFakeClock()).Register("bad", interval, func(context.Context) {})
+			jobs.New(newFakeClock(), nil).Register("bad", interval, func(context.Context) error { return nil })
 		}()
 	}
 }
 
 func TestJobsTickIndependently(t *testing.T) {
 	clock := newFakeClock()
-	runner := jobs.New(clock)
+	runner := jobs.New(clock, nil)
 
 	fired := make(chan string, 4)
-	runner.Register("purge-drain", 15*time.Minute, func(context.Context) { fired <- "purge-drain" })
-	runner.Register("lifecycle-gc", time.Hour, func(context.Context) { fired <- "lifecycle-gc" })
+	runner.Register("purge-drain", 15*time.Minute, func(context.Context) error { fired <- "purge-drain"; return nil })
+	runner.Register("lifecycle-gc", time.Hour, func(context.Context) error { fired <- "lifecycle-gc"; return nil })
 	runner.Start(context.Background())
 	t.Cleanup(func() { _ = runner.Stop(context.Background()) })
 
@@ -138,14 +241,15 @@ func TestJobsTickIndependently(t *testing.T) {
 
 func TestPanickingJobIsRecoveredAndSiblingsKeepTicking(t *testing.T) {
 	clock := newFakeClock()
-	runner := jobs.New(clock)
+	recorder := newFakeRecorder()
+	runner := jobs.New(clock, recorder)
 
 	fired := make(chan string, 4)
-	runner.Register("boom", time.Minute, func(context.Context) {
+	runner.Register("boom", time.Minute, func(context.Context) error {
 		fired <- "boom"
 		panic("job exploded")
 	})
-	runner.Register("healthy", time.Hour, func(context.Context) { fired <- "healthy" })
+	runner.Register("healthy", time.Hour, func(context.Context) error { fired <- "healthy"; return nil })
 	runner.Start(context.Background())
 	t.Cleanup(func() { _ = runner.Stop(context.Background()) })
 
@@ -155,6 +259,9 @@ func TestPanickingJobIsRecoveredAndSiblingsKeepTicking(t *testing.T) {
 	boom.tick(t)
 	if got := recv(t, fired); got != "boom" {
 		t.Fatalf("first run was %q", got)
+	}
+	if got := recorder.recv(t); got.name != "boom" || got.runErr == nil {
+		t.Fatalf("recorded %q with error %v, want boom recorded as a failure", got.name, got.runErr)
 	}
 	boom.tick(t)
 	if got := recv(t, fired); got != "boom" {
@@ -169,13 +276,14 @@ func TestPanickingJobIsRecoveredAndSiblingsKeepTicking(t *testing.T) {
 
 func TestStopWaitsForInFlightJob(t *testing.T) {
 	clock := newFakeClock()
-	runner := jobs.New(clock)
+	runner := jobs.New(clock, nil)
 
 	running, release, done := make(chan string, 1), make(chan struct{}), make(chan struct{})
-	runner.Register("slow", time.Minute, func(context.Context) {
+	runner.Register("slow", time.Minute, func(context.Context) error {
 		running <- "slow"
 		<-release
 		close(done)
+		return nil
 	})
 	runner.Start(context.Background())
 
@@ -205,12 +313,13 @@ func TestStopWaitsForInFlightJob(t *testing.T) {
 
 func TestStopReturnsErrorWhenShutdownContextExpires(t *testing.T) {
 	clock := newFakeClock()
-	runner := jobs.New(clock)
+	runner := jobs.New(clock, nil)
 
 	running, release := make(chan string, 1), make(chan struct{})
-	runner.Register("stuck", time.Minute, func(context.Context) {
+	runner.Register("stuck", time.Minute, func(context.Context) error {
 		running <- "stuck"
 		<-release
+		return nil
 	})
 	runner.Start(context.Background())
 	t.Cleanup(func() { close(release) })
@@ -227,10 +336,10 @@ func TestStopReturnsErrorWhenShutdownContextExpires(t *testing.T) {
 
 func TestStopHaltsFurtherTicks(t *testing.T) {
 	clock := newFakeClock()
-	runner := jobs.New(clock)
+	runner := jobs.New(clock, nil)
 
 	fired := make(chan string, 2)
-	runner.Register("drain", time.Minute, func(context.Context) { fired <- "drain" })
+	runner.Register("drain", time.Minute, func(context.Context) error { fired <- "drain"; return nil })
 	runner.Start(context.Background())
 
 	ticker := clock.ticker(t, time.Minute)
@@ -250,8 +359,8 @@ func TestStopHaltsFurtherTicks(t *testing.T) {
 }
 
 func TestStopIsIdempotent(t *testing.T) {
-	runner := jobs.New(newFakeClock())
-	runner.Register("drain", time.Minute, func(context.Context) {})
+	runner := jobs.New(newFakeClock(), nil)
+	runner.Register("drain", time.Minute, func(context.Context) error { return nil })
 	runner.Start(context.Background())
 
 	for i := range 2 {
@@ -262,14 +371,15 @@ func TestStopIsIdempotent(t *testing.T) {
 }
 
 func TestSystemClockDrivesRealTicks(t *testing.T) {
-	runner := jobs.New(jobs.SystemClock{})
+	runner := jobs.New(jobs.SystemClock{}, nil)
 
 	fired := make(chan string, 1)
-	runner.Register("tick", 5*time.Millisecond, func(context.Context) {
+	runner.Register("tick", 5*time.Millisecond, func(context.Context) error {
 		select {
 		case fired <- "tick":
 		default:
 		}
+		return nil
 	})
 	runner.Start(context.Background())
 	t.Cleanup(func() { _ = runner.Stop(context.Background()) })

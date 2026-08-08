@@ -134,16 +134,18 @@ func (s *Service) deleteBlobs(ctx context.Context, now time.Time, limit int) (in
 	return deleted, errors.Join(errs...)
 }
 
-// Job adapts Sweep to the jobs.Runner signature, logging per-pass counts.
-func (s *Service) Job(ctx context.Context) {
+// Job adapts Sweep to the jobs.Runner signature, logging per-pass counts and
+// returning the failure so the runner's recorder can stamp it.
+func (s *Service) Job(ctx context.Context) error {
 	res, err := s.Sweep(ctx)
 	if err != nil {
 		slog.Error("lifecycle gc pass failed", "err", err,
 			"expired", res.Expired, "abandoned", res.Abandoned, "blobs_deleted", res.BlobsDeleted)
-		return
+		return err
 	}
 	slog.Info("lifecycle gc pass",
 		"expired", res.Expired, "abandoned", res.Abandoned, "blobs_deleted", res.BlobsDeleted)
+	return nil
 }
 
 func (s *Service) validateConfig() error {

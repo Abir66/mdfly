@@ -2,7 +2,8 @@
 
 An always-on ARM box with a fixed public IP, Docker, and the repo cloned. ADR-0003
 picks always-on-free so the periodic jobs can be in-process tickers with no
-external scheduler.
+external scheduler — those tickers run in the **`jobs` container**, a second
+process from the same image that opens no listener, not in the web containers.
 
 **You need**: an SSH keypair. **You produce**: a reserved public IP, used in steps
 2 and 3.
@@ -182,8 +183,11 @@ Finally:
 
 ```sh
 cd ~/mdfly && ls deploy/
-# => Caddyfile  compose.yaml  redis.conf.example
+# => Caddyfile  compose.yaml  deploy.sh  deploy_test.sh  redis.conf.example
 ```
+
+`deploy.sh` is tracked in the repo, not written on the box — it holds real logic
+now (ADR-0015), and `git pull` is how the box gets a fixed version of it.
 
 `docker compose` commands in later steps are written from `~/mdfly/deploy`. Run them
 from there — Compose locates `compose.yaml` by looking in the working directory. From
