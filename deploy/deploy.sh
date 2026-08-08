@@ -24,6 +24,10 @@ HEALTH_PATH=/healthz
 HEALTH_INTERVAL_SECONDS=2
 # Long enough for a boot and its startup DB ping on a free-tier box.
 HEALTH_TIMEOUT_SECONDS=${MDFLY_HEALTH_TIMEOUT:-60}
+CADDY_SERVICE=caddy
+# Two of the Caddyfile's `health_interval`s, so the active checker has had a probe
+# land before the live slot is taken away. See await_caddy_upstream.
+CADDY_SETTLE_SECONDS=${MDFLY_CADDY_SETTLE:-4}
 
 DEPLOY_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd "$DEPLOY_DIR/.." && pwd)
@@ -113,17 +117,25 @@ execute() {
 # --- the two paths ----------------------------------------------------------
 
 # Zero downtime: both versions are up for a few seconds, and Caddy's `lb_policy
-# first` means traffic flips the instant the live slot stops.
+# first` moves traffic to the incoming slot once the outgoing one stops. The slot
+# has to be healthy *to Caddy* before that happens, which is a separate wait from
+# its own /healthz — see await_caddy_upstream.
 swap_slots() {
 	local live=$1 idle=$2 previous=$3
 	start_slot "$idle"
-	if ! await_health "$idle"; then
-		echo "deploy: $idle never answered $HEALTH_PATH — aborting, $live keeps serving" >&2
-		stop_slot "$idle"
-		set_compose_image "$previous"
-		exit 1
-	fi
+	await_health "$idle" ||
+		abort_swap "$idle" "$live" "$previous" "never answered $HEALTH_PATH"
+	await_caddy_upstream "$idle" ||
+		abort_swap "$idle" "$live" "$previous" "never became reachable from $CADDY_SERVICE"
 	stop_slot "$live"
+}
+
+abort_swap() {
+	local idle=$1 live=$2 previous=$3 reason=$4
+	echo "deploy: $idle $reason — aborting, $live keeps serving" >&2
+	stop_slot "$idle"
+	set_compose_image "$previous"
+	exit 1
 }
 
 # No overlap, because a migration would otherwise have to be readable by both
@@ -170,6 +182,30 @@ await_health() {
 	while [ "$waited" -lt "$HEALTH_TIMEOUT_SECONDS" ]; do
 		if compose_for_slot "$slot" exec -T "$slot" \
 			wget -qO- "http://127.0.0.1:$HEALTH_PORT$HEALTH_PATH" >/dev/null 2>&1; then
+			return 0
+		fi
+		sleep "$HEALTH_INTERVAL_SECONDS"
+		waited=$((waited + HEALTH_INTERVAL_SECONDS))
+	done
+	return 1
+}
+
+# await_health asks the slot about itself, which is not the question a swap turns
+# on. Caddy drops an upstream from the pool until one of its own active probes
+# succeeds, and the idle slot fails DNS for as long as it does not exist — so it
+# enters every swap already marked unhealthy. Stopping the live slot before
+# Caddy's next probe leaves the pool empty, and an empty pool is a 502 that
+# lb_retries cannot rescue, because there is nothing left to retry against.
+#
+# So: reach the slot from Caddy's own network namespace, then wait out the probe
+# interval. Nothing here can read Caddy's health state directly — its admin API is
+# off (deploy/Caddyfile) — which is why the second half is a settle, not a poll.
+await_caddy_upstream() {
+	local slot=$1 waited=0
+	while [ "$waited" -lt "$HEALTH_TIMEOUT_SECONDS" ]; do
+		if docker compose exec -T "$CADDY_SERVICE" \
+			wget -qO- "http://$slot:$HEALTH_PORT$HEALTH_PATH" >/dev/null 2>&1; then
+			sleep "$CADDY_SETTLE_SECONDS"
 			return 0
 		fi
 		sleep "$HEALTH_INTERVAL_SECONDS"

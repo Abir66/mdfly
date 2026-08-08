@@ -289,6 +289,15 @@ Stop the loop after `deploy.sh` returns. The count must be **one line, `200`**. 
 handful of `502`s means the fall-through is not working: check that both slots are
 in `deploy/Caddyfile` and that `health_uri /healthz` is present.
 
+A single `502` at the moment of the swap is a different fault, and a subtle one.
+Caddy keeps an upstream **out of the pool** until one of its own active probes
+succeeds, and the idle slot fails DNS for as long as it does not exist — so it
+enters the swap already marked unhealthy. If the live slot stops before Caddy's
+next probe the pool is empty, and an empty pool is a 502 that `lb_retries` cannot
+rescue. `deploy.sh` waits this out (`await_caddy_upstream`, one `MDFLY_CADDY_SETTLE`
+of 4s against a 2s `health_interval`); if you see one anyway, those two numbers
+have drifted apart.
+
 Confirm the slot actually moved, rather than the deploy having done nothing:
 
 ```sh

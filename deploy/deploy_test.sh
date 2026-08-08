@@ -30,12 +30,16 @@ setup() {
 	STUB_RUNNING_SLOTS=""
 	STUB_APPLIED_VERSION=3
 	STUB_HEALTH_OK=1
+	STUB_CADDY_SEES_OK=1
 	STUB_IMAGE_app_blue=""
 	STUB_IMAGE_app_green=""
 	STUB_LOCAL_TAGS=""
 	export STUB_HEAD_SHA STUB_RUNNING_SLOTS STUB_APPLIED_VERSION STUB_HEALTH_OK \
-		STUB_IMAGE_app_blue STUB_IMAGE_app_green STUB_LOCAL_TAGS
+		STUB_CADDY_SEES_OK STUB_IMAGE_app_blue STUB_IMAGE_app_green STUB_LOCAL_TAGS
 	export MDFLY_HEALTH_TIMEOUT=1
+	# The settle exists to be slower than Caddy's probe interval; paying it in
+	# twelve tests would only make the suite slow.
+	export MDFLY_CADDY_SETTLE=0
 }
 
 bookmark_fixture() {
@@ -88,7 +92,12 @@ if [ "$1" = "compose" ]; then
 		exit 0
 	fi
 	if [ -n "${health:-}" ]; then
-		[ "$STUB_HEALTH_OK" = "1" ] && exit 0
+		# The slot answering about itself and Caddy reaching the slot are
+		# different questions, and a swap waits on both.
+		case "$*" in
+		*" caddy "*) [ "$STUB_CADDY_SEES_OK" = "1" ] && exit 0 ;;
+		*) [ "$STUB_HEALTH_OK" = "1" ] && exit 0 ;;
+		esac
 		exit 1
 	fi
 	exit 0
@@ -259,6 +268,34 @@ test_abort_leaves_the_old_slot_serving() {
 	run_deploy
 
 	assert_status 1
+	assert_called "compose --profile green stop app_green"
+	assert_not_called "compose stop app_blue"
+	grep -q "MDFLY_IMAGE=ghcr.io/abir66/mdfly:oldsha" "$SANDBOX/deploy/.env" ||
+		fail "expected the compose image file to be restored to the serving tag"
+	teardown
+}
+
+test_swap_waits_for_caddy_before_stopping_the_live_slot() {
+	setup "the swap waits for Caddy to reach the new slot, not just the slot itself"
+	STUB_RUNNING_SLOTS="app_blue"
+	STUB_IMAGE_app_blue="ghcr.io/abir66/mdfly:oldsha"
+	run_deploy
+
+	assert_status 0
+	assert_called "compose exec -T caddy wget -qO- http://app_green:8080/healthz"
+	assert_call_order "exec -T caddy wget -qO- http://app_green" "compose stop app_blue"
+	teardown
+}
+
+test_a_slot_caddy_cannot_reach_aborts_the_swap() {
+	setup "a slot Caddy cannot reach aborts the deploy"
+	STUB_RUNNING_SLOTS="app_blue"
+	STUB_IMAGE_app_blue="ghcr.io/abir66/mdfly:oldsha"
+	STUB_CADDY_SEES_OK=0
+	run_deploy
+
+	assert_status 1
+	assert_output_has "never became reachable from caddy"
 	assert_called "compose --profile green stop app_green"
 	assert_not_called "compose stop app_blue"
 	grep -q "MDFLY_IMAGE=ghcr.io/abir66/mdfly:oldsha" "$SANDBOX/deploy/.env" ||
