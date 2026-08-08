@@ -134,6 +134,10 @@ func (w *walker) crawl(seedDir string, seedContent []byte) {
 			queue = append(queue, w.dirTargets(cur)...)
 			continue
 		}
+		if !info.Mode().IsRegular() {
+			slog.Warn("reference is not a regular file, leaving link verbatim", "path", cur, "mode", info.Mode())
+			continue
+		}
 
 		md := isMarkdown(cur)
 		if md && !w.recursive {
