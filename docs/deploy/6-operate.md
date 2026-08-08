@@ -57,6 +57,13 @@ announced.
 If the idle slot never answers `/healthz`, the deploy aborts, stops it, restores
 the previous tag, and leaves the live slot serving. Nothing to undo.
 
+> **A pull that changes `deploy/Caddyfile` needs `docker compose restart caddy`.**
+> The file is a read-only bind mount that Caddy read once at start, and `deploy.sh`
+> never touches the `caddy` service — `docker compose up` does not recreate a
+> container because a mounted file's contents changed. The symptom of skipping it
+> is a permanent 502 with every container healthy. Validate first:
+> `docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
+
 The image prune is part of the deploy and keeps exactly two tags: what is serving
 and what rollback would return to.
 

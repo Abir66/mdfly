@@ -11,11 +11,16 @@ Follow these in order. Each one needs something the previous one produced.
 | 5 | [Verify](5-verify.md) | Proof each piece works, with a checklist |
 | 6 | [Operate](6-operate.md) | Redeploys, rollback, troubleshooting, runbook |
 | 7 | [Container registry](7-container-registry.md) | The private ARM image CI publishes, and the GitHub settings it needs |
+| 8 | [Cutover](8-cutover.md) | The box on the pipeline, with the swap, the rollback and the drain each observed once |
 
 Steps 1–6 build the box; step 7 is entirely GitHub-side. Do it **before step 4** —
 that step pulls a published image and there is nothing to compile on the box. The
 rate limiter's Redis is set up in step 4 and verified in step 5 like everything
 else — ADR-0013 holds the reasoning behind it.
+
+Step 8 is the one-time cutover: it is where the registry token is created, where a
+box still running a locally built image is retired, and where the deploy paths are
+rehearsed deliberately rather than met during an incident.
 
 ## What you are building
 
