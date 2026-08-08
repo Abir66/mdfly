@@ -162,11 +162,25 @@ The old `app` service no longer exists in `deploy/compose.yaml`, so Compose will
 treat its container as an orphan and leave it running. It has to go first, for the
 single-ticker reason in §8.0.
 
+First, prove there is something to move *to*. This removal takes the site down,
+and a box whose registry holds no image has no way forward:
+
 ```sh
-docker compose logs app --tail 20        # a last look, if you want one
+docker pull ghcr.io/abir66/mdfly:$(git -C ~/mdfly rev-parse HEAD)
+```
+
+If that does not end in `Downloaded newer image` or `Image is up to date`, stop —
+re-read the prerequisite at the top of this page. Do not run the next command.
+
+```sh
+docker logs mdfly-app-1 --tail 20        # a last look, if you want one
 docker rm -f $(docker ps -q --filter label=com.docker.compose.project=mdfly \
                             --filter label=com.docker.compose.service=app)
 ```
+
+`docker logs`, not `docker compose logs`: `app` is gone from `compose.yaml`, which
+is exactly why the container is an orphan — Compose no longer knows the name and
+answers `no such service: app`.
 
 **The site is down from this moment until §8.4 finishes** — a few minutes, and the
 one unavoidable outage of the cutover. Caddy and Redis keep running and are not
