@@ -2,11 +2,39 @@ package manifest_test
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/Abir66/mdfly/internal/api"
 	"github.com/Abir66/mdfly/internal/server/manifest"
 )
+
+func TestNestedKey(t *testing.T) {
+	tests := []struct {
+		rest    string
+		up      string
+		wantKey string
+		wantOK  bool
+	}{
+		{"y.md", "", "y.md", true},
+		{"sub2/a.md", "", "sub2/a.md", true},
+		{"/y.md/", "", "y.md", true},
+		{"a.md", "2", "../../a.md", true},
+		{"assets/logo.png", "", "assets/logo.png", true},
+		{"", "", "", false},
+		{"y.md", "abc", "", false},
+		{"y.md", "-1", "", false},
+		{"y.md", strconv.Itoa(manifest.MaxUp), strings.Repeat("../", manifest.MaxUp) + "y.md", true},
+		{"y.md", strconv.Itoa(manifest.MaxUp + 1), "", false},
+	}
+	for _, tt := range tests {
+		key, ok := manifest.NestedKey(tt.rest, tt.up)
+		if ok != tt.wantOK || key != tt.wantKey {
+			t.Errorf("NestedKey(%q,%q)=(%q,%v), want (%q,%v)", tt.rest, tt.up, key, ok, tt.wantKey, tt.wantOK)
+		}
+	}
+}
 
 func TestFromDTO_indexesByPath(t *testing.T) {
 	dto := api.BundleDTO{

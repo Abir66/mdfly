@@ -7,7 +7,6 @@ package view
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"html/template"
 	"log/slog"
@@ -53,7 +52,7 @@ func (s *Service) RenderPath(ctx context.Context, slug, rawPath, up string) (str
 	if slug == "" {
 		return "", httpx.NotFound("not found")
 	}
-	key, ok := nestedKey(rawPath, up)
+	key, ok := manifest.NestedKey(rawPath, up)
 	if !ok {
 		return "", httpx.NotFound("not found")
 	}
@@ -71,9 +70,10 @@ type bundle struct {
 	UpdatedAt time.Time
 }
 
-// loadBundle fetches the document row for slug and decodes its manifest.
+// loadBundle fetches the document row for slug and its decoded manifest via the
+// shared db loader, mapping its error vocabulary to the view path's HTTP errors.
 func (s *Service) loadBundle(ctx context.Context, slug string) (bundle, *httpx.Error) {
-	doc, err := s.Db.GetBySlug(ctx, slug)
+	doc, m, err := s.Db.GetManifestBySlug(ctx, slug)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return bundle{}, httpx.NotFound("not found")
@@ -81,15 +81,10 @@ func (s *Service) loadBundle(ctx context.Context, slug string) (bundle, *httpx.E
 		if errors.Is(err, db.ErrGone) {
 			return bundle{}, httpx.Gone("gone")
 		}
-		slog.Error("db.GetBySlug failed", "slug", slug, "err", err)
+		slog.Error("load bundle failed", "slug", slug, "err", err)
 		return bundle{}, httpx.Internal("internal error")
 	}
-	b := bundle{UpdatedAt: doc.UpdatedAt}
-	if err := json.Unmarshal(doc.ManifestJSON, &b.Manifest); err != nil {
-		slog.Error("manifest unmarshal failed", "slug", slug, "err", err)
-		return bundle{}, httpx.Internal("internal error")
-	}
-	return b, nil
+	return bundle{Manifest: m, UpdatedAt: doc.UpdatedAt}, nil
 }
 
 // render resolves key against the bundle manifest and dispatches on node type

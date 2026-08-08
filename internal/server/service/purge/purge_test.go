@@ -90,9 +90,10 @@ func newService(store *fakeStore, cdn *fakeCDN) *purge.Service {
 	}
 }
 
-// TestPurge_issuesTwoPrefixes pins the invalidation surface: the human page and
-// the LLM twin, each as a prefix covering the bare page plus every sub-path.
-func TestPurge_issuesTwoPrefixes(t *testing.T) {
+// TestPurge_issuesThreePrefixes pins the invalidation surface: the human page,
+// the LLM twin, and the raw surface, each as a prefix covering the bare page plus
+// every sub-path.
+func TestPurge_issuesThreePrefixes(t *testing.T) {
 	store, cdn := newFakeStore(), &fakeCDN{}
 	svc := newService(store, cdn)
 
@@ -103,7 +104,7 @@ func TestPurge_issuesTwoPrefixes(t *testing.T) {
 	if len(cdn.calls) != 1 {
 		t.Fatalf("cdn called %d times, want 1", len(cdn.calls))
 	}
-	want := []string{"mdfly.dev/abc123", "mdfly.dev/llm/abc123"}
+	want := []string{"mdfly.dev/abc123", "mdfly.dev/llm/abc123", "mdfly.dev/raw/abc123"}
 	if len(cdn.calls[0]) != len(want) {
 		t.Fatalf("purged %v, want %v", cdn.calls[0], want)
 	}

@@ -32,6 +32,7 @@ import (
 	"github.com/Abir66/mdfly/internal/server/service/document"
 	"github.com/Abir66/mdfly/internal/server/service/publish"
 	"github.com/Abir66/mdfly/internal/server/service/purge"
+	"github.com/Abir66/mdfly/internal/server/service/raw"
 	"github.com/Abir66/mdfly/internal/server/service/view"
 	"github.com/Abir66/mdfly/internal/server/static"
 	"github.com/Abir66/mdfly/internal/server/storage"
@@ -187,6 +188,7 @@ func newTestServerWithPurge(t *testing.T, dsn string, env minioEnv, baseURL stri
 	assets := static.New()
 	pubSvc := &publish.Service{Db: pg, Storage: r2, BaseURL: baseURL}
 	viewSvc := &view.Service{Db: pg, Storage: r2, Static: assets}
+	rawSvc := &raw.Service{Db: pg, Storage: r2}
 	docSvc := &document.Service{Db: pg}
 	if purger != nil {
 		pubSvc.Purge = purger
@@ -200,6 +202,8 @@ func newTestServerWithPurge(t *testing.T, dsn string, env minioEnv, baseURL stri
 	mux.HandleFunc("POST /v1/update/commit", handlers.UpdateCommit(pubSvc))
 	mux.HandleFunc("DELETE /v1/documents/{slug}", handlers.DeleteDocument(docSvc))
 	mux.Handle("GET /_static/", assets.Handler())
+	mux.HandleFunc("GET /raw/{slug}", handlers.Raw(rawSvc))
+	mux.HandleFunc("GET /raw/{slug}/{path...}", handlers.RawPath(rawSvc))
 	mux.HandleFunc("GET /{slug}", handlers.View(viewSvc))
 	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(viewSvc))
 

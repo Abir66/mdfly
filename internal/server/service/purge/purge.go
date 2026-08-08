@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	// DefaultBatchSize bounds how many slugs one drain pass purges. Two prefixes
-	// per slug keeps a full batch inside Cloudflare's 100-operations-per-request
-	// free-plan ceiling even if the calls were ever coalesced.
+	// DefaultBatchSize bounds how many slugs one drain pass purges. Each slug is
+	// its own PurgePrefixes call carrying three prefixes (human, LLM, raw), well
+	// inside Cloudflare's 100-operations-per-request free-plan ceiling.
 	DefaultBatchSize = 50
 
 	// DefaultBaseBackoff is the wait after a first failed attempt; each further
@@ -38,6 +38,9 @@ const (
 
 	// llmPathPrefix is the LLM twin's path segment (ADR-0010).
 	llmPathPrefix = "llm"
+
+	// rawPathPrefix is the raw surface's path segment (ADR-0016).
+	rawPathPrefix = "raw"
 )
 
 // ErrMissingCDN is returned when a purge is attempted with no Cloudflare client
@@ -163,13 +166,14 @@ func (s *Service) Job(ctx context.Context) error {
 	return nil
 }
 
-// prefixes returns the two prefixes covering slug: the human page and the LLM
-// twin. Each covers the bare page plus every sub-path under it, so one pair
-// invalidates a whole document (ADR-0012).
+// prefixes returns the three prefixes covering slug: the human page, the LLM
+// twin, and the raw surface. Each covers the bare page plus every sub-path under
+// it, so one triple invalidates a whole document (ADR-0012, ADR-0016).
 func (s *Service) prefixes(slug string) []string {
 	return []string{
 		s.Host + "/" + slug,
 		s.Host + "/" + llmPathPrefix + "/" + slug,
+		s.Host + "/" + rawPathPrefix + "/" + slug,
 	}
 }
 

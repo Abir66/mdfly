@@ -21,6 +21,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /robots.txt", handlers.Robots())
 	mux.HandleFunc("GET /install.sh", handlers.InstallScript())
 	mux.Handle("GET /_static/", a.static.Handler())
+	mux.HandleFunc("GET /raw/{slug}", handlers.Raw(a.raw))
+	mux.HandleFunc("GET /raw/{slug}/{path...}", handlers.RawPath(a.raw))
 	mux.HandleFunc("GET /{slug}", handlers.View(a.view))
 	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(a.view))
 	return middleware.Logger(middleware.Recover(mux))

@@ -145,6 +145,33 @@ func (c *Client) GetBlob(ctx context.Context, key string) ([]byte, error) {
 	return data, nil
 }
 
+// GetBlobStream opens an object for streaming. The caller owns the returned
+// ReadCloser and must Close it. Unlike GetBlob it never buffers the whole body,
+// so the largest owned-tier file costs constant memory on the free-tier VM. A
+// missing object maps to ErrBlobMissing, matching GetBlob.
+func (c *Client) GetBlobStream(ctx context.Context, key string) (io.ReadCloser, error) {
+	out, err := c.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var nf *types.NotFound
+		if errors.As(err, &nf) {
+			return nil, ErrBlobMissing
+		}
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return nil, ErrBlobMissing
+		}
+		var re *smithyhttp.ResponseError
+		if errors.As(err, &re) && re.HTTPStatusCode() == 404 {
+			return nil, ErrBlobMissing
+		}
+		return nil, fmt.Errorf("get object %s: %w", key, err)
+	}
+	return out.Body, nil
+}
+
 // ExtFromPath returns the file extension for a logical path (e.g. ".md", ".png").
 func ExtFromPath(path string) string {
 	return strings.ToLower(filepath.Ext(path))
