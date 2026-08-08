@@ -79,7 +79,8 @@ usual cause.
    newest row's tag is the full 40-character SHA of the `main` commit that just
    built.
 2. **It pulls and runs anywhere.** With a token that can read packages
-   (`read:packages`; the box gets its own token at cutover):
+   (`read:packages` — the box gets its own, created and used in
+   [step 4.4](4-deploy.md#44-registry-login)):
 
    ```sh
    echo "$CR_PAT" | docker login ghcr.io -u Abir66 --password-stdin
