@@ -10,9 +10,12 @@ Follow these in order. Each one needs something the previous one produced.
 | 4 | [Deploy](4-deploy.md) | Secrets on the box, migrations applied, stack running |
 | 5 | [Verify](5-verify.md) | Proof each piece works, with a checklist |
 | 6 | [Operate](6-operate.md) | Redeploys, troubleshooting, runbook |
+| 7 | [Container registry](7-container-registry.md) | The private ARM image CI publishes, and the GitHub settings it needs |
 
-Six files, nothing else. The rate limiter's Redis is set up in step 4 and verified in
-step 5 like everything else — ADR-0013 holds the reasoning behind it.
+Steps 1–6 build the box; step 7 is entirely GitHub-side and can be done at any
+point, but before the first pipeline deploy. The rate limiter's Redis is set up in
+step 4 and verified in step 5 like everything else — ADR-0013 holds the reasoning
+behind it.
 
 ## What you are building
 

@@ -1,0 +1,12 @@
+# Keeps the build context small and stops unrelated edits from busting the
+# `COPY . .` layer cache. Only what `go build ./cmd/mdfly-server` needs is copied.
+.git
+.github
+bin
+dump
+docs
+ralph
+scripts
+testdata
+*.md
+.env*

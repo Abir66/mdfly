@@ -12,6 +12,11 @@ import (
 const usage = "usage: mdfly-server <serve|jobs>"
 
 func main() {
+	if wantsHelp(os.Args[1:]) {
+		fmt.Println(usage)
+		return
+	}
+
 	role, err := parseArgs(os.Args[1:])
 	if err != nil {
 		slog.Error("bad invocation", "err", err, "usage", usage)
@@ -37,6 +42,20 @@ func main() {
 		slog.Error("run server", "err", err, "role", role)
 		os.Exit(1)
 	}
+}
+
+// wantsHelp reports whether the invocation asks for usage rather than a role. It
+// is answered before any config is loaded, so `mdfly-server --help` succeeds in a
+// bare image with no .env — that is how the published image is smoke-tested.
+func wantsHelp(args []string) bool {
+	if len(args) != 1 {
+		return false
+	}
+	switch args[0] {
+	case "-h", "--help", "help":
+		return true
+	}
+	return false
 }
 
 // parseArgs resolves the subcommand to a role. It requires exactly one and never
