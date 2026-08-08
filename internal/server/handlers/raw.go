@@ -23,6 +23,9 @@ const (
 // Raw handles GET /raw/{slug}, streaming the bundle Root file's raw bytes.
 func Raw(svc *raw.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if redirectCanonicalQuery(w, r) {
+			return
+		}
 		f, herr := svc.Open(r.Context(), r.PathValue("slug"), "", "")
 		writeRawResult(w, r, f, herr)
 	}
@@ -32,10 +35,10 @@ func Raw(svc *raw.Service) http.HandlerFunc {
 // to the slash-free form (ADR-0010) so every node has one URL.
 func RawPath(svc *raw.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if redirectTrailingSlash(w, r) {
+		if redirectTrailingSlash(w, r) || redirectCanonicalQuery(w, r) {
 			return
 		}
-		f, herr := svc.Open(r.Context(), r.PathValue("slug"), r.PathValue("path"), r.URL.Query().Get("up"))
+		f, herr := svc.Open(r.Context(), r.PathValue("slug"), r.PathValue("path"), r.URL.Query().Get(canonicalQueryParam))
 		writeRawResult(w, r, f, herr)
 	}
 }

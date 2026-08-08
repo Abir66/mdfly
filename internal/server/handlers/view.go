@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Abir66/mdfly/internal/server/httpx"
@@ -10,9 +11,17 @@ import (
 	"github.com/Abir66/mdfly/internal/server/ssr"
 )
 
+// canonicalQueryParam is the only query parameter the read paths honor; it
+// addresses above-root manifest keys (browsers strip dot-segments from the path
+// before the server sees them). Everything else is dropped by canonicalization.
+const canonicalQueryParam = "up"
+
 // View handles GET /{slug}, rendering the bundle's root document.
 func View(svc *view.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if redirectCanonicalQuery(w, r) {
+			return
+		}
 		html, herr := svc.RenderRoot(r.Context(), r.PathValue("slug"))
 		writeViewResult(w, html, herr)
 	}
@@ -23,12 +32,44 @@ func View(svc *view.Service) http.HandlerFunc {
 // one URL.
 func ViewPath(svc *view.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if redirectTrailingSlash(w, r) {
+		if redirectTrailingSlash(w, r) || redirectCanonicalQuery(w, r) {
 			return
 		}
-		html, herr := svc.RenderPath(r.Context(), r.PathValue("slug"), r.PathValue("path"), r.URL.Query().Get("up"))
+		html, herr := svc.RenderPath(r.Context(), r.PathValue("slug"), r.PathValue("path"), r.URL.Query().Get(canonicalQueryParam))
 		writeViewResult(w, html, herr)
 	}
+}
+
+// redirectCanonicalQuery 302-redirects to the same path carrying only the "up"
+// parameter when the request query holds anything else, and reports whether it
+// did. It runs before any Postgres or object-storage access, so a junk-query
+// request costs a query scan and a header write, not a render or a large stream
+// (S54). 302 (not 301) keeps the stripping revocable if a real query parameter
+// is ever introduced; the Cache-Control still lets the edge absorb repeats — the
+// common case is a shared link carrying tracking parameters.
+func redirectCanonicalQuery(w http.ResponseWriter, r *http.Request) bool {
+	canonical, changed := canonicalizeQuery(r.URL.Query())
+	if !changed {
+		return false
+	}
+	target := r.URL.EscapedPath()
+	if canonical != "" {
+		target += "?" + canonical
+	}
+	w.Header().Set("Cache-Control", slugCacheControl())
+	http.Redirect(w, r, target, http.StatusFound)
+	return true
+}
+
+// canonicalizeQuery returns the canonical query string retaining only the first
+// "up" value, and whether the input differed from it.
+func canonicalizeQuery(q url.Values) (string, bool) {
+	canonical := url.Values{}
+	if q.Has(canonicalQueryParam) {
+		canonical.Set(canonicalQueryParam, q.Get(canonicalQueryParam))
+	}
+	encoded := canonical.Encode()
+	return encoded, encoded != q.Encode()
 }
 
 // redirectTrailingSlash issues a 301 to the trailing-slash-free path (query
