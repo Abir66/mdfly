@@ -31,7 +31,7 @@ jobs:
       - run: go test -short ./...
       # deploy.sh is the one piece of the deploy that carries branching logic, and
       # its tests stub docker and git, so they need nothing but bash.
-      - run: shellcheck deploy/deploy.sh deploy/deploy_test.sh scripts/install.sh scripts/release.sh scripts/release_test.sh scripts/changelog.sh scripts/changelog_test.sh
+      - run: shellcheck deploy/deploy.sh deploy/deploy_test.sh internal/server/handlers/assets/install.sh scripts/release.sh scripts/release_test.sh scripts/changelog.sh scripts/changelog_test.sh
       - run: make test-deploy
       - run: make test-release
       - run: make test-changelog

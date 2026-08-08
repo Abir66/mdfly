@@ -30,7 +30,8 @@ builds:
 archives:
   - id: default
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    # scripts/install.sh only ever fetches .tar.gz, but a Windows user unpacks
+    # The installer served at mdfly.dev/install.sh only ever fetches .tar.gz, but
+    # a Windows user unpacks
     # by hand and expects a zip.
     format_overrides:
       - goos: windows

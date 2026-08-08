@@ -9,6 +9,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The shell installer is now `curl -fsSL https://mdfly.dev/install.sh | sh`. The
+  old `raw.githubusercontent.com/.../scripts/install.sh` URL — including the copy
+  printed in the v0.2.0 release notes — no longer resolves.
+
 ## [0.2.0] - 2026-08-08
 
 First published release of the CLI.

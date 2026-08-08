@@ -1,7 +1,10 @@
 #!/bin/sh
 # mdfly installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Abir66/mdfly/main/scripts/install.sh | sh
+#   curl -fsSL https://mdfly.dev/install.sh | sh
+#
+# The server embeds this file and serves it at that URL; this copy is the only
+# one, so editing it here changes what users pipe into sh on the next deploy.
 #
 # Overrides:
 #   MDFLY_VERSION      tag to install, with or without the leading v (default: latest)

@@ -19,6 +19,7 @@ func (a *App) routes() http.Handler {
 	mux.Handle("DELETE /v1/documents/{slug}", a.limited(handlers.DeleteDocument(a.document)))
 	mux.HandleFunc("GET /healthz", handlers.Healthz())
 	mux.HandleFunc("GET /robots.txt", handlers.Robots())
+	mux.HandleFunc("GET /install.sh", handlers.InstallScript())
 	mux.Handle("GET /_static/", a.static.Handler())
 	mux.HandleFunc("GET /{slug}", handlers.View(a.view))
 	mux.HandleFunc("GET /{slug}/{path...}", handlers.ViewPath(a.view))

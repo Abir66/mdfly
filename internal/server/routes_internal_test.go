@@ -36,7 +36,7 @@ func TestRoutes_rateLimitCoversWritePathsOnly(t *testing.T) {
 		}
 	}
 
-	unlimited := []string{"/healthz", "/robots.txt"}
+	unlimited := []string{"/healthz", "/robots.txt", "/install.sh"}
 	for _, path := range unlimited {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
