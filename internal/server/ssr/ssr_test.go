@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Abir66/mdfly/internal/server/filetree"
 	"github.com/Abir66/mdfly/internal/server/ssr"
@@ -55,6 +56,18 @@ func TestRenderPage_SinglePageHidesSidebar(t *testing.T) {
 	}
 }
 
+func TestRenderPage_SinglePageHidesBreadcrumb(t *testing.T) {
+	data := chromeData()
+	data.Sidebar = false
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, `class="breadcrumb"`) {
+		t.Errorf("single-page must omit the breadcrumb:\n%s", out)
+	}
+}
+
 func TestRenderPage_Footer(t *testing.T) {
 	out, err := ssr.RenderPage(chromeData())
 	if err != nil {
@@ -63,8 +76,38 @@ func TestRenderPage_Footer(t *testing.T) {
 	if !strings.Contains(out, `<footer class="site-footer">`) {
 		t.Errorf("view chrome missing footer:\n%s", out)
 	}
-	if !strings.Contains(out, `class="footer-links"`) || !strings.Contains(out, "GitHub") {
-		t.Errorf("footer missing GitHub link:\n%s", out)
+	if !strings.Contains(out, `href="https://www.mdfly.com"`) {
+		t.Errorf("footer missing mdFly attribution link:\n%s", out)
+	}
+	if !strings.Contains(out, "Published with") || !strings.Contains(out, "MdFly") {
+		t.Errorf("footer missing attribution text:\n%s", out)
+	}
+}
+
+func TestRenderPage_FooterUpdatedAt(t *testing.T) {
+	data := chromeData()
+	data.UpdatedAt = time.Date(2026, time.April, 20, 14, 45, 0, 0, time.UTC)
+	out, err := ssr.RenderPage(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The UTC label is the no-JS fallback; the machine-readable instant lets the
+	// client rewrite it in the reader's own zone.
+	if !strings.Contains(out, "Last updated: ") || !strings.Contains(out, "Apr 20, 2026 at 2:45 PM UTC") {
+		t.Errorf("footer missing formatted update time:\n%s", out)
+	}
+	if !strings.Contains(out, `datetime="2026-04-20T14:45:00Z"`) {
+		t.Errorf("footer time missing machine-readable instant:\n%s", out)
+	}
+}
+
+func TestRenderPage_FooterOmitsZeroUpdatedAt(t *testing.T) {
+	out, err := ssr.RenderPage(chromeData())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "Last updated") {
+		t.Errorf("footer must omit the update line when the time is unknown:\n%s", out)
 	}
 }
 

@@ -2,6 +2,7 @@
   --bg: #ffffff;
   --fg: #1f2328;
   --muted: #59636e;
+  --faint: #8c959f;
   --border: #d1d9e0;
   --accent: #5b4bf0;
   --accent-hover: #4433d6;
@@ -397,35 +398,57 @@ body {
 .listing a.dir { font-weight: 600; }
 .listing .size { flex: none; margin-left: auto; color: var(--muted); font-size: .85rem; }
 
-/* Footer — bottom of the main column only; the sidebar keeps its own height.
-   Brand mark left, links right. */
+/* Footer — a centered attribution mark at the bottom of the main column; the
+   sidebar keeps its own height. The plane sits gray until hover, when it takes
+   off in brand color. */
 .site-footer {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 1rem;
-  padding: 1.1rem 2rem;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: .875rem;
+  gap: .35rem;
+  padding: 2.25rem 2rem 2rem;
+  text-align: center;
 }
 .footer-brand {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   gap: .5rem;
-  color: var(--fg);
+  color: var(--muted);
+  font-size: .8125rem;
   text-decoration: none;
 }
-.footer-brand .logo { width: 1.2rem; height: 1.2rem; display: block; }
-.footer-brand .wordmark-text { font-weight: 700; letter-spacing: -.01em; }
-.footer-links {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
+.footer-brand .logo {
+  width: 1.65rem;
+  height: auto;
+  display: block;
+  filter: grayscale(1);
+  opacity: .45;
+  transition: filter .25s ease, opacity .25s ease, transform .25s ease;
 }
-.footer-links a { color: var(--muted); text-decoration: none; }
-.footer-links a:hover { color: var(--accent); }
+.footer-brand:hover .logo,
+.footer-brand:focus-visible .logo {
+  filter: none;
+  opacity: 1;
+  transform: translateY(-2px);
+}
+.footer-brand .wordmark-text {
+  color: var(--fg);
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.footer-brand:hover .wordmark-text { color: var(--accent); }
+.footer-updated {
+  margin: 0;
+  font-size: .6875rem;
+  letter-spacing: .01em;
+  color: var(--faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer-brand:hover .logo,
+  .footer-brand:focus-visible .logo { transform: none; }
+}
 
 /* Mobile top bar — hidden on desktop */
 .topbar { display: none; }
@@ -442,7 +465,7 @@ html.rail .sidebar-head { justify-content: center; padding: .75rem 0; }
 @media (max-width: 768px) {
   .viewer { grid-template-columns: minmax(0, 1fr); }
   .center { padding: 1.25rem 1.15rem 2.5rem; }
-  .site-footer { padding: 1rem 1.15rem; }
+  .site-footer { padding: 1.75rem 1.15rem 1.5rem; }
   .topbar {
     display: flex;
     align-items: center;

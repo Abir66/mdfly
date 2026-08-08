@@ -51,6 +51,7 @@
   {{- end}}
   <main class="main-col">
   <div class="center{{if .CodeFile}} center-wide{{end}}">
+    {{- if .Sidebar}}
     <nav class="breadcrumb" aria-label="Breadcrumb">
       {{- range $i, $c := .Breadcrumb}}
       {{- if $i}}<span class="sep">/</span>{{end}}
@@ -58,6 +59,7 @@
       {{- else}}<a href="{{href $.Slug $c.Path}}">{{if $c.Name}}{{$c.Name}}{{else}}&#8962;{{end}}</a>{{end}}
       {{- end}}
     </nav>
+    {{- end}}
     {{- if .Listing}}
     <ul class="listing">
       {{- range .Listing}}
@@ -82,10 +84,13 @@
     {{- end}}
   </div>
     <footer class="site-footer">
-      <a class="footer-brand" href="/">{{template "ic-logo-footer"}}<span class="wordmark-text">MdFly</span></a>
-      <nav class="footer-links" aria-label="Footer">
-        <a href="https://github.com/Abir66/mdfly" target="_blank">GitHub</a>
-      </nav>
+      <a class="footer-brand" href="https://www.mdfly.com">
+        {{template "ic-logo-footer"}}
+        <span class="footer-credit">Published with <span class="wordmark-text">MdFly</span></span>
+      </a>
+      {{- with .Updated}}
+      <p class="footer-updated">Last updated: <time datetime="{{.ISO}}" data-local-time>{{.Label}}</time></p>
+      {{- end}}
     </footer>
   </main>
 </div>

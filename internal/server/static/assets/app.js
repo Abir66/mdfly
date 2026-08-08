@@ -57,4 +57,17 @@
       root.classList.remove("drawer-open");
     }
   });
+
+  // The footer timestamp is served as UTC so it reads correctly without scripts;
+  // rewrite it here in the reader's own zone and locale.
+  var stamp = document.querySelector("time[data-local-time]");
+  if (stamp) {
+    var when = new Date(stamp.getAttribute("datetime"));
+    if (!isNaN(when)) {
+      stamp.textContent =
+        when.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) +
+        " at " +
+        when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+    }
+  }
 })();

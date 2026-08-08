@@ -33,7 +33,7 @@ func TestRender_emptyRootListsDirectory(t *testing.T) {
 		},
 	}
 
-	html, herr := svc.render(context.Background(), "slug123", mfst, "")
+	html, herr := svc.render(context.Background(), "slug123", bundle{Manifest: mfst}, "")
 	if herr != nil {
 		t.Fatalf("render: %v", herr)
 	}
@@ -60,7 +60,7 @@ func TestRender_imageInline(t *testing.T) {
 		},
 	}
 
-	html, herr := svc.render(context.Background(), "slug123", mfst, "img/logo.png")
+	html, herr := svc.render(context.Background(), "slug123", bundle{Manifest: mfst}, "img/logo.png")
 	if herr != nil {
 		t.Fatalf("render: %v", herr)
 	}
@@ -83,7 +83,7 @@ func TestRender_oversizeTextDownloadCard(t *testing.T) {
 		},
 	}
 
-	html, herr := svc.render(context.Background(), "slug123", mfst, "huge.txt")
+	html, herr := svc.render(context.Background(), "slug123", bundle{Manifest: mfst}, "huge.txt")
 	if herr != nil {
 		t.Fatalf("render: %v", herr)
 	}
