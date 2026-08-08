@@ -337,6 +337,15 @@ origin on fire. A changing query string changes the cache key.
 
 **Terminal 2** — the deploy:
 
+> **`deploy.sh` pulls the repo first and then targets whatever HEAD became**, so a
+> commit pushed to `main` in the last few minutes is a target CI has not finished
+> building. The pull fails with `not found` — safely, since `docker pull` runs
+> before the bookmark and before any container is touched, leaving the live slot
+> serving. Wait for Actions, or name a published sha and stop chasing HEAD:
+> `./deploy.sh <sha>`. Either way the box's checkout is now ahead of the image
+> that is running, which matters the moment a commit carries a `compose.yaml` or
+> `Caddyfile` change.
+
 ```sh
 cd ~/mdfly/deploy
 ./deploy.sh --dry-run
