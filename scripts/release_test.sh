@@ -28,10 +28,35 @@ setup() {
 
 	mkdir -p "$WORK/scripts"
 	cp "$REPO_ROOT/scripts/release.sh" "$WORK/scripts/release.sh"
+	# release.sh shells out to changelog.sh for the notes check, so the sandbox
+	# needs both scripts and a changelog that matches the starting VERSION.
+	cp "$REPO_ROOT/scripts/changelog.sh" "$WORK/scripts/changelog.sh"
 	echo "0.1.0" >"$WORK/VERSION"
+	write_changelog 0.1.0
 	git -C "$WORK" add -A
 	git -C "$WORK" commit --quiet -m "initial"
 	git -C "$WORK" push --quiet -u origin main
+}
+
+write_changelog() {
+	cat >"$WORK/CHANGELOG.md" <<EOF
+# Changelog
+
+## [Unreleased]
+
+## [$1] - 2026-08-08
+- a released thing
+EOF
+}
+
+# Sets VERSION and the matching changelog section, then commits and pushes, since
+# every check downstream demands a clean tree level with the remote.
+stage_version() {
+	local raw=$1
+	printf '%s\n' "$raw" >"$WORK/VERSION"
+	write_changelog "${raw#v}"
+	git -C "$WORK" commit --quiet -am "bump to $raw"
+	git -C "$WORK" push --quiet origin main
 }
 
 teardown() {
@@ -70,9 +95,7 @@ assert_no_tag_anywhere() {
 
 test_tags_and_pushes_version_from_file() {
 	setup tags_and_pushes_version_from_file
-	echo "0.4.2" >"$WORK/VERSION"
-	git -C "$WORK" commit --quiet -am "bump"
-	git -C "$WORK" push --quiet origin main
+	stage_version 0.4.2
 
 	run_release -y
 	assert_status 0
@@ -92,9 +115,7 @@ test_dry_run_creates_nothing() {
 
 test_leading_v_is_tolerated() {
 	setup leading_v_is_tolerated
-	echo "v0.2.0" >"$WORK/VERSION"
-	git -C "$WORK" commit --quiet -am "bump"
-	git -C "$WORK" push --quiet origin main
+	stage_version v0.2.0
 
 	run_release -y
 	assert_status 0
@@ -104,9 +125,7 @@ test_leading_v_is_tolerated() {
 
 test_rejects_non_semver() {
 	setup rejects_non_semver
-	echo "abcd" >"$WORK/VERSION"
-	git -C "$WORK" commit --quiet -am "bad"
-	git -C "$WORK" push --quiet origin main
+	stage_version abcd
 
 	run_release -y
 	assert_status 1
@@ -119,9 +138,7 @@ test_rejects_non_semver() {
 test_rejects_malformed_semver() {
 	for bad in 01.2.3 1.2.3-01 1.2.3-alpha..1; do
 		setup "rejects_malformed_semver:$bad"
-		echo "$bad" >"$WORK/VERSION"
-		git -C "$WORK" commit --quiet -am "bad"
-		git -C "$WORK" push --quiet origin main
+		stage_version "$bad"
 
 		run_release -y
 		assert_status 1
@@ -132,9 +149,7 @@ test_rejects_malformed_semver() {
 
 test_accepts_prerelease() {
 	setup accepts_prerelease
-	echo "0.2.0-rc.1" >"$WORK/VERSION"
-	git -C "$WORK" commit --quiet -am "bump"
-	git -C "$WORK" push --quiet origin main
+	stage_version 0.2.0-rc.1
 
 	run_release -y
 	assert_status 0
@@ -215,6 +230,59 @@ test_rejects_existing_remote_tag() {
 	run_release -y
 	assert_status 1
 	assert_output_has "already exists on origin"
+	teardown
+}
+
+# Bumping VERSION and forgetting the notes is the ordinary mistake, and it is
+# invisible after the fact: the Release publishes with an empty body.
+test_rejects_missing_changelog_section() {
+	setup rejects_missing_changelog_section
+	write_changelog 0.0.9
+	git -C "$WORK" commit --quiet -am "notes for the wrong version"
+	git -C "$WORK" push --quiet origin main
+
+	run_release -y
+	assert_status 1
+	assert_output_has "no '## [0.1.0]' section"
+	assert_no_tag_anywhere v0.1.0
+	teardown
+}
+
+test_rejects_empty_changelog_section() {
+	setup rejects_empty_changelog_section
+	printf '# Changelog\n\n## [0.1.0] - 2026-08-08\n\n## [0.0.9] - 2026-07-01\n- old\n' \
+		>"$WORK/CHANGELOG.md"
+	git -C "$WORK" commit --quiet -am "heading only"
+	git -C "$WORK" push --quiet origin main
+
+	run_release -y
+	assert_status 1
+	assert_output_has "no '## [0.1.0]' section"
+	assert_no_tag_anywhere v0.1.0
+	teardown
+}
+
+test_rejects_missing_changelog_file() {
+	setup rejects_missing_changelog_file
+	git -C "$WORK" rm --quiet CHANGELOG.md
+	git -C "$WORK" commit --quiet -m "drop CHANGELOG"
+	git -C "$WORK" push --quiet origin main
+
+	run_release -y
+	assert_status 1
+	assert_output_has "no '## [0.1.0]' section"
+	teardown
+}
+
+test_dry_run_validates_the_changelog() {
+	setup dry_run_validates_the_changelog
+	write_changelog 0.0.9
+	git -C "$WORK" commit --quiet -am "notes for the wrong version"
+	git -C "$WORK" push --quiet origin main
+
+	run_release --dry-run
+	assert_status 1
+	assert_output_has "no '## [0.1.0]' section"
 	teardown
 }
 
