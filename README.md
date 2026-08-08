@@ -1,60 +1,138 @@
+<div align="center">
+
+<img src="internal/server/static/assets/mdFly-logo.svg" width="72" alt="mdFly logo" />
+
 # mdFly
 
-CLI-driven markdown sharing service.
+**Publish a markdown file, get a shareable URL — from your terminal.**
 
-```
-mdfly publish foo.md
-# → https://mdfly.dev/abc12345
-```
+`mdfly publish notes.md` uploads your markdown plus every linked image and file,
+and hands back a link anyone can open — rendered for people, raw for machines.
+
+</div>
+
+---
+
+## What is mdFly?
+
+mdFly turns any local markdown file into a hosted, shareable document in one
+command. It follows the links inside your file — images, other markdown pages,
+whole folders — and uploads them alongside the root, so relative links just work
+at the URL.
+
+Every document is served two ways from the same content:
+
+- **`mdfly.dev/<slug>`** — a rendered HTML page: file-tree sidebar,
+  syntax-highlighted code, inline images, breadcrumbs.
+- **`mdfly.dev/raw/<slug>`** — the source bytes, byte-for-byte, with the right
+  content type. Raw markdown for a `.md` root, raw source for code, the file
+  itself for anything else. Ideal for `curl`, scripts, and AI agents.
+
+No account, no signup. Documents are protected by an unguessable slug and expire
+30 days after publish.
 
 ## Install
 
-Homebrew (macOS, Linux):
-
-```sh
-brew install Abir66/mdfly/mdfly
-```
-
-Shell installer (macOS, Linux) — verifies the download against the release checksums:
+**Shell installer** (macOS, Linux) — verifies the download against release checksums:
 
 ```sh
 curl -fsSL https://mdfly.dev/install.sh | sh
 ```
 
-Go toolchain:
+**Homebrew** (macOS, Linux):
 
 ```sh
-go install github.com/Abir66/mdfly/cmd/mdfly@latest
+brew install Abir66/mdfly/mdfly
 ```
 
-Windows: download the `mdfly_<version>_windows_amd64.zip` archive from
-[Releases](https://github.com/Abir66/mdfly/releases). Windows arm64 is not published in v1.
-
-## Development
+## Quick start
 
 ```sh
-make build   # bin/mdfly + bin/mdfly-server
-make test    # go test ./...
-make lint    # golangci-lint
+# Publish a single file
+mdfly publish notes.md
+# → https://mdfly.dev/abc12345
+
+# Follow linked markdown pages and folders too
+mdfly publish docs/index.md -r
+
+# Publish inline text without a file
+echo "# Quick note" | mdfly publish
+mdfly publish -m "# Quick note"
+
+# Open the result in your browser
+mdfly publish notes.md --open
+
+# The URL is the only thing on stdout — pipe it anywhere
+mdfly publish notes.md | pbcopy
 ```
 
-## Releasing
+Updating and deleting use the edit token mdFly stored for you at publish time
+(kept in `~/.mdfly/`):
 
-The root `VERSION` file is the version. Never write a git tag by hand.
+```sh
+mdfly update notes.md    # push changes to the same URL
+mdfly delete abc12345    # take it down (serves 410 afterward)
+```
 
-1. Move your entries from `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) into a
-   `## [<version>] - <YYYY-MM-DD>` section
-2. Edit `VERSION` (e.g. `0.1.0` → `0.2.0`), open a PR with both changes, merge it
-3. `git checkout main && git pull`
-4. `make release`
+## Commands
 
-`make release` reads `VERSION`, refuses unless you are on a clean `main` level with
-`origin/main`, the tag is unused, and `CHANGELOG.md` has a non-empty section for that
-version — then tags and pushes. Pushing the tag is what builds and publishes the
-release. `./scripts/release.sh --dry-run` runs every check and creates nothing, so it
-doubles as a changelog check before you open the PR.
+| Command | What it does |
+|---|---|
+| `mdfly publish <file>` | Mint a new URL from a file (or inline text via `-m`/stdin). |
+| `mdfly update <file>` | Push changes to an existing document at the same URL. |
+| `mdfly delete <slug\|file>` | Take a document down server-side. |
+| `mdfly remove <slug\|file>` | Drop a document from local tracking only (no server call). |
+| `mdfly open <slug\|file>` | Open a document's URL in the browser. |
+| `mdfly list` | List the documents you've published from this machine. |
 
-The GitHub Release body is that changelog section verbatim, plus the install block in
-`.github/release-footer.md`. Nothing is generated from commit messages.
+Every command takes `--json` for machine-readable output, `--plain` /
+`NO_COLOR=1` to disable color, and `-v` / `-q` to tune noise. Run
+`mdfly <command> --help` for the full flag list.
 
-See [CONTEXT.md](CONTEXT.md) for the authoritative spec and [docs/adr/](docs/adr/) for architecture decisions.
+**Useful flags:** `-r` follow linked markdown/folders · `-m <text>` publish inline
+text · `--open` open in browser after success · `--force` override an update conflict.
+
+## Limits
+
+Each published document is capped at:
+
+| Limit | Value |
+|---|---|
+| Total bundle size | 25 MB |
+| File count | 50 files |
+| Single file size | 10 MB |
+| Lifetime | 30 days|
+
+The CLI checks these before uploading and aborts early; the server re-validates.
+
+## Features
+
+- **One-command publish** — root file plus every reachable image, page, and asset,
+  uploaded byte-for-byte. Relative links keep working at the URL.
+- **Dual read surface** — a rendered page for humans, a byte-exact raw view at
+  `/raw/<slug>` for `curl`, scripts, and AI agents.
+- **Recursive bundles** — `-r` walks linked markdown and folders transitively into
+  one document with a browsable file tree.
+- **Anything, not just markdown** — text, code (syntax-highlighted), images, and
+  binaries all publish; the viewer renders each by type.
+- **No account needed** — publish out of the box; documents are protected by an
+  unguessable slug.
+- **Content-addressed & immutable** — files are stored by SHA-256 of their bytes,
+  giving end-to-end integrity and CDN-cacheable assets.
+- **Scriptable by design** — clean stdout/stderr split, categorical exit codes, and
+  `--json` on every command make mdFly safe to drop into CI.
+- **Publish inline text** — pipe or `-m` markdown straight from the shell, no file
+  on disk required.
+
+## Roadmap
+
+- **Web editor** — create and edit documents in the browser, not just the CLI.
+- **Password-protected docs** *(exploring)* — a shared-secret gate for documents you
+  don't want readable by anyone with the link.
+- **LLM Twin** - `/llm/slug` return raw markdown with internal links rewritten for better navigation
+- **Skill** - Create a skill AI agents 
+
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
