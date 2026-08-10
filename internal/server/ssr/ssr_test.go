@@ -76,7 +76,7 @@ func TestRenderPage_Footer(t *testing.T) {
 	if !strings.Contains(out, `<footer class="site-footer">`) {
 		t.Errorf("view chrome missing footer:\n%s", out)
 	}
-	if !strings.Contains(out, `href="https://www.mdfly.com"`) {
+	if !strings.Contains(out, `href="https://www.mdfly.dev"`) {
 		t.Errorf("footer missing mdFly attribution link:\n%s", out)
 	}
 	if !strings.Contains(out, "Published with") || !strings.Contains(out, "MdFly") {
