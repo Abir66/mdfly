@@ -1,0 +1,48 @@
+---
+import InstallTabs from "../InstallTabs.astro";
+import { site } from "../../config/site";
+
+const HIGHLIGHT = "anyone or anything";
+const [before, after] = site.tagline.split(HIGHLIGHT);
+const link = "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent";
+---
+<section class="relative isolate overflow-hidden">
+  <div aria-hidden="true" class="pointer-events-none absolute inset-0 -z-10">
+    <div class="bg-grid absolute inset-0"></div>
+    <div class="blob-drift absolute -top-48 left-[calc(50%-36rem)] size-[40rem] rounded-full bg-accent-soft blur-3xl"></div>
+    <div class="blob-drift blob-drift-alt absolute top-24 left-[calc(50%-2rem)] size-[34rem] rounded-full bg-accent-soft blur-3xl"></div>
+  </div>
+
+  <div class="mx-auto flex w-full max-w-4xl flex-col items-center px-4 pt-20 pb-24 text-center sm:px-6 sm:pt-28 sm:pb-32">
+    <a
+      href={site.githubUrl}
+      class:list={["group inline-flex items-center gap-2 border border-line bg-bg/60 px-3 py-1 font-mono text-xs text-muted backdrop-blur transition-colors hover:border-accent hover:text-fg", link, "rounded-full"]}
+    >
+      <span class="size-1.5 rounded-full bg-accent" aria-hidden="true"></span>
+      Open source · free · no account
+      <span class="transition-transform group-hover:translate-x-0.5" aria-hidden="true">→</span>
+    </a>
+
+    <h1 class="mt-8 font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-balance sm:text-7xl">
+      {before}<span class="text-accent">{HIGHLIGHT}</span>{after}
+    </h1>
+
+    <p class="mt-6 max-w-2xl text-lg text-pretty text-muted sm:text-xl">{site.description}</p>
+
+    <div class="mt-10 w-full max-w-xl">
+      <InstallTabs />
+    </div>
+
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm font-medium">
+      <a href="/docs" class:list={["group inline-flex items-center gap-1 text-fg underline decoration-line decoration-2 underline-offset-4 transition-colors hover:decoration-accent rounded-md", link]}>
+        Read the docs <span class="transition-transform group-hover:translate-x-0.5" aria-hidden="true">→</span>
+      </a>
+      <a href={site.githubUrl} class:list={["inline-flex items-center gap-2 text-muted transition-colors hover:text-fg rounded-md", link]}>
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
+          <path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" />
+        </svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+</section>

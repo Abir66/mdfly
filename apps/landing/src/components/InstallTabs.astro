@@ -1,0 +1,67 @@
+---
+import CopyButton from "./CopyButton.astro";
+import { site } from "../config/site";
+
+const uid = `install-${crypto.randomUUID().slice(0, 8)}`;
+const tabId = (id: string) => `${uid}-tab-${id}`;
+const panelId = (id: string) => `${uid}-panel-${id}`;
+---
+<div data-install-tabs class="w-full overflow-hidden rounded-xl border border-line bg-surface/80 text-left shadow-[0_1px_0_var(--line),0_24px_48px_-24px_var(--accent-soft)] backdrop-blur">
+  <div role="tablist" aria-label="Install mdFly" class="flex items-center gap-1 border-b border-line px-2 pt-2">
+    {site.install.map((m, i) => (
+      <button
+        type="button"
+        role="tab"
+        id={tabId(m.id)}
+        aria-controls={panelId(m.id)}
+        aria-selected={i === 0 ? "true" : "false"}
+        tabindex={i === 0 ? 0 : -1}
+        class="relative -mb-px rounded-t-md border border-transparent px-3 py-1.5 font-mono text-xs text-muted transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-accent aria-selected:border-line aria-selected:border-b-surface aria-selected:bg-surface aria-selected:text-fg"
+      >{m.label}</button>
+    ))}
+  </div>
+  {site.install.map((m, i) => (
+    <div
+      role="tabpanel"
+      id={panelId(m.id)}
+      aria-labelledby={tabId(m.id)}
+      hidden={i !== 0}
+      class="flex items-center gap-3 py-2 pl-4 pr-2"
+    >
+      <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-2 font-mono text-sm"><span class="select-none text-accent" aria-hidden="true">$ </span>{m.command}</code>
+      <CopyButton text={m.command} label={`Copy ${m.label} install command`} />
+    </div>
+  ))}
+</div>
+
+<script>
+  const KEY_STEP: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1 };
+
+  document.querySelectorAll<HTMLElement>("[data-install-tabs]").forEach((root) => {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+
+    const select = (next: HTMLButtonElement) => {
+      for (const tab of tabs) {
+        const active = tab === next;
+        tab.setAttribute("aria-selected", String(active));
+        tab.tabIndex = active ? 0 : -1;
+        const panel = root.querySelector<HTMLElement>(`#${tab.getAttribute("aria-controls")}`);
+        if (panel) panel.hidden = !active;
+      }
+    };
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener("click", () => select(tab));
+      tab.addEventListener("keydown", (e) => {
+        let target: number | undefined;
+        if (e.key in KEY_STEP) target = (i + KEY_STEP[e.key] + tabs.length) % tabs.length;
+        else if (e.key === "Home") target = 0;
+        else if (e.key === "End") target = tabs.length - 1;
+        if (target === undefined) return;
+        e.preventDefault();
+        tabs[target].focus();
+        select(tabs[target]);
+      });
+    });
+  });
+</script>
