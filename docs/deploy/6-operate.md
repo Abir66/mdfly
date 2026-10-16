@@ -64,6 +64,9 @@ the previous tag, and leaves the live slot serving. Nothing to undo.
 > is a permanent 502 with every container healthy. Validate first:
 > `docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
 
+The landing site is not part of this flow: update it by pulling and rebuilding on
+the box (step 4.6).
+
 The image prune is part of the deploy and keeps exactly two tags: what is serving
 and what rollback would return to.
 
@@ -76,7 +79,8 @@ and what rollback would return to.
 
 The outgoing tag is bookmarked in `deploy/.deploy-state` before every swap, so
 rollback is "start the previous image" rather than "find the old commit". It takes
-no tag argument — it returns to the bookmarked one.
+no tag argument — it returns to the bookmarked one. It does not cover the landing
+site; roll that back by checking out an older commit and rebuilding (step 4.6).
 
 > **Rollback is a code-only tool.** A tag cannot un-apply a migration, so returning
 > across one puts the old binary in front of a schema it has never seen. The script

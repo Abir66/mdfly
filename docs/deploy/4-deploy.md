@@ -5,7 +5,7 @@ Secrets on the box, a registry login, migrations applied, stack running.
 **You need**: everything from steps 1–3, and one image published by CI (step 7).
 **You produce**: a running backend.
 
-Nothing is compiled on the box. CI publishes an ARM image per commit to GHCR and
+Nothing but the static landing site (4.6) is compiled on the box. CI publishes an ARM image per commit to GHCR and
 `deploy/deploy.sh` pulls it (ADR-0015), so the box needs a registry credential
 before its first `up`.
 
@@ -239,5 +239,53 @@ configured, write paths are unthrottled` and runs without the limiter (a support
 local-dev mode, never production); **malformed** fails the boot deliberately, rather
 than degrading to unthrottled behind your back; **set but unreachable** warns as above
 and starts anyway.
+
+## 4.6 Landing site
+
+The static landing site (`apps/landing`) is built on the box and served by Caddy
+from disk (ADR-0011). Until it is built, `mdfly.dev/` and `/robots.txt` fall
+through to the backend.
+
+**One-time: Node LTS via nvm** (Ubuntu's own `nodejs` package is older):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+. ~/.nvm/nvm.sh
+nvm install --lts
+nvm alias default 'lts/*'
+node --version
+```
+
+**Build, and every later update:**
+
+```sh
+cd ~/mdfly && git pull
+. ~/.nvm/nvm.sh
+cd apps/landing && npm ci && npm run build
+```
+
+No container restart and no backend redeploy. Caddy mounts `apps/landing` (the
+parent, not `dist/`) read-only at `/srv/landing`, so a rebuild is served
+immediately.
+
+**One-time, after pulling the Caddyfile and `compose.yaml` change** that add the
+landing routes and mount: recreate Caddy so it picks up both.
+
+```sh
+cd ~/mdfly/deploy && docker compose up -d caddy
+```
+
+`restart caddy` rereads the Caddyfile but does not add a new bind mount; `up -d`
+recreates the container when its definition changed.
+
+**Verify:**
+
+```sh
+curl -sI https://mdfly.dev/ | head -n1        # HTTP/2 200
+curl -s https://mdfly.dev/robots.txt          # the allowlist, ending in Disallow: /
+```
+
+**Rollback:** `deploy.sh rollback` does not cover the landing. Check out an older
+commit and rebuild.
 
 Next: [5. Verify](5-verify.md).

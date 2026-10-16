@@ -20,6 +20,9 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./tls:/etc/caddy/tls:ro
+      # The parent, not dist/: a rebuild replaces dist/ and a direct mount would
+      # keep pointing at the deleted directory.
+      - ../apps/landing:/srv/landing:ro
       - caddy-data:/data
       - caddy-config:/config
     # No depends_on a web slot: the Caddyfile names both permanently and health

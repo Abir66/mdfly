@@ -28,36 +28,57 @@ mdfly.dev, api.mdfly.dev {
 		protocols tls1.2 tls1.3
 	}
 
-	# Both web slots, permanently (ADR-0015). A deploy starts the idle slot and
-	# stops the live one; this file is never edited or reloaded by that swap.
-	reverse_proxy app_blue:8080 app_green:8080 {
-		# Prefer the first healthy slot rather than spreading load, so during the
-		# overlap both versions are not serving at once — traffic moves to the
-		# incoming slot when the outgoing one stops. The corollary: blue always
-		# wins while it is healthy, so once a deploy has swapped onto green,
-		# starting blue again pulls traffic back to whatever image blue holds.
-		lb_policy first
+	# The landing site (apps/landing), built on the box into dist/ and mounted
+	# read-only. Any path that resolves to a built file is served from disk; the
+	# rest falls through to the backend. *.html, /index and /404 are excluded so
+	# each page keeps one URL and no landing file shadows a slug.
+	@landing {
+		host mdfly.dev
+		not path /index /404 *.html
+		file {
+			root /srv/landing/dist
+			try_files {path} {path}.html {path}index.html
+		}
+	}
+	handle @landing {
+		root * /srv/landing/dist
+		rewrite * {file_match.relative}
+		header /_astro/* Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
 
-		# Retries cover a refused connection while both slots are *in the pool*.
-		# They cannot cover an empty pool, which is what an active health check
-		# produces: see health_interval below and await_caddy_upstream in
-		# deploy/deploy.sh.
-		lb_retries 2
-		lb_try_duration 5s
-		lb_try_interval 250ms
-		fail_duration 10s
+	handle {
+		# Both web slots, permanently (ADR-0015). A deploy starts the idle slot and
+		# stops the live one; this file is never edited or reloaded by that swap.
+		reverse_proxy app_blue:8080 app_green:8080 {
+			# Prefer the first healthy slot rather than spreading load, so during the
+			# overlap both versions are not serving at once — traffic moves to the
+			# incoming slot when the outgoing one stops. The corollary: blue always
+			# wins while it is healthy, so once a deploy has swapped onto green,
+			# starting blue again pulls traffic back to whatever image blue holds.
+			lb_policy first
 
-		# /healthz is dependency-free on purpose and must stay that way: probing
-		# Postgres here would let one database hiccup mark *both* slots dead and
-		# turn a degraded site into a dark one.
-		#
-		# The interval is also the width of the swap's blind spot. An upstream
-		# stays out of the pool until a probe succeeds, and the idle slot fails
-		# DNS for as long as it does not exist — so a deploy must wait this long
-		# after starting the new slot before stopping the old one. Two seconds is
-		# a settle an operator will not notice; five was a visible 502.
-		health_uri /healthz
-		health_interval 2s
-		health_timeout 1s
+			# Retries cover a refused connection while both slots are *in the pool*.
+			# They cannot cover an empty pool, which is what an active health check
+			# produces: see health_interval below and await_caddy_upstream in
+			# deploy/deploy.sh.
+			lb_retries 2
+			lb_try_duration 5s
+			lb_try_interval 250ms
+			fail_duration 10s
+
+			# /healthz is dependency-free on purpose and must stay that way: probing
+			# Postgres here would let one database hiccup mark *both* slots dead and
+			# turn a degraded site into a dark one.
+			#
+			# The interval is also the width of the swap's blind spot. An upstream
+			# stays out of the pool until a probe succeeds, and the idle slot fails
+			# DNS for as long as it does not exist — so a deploy must wait this long
+			# after starting the new slot before stopping the old one. Two seconds is
+			# a settle an operator will not notice; five was a visible 502.
+			health_uri /healthz
+			health_interval 2s
+			health_timeout 1s
+		}
 	}
 }

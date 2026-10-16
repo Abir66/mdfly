@@ -1,4 +1,8 @@
 User-agent: *
-Allow: /
+Allow: /$
+Allow: /docs$
+Allow: /_astro/
+Allow: /og-image.png$
+Disallow: /
 
 Sitemap: https://mdfly.dev/sitemap-index.xml

@@ -26,6 +26,14 @@ for (const page of pages) {
   for (const re of FORBIDDEN) if (re.test(html)) failures.push(`${page}: forbidden ${re}`);
 }
 
+const robots = existsSync(join(DIST, "robots.txt")) ? readFileSync(join(DIST, "robots.txt"), "utf8") : "";
+const sitemap = existsSync(join(DIST, "sitemap-0.xml")) ? readFileSync(join(DIST, "sitemap-0.xml"), "utf8") : "";
+for (const [, loc] of sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)) {
+  const path = new URL(loc).pathname;
+  if (!robots.includes(`Allow: ${path}$`)) failures.push(`robots.txt: no "Allow: ${path}$" for sitemap page`);
+}
+if (!robots.includes(`Sitemap: ${site.url}/sitemap-index.xml`)) failures.push("robots.txt: sitemap URL does not match site.url");
+
 if (failures.length) {
   console.error(failures.map((f) => `✗ ${f}`).join("\n"));
   process.exit(1);

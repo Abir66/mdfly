@@ -7,7 +7,7 @@ Follow these in order. Each one needs something the previous one produced.
 | 1 | [Oracle VM](1-oracle-vm.md) | An always-on ARM box with a fixed public IP, Docker, and the repo cloned |
 | 2 | [Managed Postgres](2-managed-postgres.md) | A `DATABASE_URL` the VM can reach |
 | 3 | [Cloudflare](3-cloudflare.md) | DNS, origin TLS cert, R2 bucket, purge token |
-| 4 | [Deploy](4-deploy.md) | Secrets on the box, a registry login, migrations applied, stack running |
+| 4 | [Deploy](4-deploy.md) | Secrets on the box, a registry login, migrations applied, stack running, landing site built |
 | 5 | [Verify](5-verify.md) | Proof each piece works, with a checklist |
 | 6 | [Operate](6-operate.md) | Redeploys, rollback, troubleshooting, runbook |
 | 7 | [Container registry](7-container-registry.md) | The private ARM image CI publishes, and the GitHub settings it needs |
@@ -70,6 +70,7 @@ deliberately leaves the host open, so the provider is swappable. Redis *is* on-b
 - Secrets live only on the box: `.env`, `deploy/redis.conf`, `deploy/tls/*`. All
   gitignored; only their `.example` twins are tracked. `deploy/.env` is *not* a
   secret — `deploy.sh` generates it and it holds one image tag.
-- **Nothing is compiled on the box.** CI publishes an image per commit and
-  `deploy/deploy.sh` — tracked in this repo, not typed on the box — pulls it.
+- **Nothing is compiled on the box** except the static landing site (step 4.6).
+  CI publishes an image per commit and `deploy/deploy.sh` — tracked in this repo,
+  not typed on the box — pulls it.
 - **Rollback moves code only.** Schema deploys are fixed forward (ADR-0015).

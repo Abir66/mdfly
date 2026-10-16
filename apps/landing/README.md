@@ -1,6 +1,6 @@
 # mdFly landing site
 
-Static Astro + Tailwind site for mdfly.dev, deployed on Cloudflare Pages.
+Static Astro + Tailwind site for mdfly.dev, built on the VM and served by Caddy (see `docs/deploy/4-deploy.md`).
 
 - `npm install`
 - `npm run dev` serves http://localhost:4321

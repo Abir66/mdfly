@@ -6,7 +6,7 @@ mdFly is a CLI-driven markdown sharing service. User runs `mdfly publish foo.md`
 
 - `cmd/mdfly` — CLI (Go)
 - `cmd/mdfly-server` — backend (Go; SSRs human HTML, serves `/llm/<slug>` raw-markdown twin for AI agents)
-- `apps/landing/` — static landing site, Cloudflare Pages (added v1.5)
+- `apps/landing/` — static landing site (Astro), built on the VM and served by Caddy (added v1.5)
 - `apps/dashboard/` — React SPA (added v2)
 
 ## Where the design lives
@@ -18,7 +18,7 @@ CONTEXT.md is the spec; ADRs are the why.
 
 ## Hosts
 
-- `mdfly.dev` — apex; Worker-routed between Cloudflare Pages (landing/legal) and backend (slugs + LLM twin)
+- `mdfly.dev` — apex; Caddy serves the landing build, proxies everything else to the backend (slugs + LLM twin)
 - `api.mdfly.dev/v1/*` — backend HTTP API
 - `storage.mdfly.dev` — R2 assets
 - `app.mdfly.dev` — v2 dashboard (NXDOMAIN in v1)

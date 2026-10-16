@@ -46,11 +46,10 @@ equals `www.mdfly.dev`, redirect to `https://mdfly.dev` with the path preserved,
 status 301. (ADR-0011 describes this as a Bulk Redirect; a single rule is the
 simpler equivalent at one hostname.)
 
-> **On the apex Worker.** ADR-0011 has the apex Worker-routed between Cloudflare
-> Pages and the backend. That split arrives with `apps/landing/` — it does not
-> exist yet, so today the apex A record goes straight to the backend and the
-> backend serves `/robots.txt` itself. Nothing here changes when the Worker lands;
-> a route is added in front.
+> **The apex has no Worker or Pages project.** The A record goes straight to the
+> VM, and Caddy serves the landing build from disk and proxies everything else to
+> the backend (ADR-0011). Nothing to configure here; the landing is built on the
+> box in step 4.6.
 
 ## 3.3 Origin TLS certificate
 
