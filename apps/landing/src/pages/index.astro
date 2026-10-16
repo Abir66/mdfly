@@ -2,9 +2,11 @@
 import Base from "../layouts/Base.astro";
 import Hero from "../components/home/Hero.astro";
 import TerminalDemo from "../components/home/TerminalDemo.astro";
+import TwoViews from "../components/home/TwoViews.astro";
 import { site } from "../config/site";
 ---
 <Base title={site.name} description={site.description} path="/">
   <Hero />
   <TerminalDemo />
+  <TwoViews />
 </Base>

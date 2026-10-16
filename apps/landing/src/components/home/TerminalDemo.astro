@@ -2,10 +2,10 @@
 import Section from "../Section.astro";
 import { docUrl } from "../../config/site";
 import { TERMINAL_CWD, TERMINAL_SCRIPT } from "../../config/terminalDemo";
+import { SAMPLE_DOC } from "../../config/sampleDoc";
 
 const url = docUrl();
 const lines = TERMINAL_SCRIPT.map((l) => ({ ...l, text: l.kind === "url" ? url : l.text }));
-const NOTES = ["Search covers archived tickets", "Webhooks retry with backoff", "Reports keep the viewer's timezone"];
 ---
 <Section id="demo" class="overflow-x-clip">
   <div class="max-w-2xl">
@@ -47,10 +47,10 @@ const NOTES = ["Search covers archived tickets", "Webhooks retry with backoff", 
       </div>
 
       <div class="px-6 py-6 sm:px-8">
-        <h3 class="font-display text-2xl font-extrabold tracking-tight">Release notes</h3>
-        <p class="mt-2 text-sm text-muted">What shipped this week, written once and read by the team and their agents.</p>
+        <h3 class="font-display text-2xl font-extrabold tracking-tight">{SAMPLE_DOC.title}</h3>
+        <p class="mt-2 text-sm text-muted">{SAMPLE_DOC.intro}</p>
         <ul class="mt-4 space-y-1.5 text-sm">
-          {NOTES.map((n) => (
+          {SAMPLE_DOC.notes.map((n) => (
             <li class="flex gap-2"><span class="mt-2 size-1 shrink-0 rounded-full bg-accent" aria-hidden="true"></span>{n}</li>
           ))}
         </ul>
@@ -61,11 +61,10 @@ const NOTES = ["Search covers archived tickets", "Webhooks retry with backoff", 
             <rect x="180" y="18" width="56" height="28" rx="6" fill="var(--accent-soft)" />
             <path d="M60 32h28m-5-4 5 4-5 4M148 32h28m-5-4 5 4-5 4" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
-          <p class="mt-2 text-center font-mono text-[11px] text-muted">diagram.png</p>
+          <p class="mt-2 text-center font-mono text-[11px] text-muted">{SAMPLE_DOC.image}</p>
         </div>
-        <pre class="mt-5 overflow-x-auto rounded-lg bg-term-bg px-4 py-3 font-mono text-xs leading-5 text-term-fg"><code><span class="text-term-accent">webhooks</span>:
-  retries: 3
-  backoff: exponential</code></pre>
+        <pre class="mt-5 overflow-x-auto rounded-lg bg-term-bg px-4 py-3 font-mono text-xs leading-5 text-term-fg"><code><span class="text-term-accent">{SAMPLE_DOC.codeKey}</span>:
+{SAMPLE_DOC.codeBody.join("\n")}</code></pre>
       </div>
     </figure>
   </div>
