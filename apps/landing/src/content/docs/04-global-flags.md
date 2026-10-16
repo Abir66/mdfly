@@ -9,7 +9,7 @@ Every command accepts these flags.
 |---|---|
 | `--json` | Print machine-readable JSON instead of text. |
 | `-q`, `--quiet` | Suppress non-error output. |
-| `-y`, `--yes` | Assume yes to confirmation prompts. |
+| `-y`, `--yes` | Skip the confirmation prompt of `delete` and `remove --all`. |
 | `--api <url>` | Override the API base URL. |
 
 ### Output streams
