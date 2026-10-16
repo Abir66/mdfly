@@ -1,0 +1,191 @@
+---
+import Section from "../Section.astro";
+import { docUrl } from "../../config/site";
+import { TERMINAL_CWD, TERMINAL_SCRIPT } from "../../config/terminalDemo";
+
+const url = docUrl();
+const lines = TERMINAL_SCRIPT.map((l) => ({ ...l, text: l.kind === "url" ? url : l.text }));
+const NOTES = ["Search covers archived tickets", "Webhooks retry with backoff", "Reports keep the viewer's timezone"];
+---
+<Section id="demo" class="overflow-x-clip">
+  <div class="max-w-2xl">
+    <h2 class="font-display text-4xl font-extrabold leading-[0.95] tracking-tight text-balance sm:text-5xl">One command. One link.</h2>
+    <p class="mt-4 text-lg text-pretty text-muted">The URL is the only thing on stdout, so it pipes anywhere.</p>
+  </div>
+
+  <div data-terminal-demo data-url={url} class="mt-12 grid gap-6 lg:mt-16 lg:grid-cols-12 lg:gap-0">
+    <div class="overflow-hidden rounded-xl border border-term-line bg-term-bg text-term-fg shadow-[0_32px_64px_-32px_var(--accent-soft)] lg:col-span-7 lg:col-start-1 lg:row-start-1 lg:self-start">
+      <div class="relative flex items-center border-b border-term-line bg-term-bar px-4 py-3">
+        <div class="flex gap-1.5" aria-hidden="true">
+          <span class="size-3 rounded-full bg-term-line"></span>
+          <span class="size-3 rounded-full bg-term-line"></span>
+          <span class="size-3 rounded-full bg-term-line"></span>
+        </div>
+        <p class="absolute inset-x-0 text-center font-mono text-xs text-term-muted">{TERMINAL_CWD}</p>
+      </div>
+      <ol data-term aria-label="Publishing a markdown file with mdfly" class="min-h-[13.5rem] overflow-x-auto whitespace-pre px-5 py-5 font-mono text-sm leading-6">
+        {lines.map((l) => (
+          <li data-kind={l.kind}>{l.kind === "cmd" && <span class="term-prompt" aria-hidden="true">$ </span>}<span>{l.text}</span></li>
+        ))}
+        <li data-kind="cmd"><span class="term-prompt" aria-hidden="true">$ </span><span></span><span class="term-caret" aria-hidden="true"></span></li>
+      </ol>
+    </div>
+
+    <figure data-browser class="relative z-10 overflow-hidden rounded-xl border border-line bg-bg shadow-[0_1px_0_var(--line),0_40px_80px_-32px_var(--accent-soft)] lg:col-span-6 lg:col-start-7 lg:row-start-1 lg:mt-20">
+      <div class="flex items-center gap-3 border-b border-line bg-surface px-3 py-2.5">
+        <div class="flex gap-1.5" aria-hidden="true">
+          <span class="size-2.5 rounded-full bg-line"></span>
+          <span class="size-2.5 rounded-full bg-line"></span>
+          <span class="size-2.5 rounded-full bg-line"></span>
+        </div>
+        <div class="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-bg px-3 py-1">
+          <svg class="size-3 shrink-0 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
+          </svg>
+          <span class="truncate font-mono text-xs text-fg">{url}</span>
+        </div>
+      </div>
+
+      <div class="px-6 py-6 sm:px-8">
+        <h3 class="font-display text-2xl font-extrabold tracking-tight">Release notes</h3>
+        <p class="mt-2 text-sm text-muted">What shipped this week, written once and read by the team and their agents.</p>
+        <ul class="mt-4 space-y-1.5 text-sm">
+          {NOTES.map((n) => (
+            <li class="flex gap-2"><span class="mt-2 size-1 shrink-0 rounded-full bg-accent" aria-hidden="true"></span>{n}</li>
+          ))}
+        </ul>
+        <div class="mt-5 rounded-lg border border-line bg-surface p-4">
+          <svg class="h-16 w-full text-accent" viewBox="0 0 240 64" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <rect x="4" y="18" width="56" height="28" rx="6" fill="var(--accent-soft)" />
+            <rect x="92" y="18" width="56" height="28" rx="6" />
+            <rect x="180" y="18" width="56" height="28" rx="6" fill="var(--accent-soft)" />
+            <path d="M60 32h28m-5-4 5 4-5 4M148 32h28m-5-4 5 4-5 4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <p class="mt-2 text-center font-mono text-[11px] text-muted">diagram.png</p>
+        </div>
+        <pre class="mt-5 overflow-x-auto rounded-lg bg-term-bg px-4 py-3 font-mono text-xs leading-5 text-term-fg"><code><span class="text-term-accent">webhooks</span>:
+  retries: 3
+  backoff: exponential</code></pre>
+      </div>
+    </figure>
+  </div>
+</Section>
+
+<style>
+  [data-term] :global(li) { min-height: 1.5rem; }
+  [data-term] :global(.term-prompt) { color: var(--term-accent); }
+  [data-term] :global(li[data-kind="out"]) { color: var(--term-muted); }
+  [data-term] :global(li[data-kind="url"]) {
+    color: var(--term-accent);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--term-accent) 40%, transparent);
+    text-underline-offset: 4px;
+  }
+  [data-term] :global(.term-caret) {
+    display: inline-block;
+    width: 0.6em;
+    height: 1.1em;
+    margin-left: 1px;
+    vertical-align: -0.2em;
+    background: var(--term-fg);
+  }
+  [data-browser] { transition: opacity 0.6s ease, transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  [data-terminal-demo][data-playing] [data-browser]:not([data-shown]) {
+    opacity: 0;
+    transform: translate3d(1.5rem, 1rem, 0) scale(0.98);
+  }
+</style>
+
+<script>
+  import { TERMINAL_SCRIPT as SCRIPT, type TermLine } from "../../config/terminalDemo";
+
+  const TYPE_MS = 45;
+  const LINE_PAUSE_MS = 450;
+  const LOOP_PAUSE_MS = 4000;
+  const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+  type Run = { alive: boolean; term: HTMLElement; browser: HTMLElement; url: string };
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const span = (className = "", text = "") => {
+    const el = document.createElement("span");
+    el.className = className;
+    el.textContent = text;
+    return el;
+  };
+
+  const caret = () => {
+    const el = span("term-caret");
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  };
+
+  async function typeLine(run: Run, li: HTMLElement, text: string) {
+    const prompt = span("term-prompt", "$ ");
+    prompt.setAttribute("aria-hidden", "true");
+    const typed = span();
+    const cursor = caret();
+    li.append(prompt, typed, cursor);
+    for (const ch of text) {
+      if (!run.alive) return;
+      typed.textContent += ch;
+      await sleep(TYPE_MS);
+    }
+    await sleep(LINE_PAUSE_MS);
+    cursor.remove();
+  }
+
+  async function printLine(run: Run, line: TermLine) {
+    const li = document.createElement("li");
+    li.dataset.kind = line.kind;
+    run.term.append(li);
+    if (line.kind === "cmd") return typeLine(run, li, line.text);
+    li.append(span("", line.kind === "url" ? run.url : line.text));
+    if (line.kind === "url") run.browser.dataset.shown = "";
+    await sleep(LINE_PAUSE_MS);
+  }
+
+  async function runOnce(run: Run) {
+    run.term.replaceChildren();
+    delete run.browser.dataset.shown;
+    await sleep(LINE_PAUSE_MS);
+    for (const line of SCRIPT) {
+      if (!run.alive) return;
+      await printLine(run, line);
+    }
+    if (!run.alive) return;
+    const idle = document.createElement("li");
+    idle.dataset.kind = "cmd";
+    idle.append(span("term-prompt", "$ "), caret());
+    run.term.append(idle);
+  }
+
+  async function loop(run: Run) {
+    while (run.alive) {
+      await runOnce(run);
+      await sleep(LOOP_PAUSE_MS);
+    }
+  }
+
+  function mount(root: HTMLElement) {
+    const term = root.querySelector<HTMLElement>("[data-term]");
+    const browser = root.querySelector<HTMLElement>("[data-browser]");
+    if (!term || !browser) return;
+    let run: Run | null = null;
+    new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && !run) {
+        run = { alive: true, term, browser, url: root.dataset.url ?? "" };
+        root.dataset.playing = "";
+        loop(run);
+      } else if (!entry.isIntersecting && run) {
+        run.alive = false;
+        run = null;
+      }
+    }, { threshold: 0.35 }).observe(root);
+  }
+
+  if (!matchMedia(REDUCED_MOTION).matches) {
+    document.querySelectorAll<HTMLElement>("[data-terminal-demo]").forEach(mount);
+  }
+</script>

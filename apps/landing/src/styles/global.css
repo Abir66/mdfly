@@ -15,6 +15,12 @@
   --color-line: var(--line);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-term-bg: var(--term-bg);
+  --color-term-bar: var(--term-bar);
+  --color-term-fg: var(--term-fg);
+  --color-term-muted: var(--term-muted);
+  --color-term-line: var(--term-line);
+  --color-term-accent: var(--term-accent);
 }
 
 :root {
@@ -26,6 +32,12 @@
   --accent: #7c3aed;
   --accent-soft: rgb(124 58 237 / 0.12);
   --grid: rgb(15 15 30 / 0.05);
+  --term-bg: #0d0c17;
+  --term-bar: #15141f;
+  --term-fg: #e8e6f3;
+  --term-muted: #7d7a93;
+  --term-line: #26243a;
+  --term-accent: #b79dfc;
   color-scheme: light;
 }
 
@@ -60,11 +72,24 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 .blob-drift { animation: blob-drift 20s ease-in-out infinite alternate; }
 .blob-drift-alt { animation-duration: 24s; animation-direction: alternate-reverse; }
 
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
+.term-caret { animation: caret-blink 1.05s step-end infinite; }
+
 .js .reveal { opacity: 0; transform: translateY(12px); transition: opacity .6s ease, transform .6s ease; }
 .js .reveal.is-visible { opacity: 1; transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .js .reveal { opacity: 1; transform: none; }
+  @keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
+.term-caret { animation: caret-blink 1.05s step-end infinite; }
+
+.js .reveal { opacity: 1; transform: none; }
   .blob-drift { animation: none; }
+  .term-caret { animation: none; }
 }
