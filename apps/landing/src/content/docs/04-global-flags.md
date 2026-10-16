@@ -1,0 +1,23 @@
+---
+title: Global flags
+order: 4
+---
+
+These work on every command.
+
+| Flag | Effect |
+|---|---|
+| `--json` | Print machine-readable JSON instead of text. |
+| `-v`, `--verbose` | Verbose diagnostic output. |
+| `-q`, `--quiet` | Suppress non-error output. |
+| `-y`, `--yes` | Assume yes to confirmation prompts. |
+| `--api <url>` | Override the API base URL. |
+| `--no-update-check` | Skip the background update check. |
+
+### Output streams
+
+stdout carries only the result: the URL, or the `--json` object. Everything else, including progress and errors, goes to stderr.
+
+### API base URL
+
+The API base resolves in this order: `--api`, the `MDFLY_API` environment variable, `config.toml` in the state directory, then the built-in default.

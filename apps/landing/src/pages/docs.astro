@@ -1,0 +1,35 @@
+---
+import { getCollection, render } from "astro:content";
+import Base from "../layouts/Base.astro";
+import DocsSidebar from "../components/docs/DocsSidebar.astro";
+
+const ORDER_PREFIX = /^\d+-/;
+const SUBSECTION_DEPTH = 3;
+
+const entries = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+const sections = await Promise.all(
+  entries.map(async (entry) => {
+    const { Content, headings } = await render(entry);
+    return {
+      id: entry.id.replace(ORDER_PREFIX, ""),
+      title: entry.data.title,
+      Content,
+      headings: headings.filter((h) => h.depth === SUBSECTION_DEPTH),
+    };
+  }),
+);
+---
+<Base title="Docs" description="Install mdFly and learn every command, flag, and limit." path="/docs">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 py-12 lg:grid lg:grid-cols-[14rem_1fr] lg:gap-12">
+    <DocsSidebar items={sections.map(({ id, title, headings }) => ({ id, title, headings }))} />
+    <article class="docs-prose mt-10 min-w-0 lg:mt-0">
+      <h1 class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight">Docs</h1>
+      {sections.map(({ id, title, Content }) => (
+        <section id={id} class="scroll-mt-24 pt-12">
+          <h2>{title}</h2>
+          <Content />
+        </section>
+      ))}
+    </article>
+  </div>
+</Base>

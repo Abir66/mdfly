@@ -7,5 +7,6 @@ export default defineConfig({
   trailingSlash: "never",
   build: { format: "file" },
   integrations: [sitemap()],
+  markdown: { shikiConfig: { themes: { light: "github-light", dark: "github-dark" } } },
   vite: { plugins: [tailwindcss()] },
 });

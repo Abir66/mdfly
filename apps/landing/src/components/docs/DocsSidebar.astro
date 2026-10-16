@@ -1,0 +1,72 @@
+---
+interface Heading { depth: number; slug: string; text: string }
+interface Item { title: string; id: string; headings: Heading[] }
+interface Props { items: Item[] }
+const { items } = Astro.props;
+---
+<aside class="lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto" data-docs-sidebar>
+  <details open class="group rounded-lg border border-line bg-surface lg:border-0 lg:bg-transparent" data-docs-nav>
+    <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-accent lg:hidden [&::-webkit-details-marker]:hidden">
+      On this page
+      <svg class="size-4 text-muted transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+    </summary>
+    <nav aria-label="Docs" class="px-4 pb-4 lg:px-0 lg:pb-0">
+      <ul class="space-y-4 text-sm">
+        {items.map((item) => (
+          <li>
+            <a href={`#${item.id}`} data-docs-link class="docs-link block font-display font-bold text-fg">{item.title}</a>
+            {item.headings.length > 0 && (
+              <ul class="mt-1.5 space-y-0.5 border-l border-line">
+                {item.headings.map((h) => (
+                  <li>
+                    <a href={`#${h.slug}`} data-docs-link class="docs-link -ml-px block border-l border-transparent py-0.5 pl-3 text-muted">{h.text}</a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </nav>
+  </details>
+</aside>
+
+<script>
+  const DESKTOP_QUERY = "(min-width: 1024px)";
+  const ACTIVE_ATTR = "data-active";
+  const OBSERVER_MARGIN = "-80px 0px -70% 0px";
+
+  const nav = document.querySelector<HTMLDetailsElement>("[data-docs-nav]");
+  const desktop = window.matchMedia(DESKTOP_QUERY);
+  const syncOpen = () => { if (nav) nav.open = desktop.matches; };
+  syncOpen();
+  desktop.addEventListener("change", syncOpen);
+
+  const links = new Map<string, HTMLAnchorElement>();
+  document.querySelectorAll<HTMLAnchorElement>("[data-docs-link]").forEach((a) => {
+    links.set(a.getAttribute("href")!.slice(1), a);
+  });
+
+  const headingTargets = [...document.querySelectorAll<HTMLElement>(".docs-prose h2, .docs-prose h3")];
+  const idFor = (el: HTMLElement) => (el.tagName === "H2" ? el.closest("section")?.id : el.id) ?? "";
+
+  const setActive = (id: string) => {
+    links.forEach((a, key) => a.toggleAttribute(ACTIVE_ATTR, key === id));
+  };
+
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting);
+        if (visible.length) setActive(idFor(visible[0].target as HTMLElement));
+      },
+      { rootMargin: OBSERVER_MARGIN },
+    );
+    headingTargets.forEach((el) => observer.observe(el));
+  }
+
+  links.forEach((a, id) => a.addEventListener("click", () => {
+    setActive(id);
+    if (!desktop.matches && nav) nav.open = false;
+  }));
+</script>
