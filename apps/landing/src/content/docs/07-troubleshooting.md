@@ -19,11 +19,11 @@ Every failure maps to one exit code, so scripts can branch on it.
 
 ### Rate limited
 
-Exit code 5 with a rate-limit message means you passed 10 writes per minute or 30 per hour. Wait a minute and retry.
+Exit code 5 with a rate-limit message means you passed 10 writes per minute or 30 per hour. Wait for the minute or hour window to reset (the server's `Retry-After` says how long) and retry.
 
 ### Update conflict
 
-Exit code 4 means the document changed since you last pushed it. If you intend to replace it, run `mdfly update --force`.
+Exit code 4 means the document changed since you last pushed it. If you intend to replace it, run `mdfly update <file> --force`.
 
 ### Lost edit token
 

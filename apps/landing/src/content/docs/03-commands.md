@@ -3,7 +3,7 @@ title: Commands
 order: 3
 ---
 
-Run `mdfly <command> --help` for the full flag list. Commands that take a target accept either a slug or the path of a file you published from this machine.
+Run `mdfly <command> --help` for the full flag list. `delete`, `open` and `remove` take a slug or the path of a file you published from this machine. `update` takes the file; use `--slug` to target by slug.
 
 ### Edit tokens
 

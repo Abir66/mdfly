@@ -3,16 +3,14 @@ title: Global flags
 order: 4
 ---
 
-These work on every command.
+Every command accepts these flags.
 
 | Flag | Effect |
 |---|---|
 | `--json` | Print machine-readable JSON instead of text. |
-| `-v`, `--verbose` | Verbose diagnostic output. |
 | `-q`, `--quiet` | Suppress non-error output. |
 | `-y`, `--yes` | Assume yes to confirmation prompts. |
 | `--api <url>` | Override the API base URL. |
-| `--no-update-check` | Skip the background update check. |
 
 ### Output streams
 
