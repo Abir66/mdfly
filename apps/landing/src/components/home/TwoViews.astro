@@ -1,10 +1,11 @@
 ---
 import Section from "../Section.astro";
 import CopyButton from "../CopyButton.astro";
-import { docUrl, rawUrl } from "../../config/site";
-import { SAMPLE_DOC, sampleDocMarkdown } from "../../config/sampleDoc";
+import { docUrl, rawCurl, rawUrl } from "../../config/site";
+import SampleDocBody from "./SampleDocBody.astro";
+import { sampleDocMarkdown } from "../../config/sampleDoc";
 
-const curl = `curl -s ${rawUrl()}`;
+const curl = rawCurl();
 const markdown = sampleDocMarkdown();
 ---
 <Section id="two-views" class="reveal overflow-x-clip">
@@ -21,15 +22,7 @@ const markdown = sampleDocMarkdown();
           <span class="truncate font-mono text-xs text-fg">{docUrl()}</span>
         </div>
         <div class="px-6 py-8 sm:px-10 sm:py-10">
-          <h3 class="font-display text-3xl font-extrabold tracking-tight">{SAMPLE_DOC.title}</h3>
-          <p class="mt-3 text-muted">{SAMPLE_DOC.intro}</p>
-          <ul class="mt-5 space-y-2">
-            {SAMPLE_DOC.notes.map((n) => (
-              <li class="flex gap-3"><span class="mt-2.5 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true"></span>{n}</li>
-            ))}
-          </ul>
-          <pre class="mt-6 overflow-x-auto rounded-lg bg-term-bg px-4 py-3 font-mono text-sm leading-6 text-term-fg"><code><span class="text-term-accent">{SAMPLE_DOC.codeKey}</span>:
-{SAMPLE_DOC.codeBody.join("\n")}</code></pre>
+          <SampleDocBody size="lg" />
         </div>
       </figure>
     </div>

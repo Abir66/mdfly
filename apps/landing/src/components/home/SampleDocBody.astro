@@ -1,0 +1,25 @@
+---
+import { SAMPLE_DOC } from "../../config/sampleDoc";
+
+interface Props { size?: "sm" | "lg" }
+const { size = "sm" } = Astro.props;
+const lg = size === "lg";
+---
+<p class:list={["font-display font-extrabold tracking-tight", lg ? "text-3xl" : "text-2xl"]}>{SAMPLE_DOC.title}</p>
+<p class:list={["text-muted", lg ? "mt-3" : "mt-2 text-sm"]}>{SAMPLE_DOC.intro}</p>
+<ul class:list={[lg ? "mt-5 space-y-2" : "mt-4 space-y-1.5 text-sm"]}>
+  {SAMPLE_DOC.notes.map((n) => (
+    <li class:list={["flex", lg ? "gap-3" : "gap-2"]}><span class:list={["shrink-0 rounded-full bg-accent", lg ? "mt-2.5 size-1.5" : "mt-2 size-1"]} aria-hidden="true"></span>{n}</li>
+  ))}
+</ul>
+<div class:list={["rounded-lg border border-line bg-surface p-4", lg ? "mt-6" : "mt-5"]}>
+  <svg class="h-16 w-full text-accent" viewBox="0 0 240 64" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <rect x="4" y="18" width="56" height="28" rx="6" fill="var(--accent-soft)" />
+    <rect x="92" y="18" width="56" height="28" rx="6" />
+    <rect x="180" y="18" width="56" height="28" rx="6" fill="var(--accent-soft)" />
+    <path d="M60 32h28m-5-4 5 4-5 4M148 32h28m-5-4 5 4-5 4" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+  <p class="mt-2 text-center font-mono text-[11px] text-muted">{SAMPLE_DOC.image}</p>
+</div>
+<pre class:list={["overflow-x-auto rounded-lg bg-term-bg px-4 py-3 font-mono text-term-fg", lg ? "mt-6 text-sm leading-6" : "mt-5 text-xs leading-5"]}><code><span class="text-term-accent">{SAMPLE_DOC.codeKey}</span>:
+{SAMPLE_DOC.codeBody.join("\n")}</code></pre>

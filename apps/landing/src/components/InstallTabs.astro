@@ -2,7 +2,9 @@
 import CopyButton from "./CopyButton.astro";
 import { site } from "../config/site";
 
-const uid = `install-${crypto.randomUUID().slice(0, 8)}`;
+interface Props { id: string }
+const { id } = Astro.props;
+const uid = `install-${id}`;
 const tabId = (id: string) => `${uid}-tab-${id}`;
 const panelId = (id: string) => `${uid}-panel-${id}`;
 ---

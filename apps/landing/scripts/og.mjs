@@ -4,12 +4,10 @@ import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
 import { site } from "../src/config/site.ts";
 
-const WIDTH = 1200;
-const HEIGHT = 630;
+const { width: WIDTH, height: HEIGHT } = site.ogImage;
 const PADDING = 80;
 const GRID_SIZE = 48;
-const HIGHLIGHT = "anyone or anything";
-const COMMAND = "$ mdfly publish notes.md";
+const COMMAND = "mdfly publish notes.md";
 
 const COLOR_BG = "#ffffff";
 const COLOR_FG = "#0b0b12";
@@ -29,7 +27,10 @@ const fonts = [
 ];
 
 const logo = `data:image/svg+xml;base64,${readFileSync(root("public/logo.svg")).toString("base64")}`;
-const [before, after] = site.tagline.split(HIGHLIGHT);
+if (!site.tagline.includes(site.taglineHighlight)) {
+  throw new Error(`tagline "${site.tagline}" does not contain highlight "${site.taglineHighlight}"`);
+}
+const [before, after] = site.tagline.split(site.taglineHighlight);
 
 const h = (type, style, children) => ({ type, props: { style: { display: "flex", ...style }, children } });
 
@@ -43,7 +44,7 @@ const headline = h(
   { display: "block", fontFamily: "Bricolage", fontWeight: 800, fontSize: 80, lineHeight: 1, letterSpacing: -3, width: WIDTH - PADDING * 2, color: COLOR_FG },
   [
     before,
-    { type: "span", props: { style: { color: COLOR_ACCENT }, children: HIGHLIGHT } },
+    { type: "span", props: { style: { color: COLOR_ACCENT }, children: site.taglineHighlight } },
     after,
   ],
 );
@@ -51,7 +52,7 @@ const headline = h(
 const command = h(
   "div",
   { alignItems: "center", fontFamily: "Mono", fontSize: 30, color: COLOR_FG, background: COLOR_SURFACE, border: `2px solid ${COLOR_LINE}`, borderRadius: 14, padding: "16px 28px" },
-  [{ type: "span", props: { style: { color: COLOR_ACCENT, marginRight: 16 }, children: "$" } }, COMMAND.slice(2)],
+  [{ type: "span", props: { style: { color: COLOR_ACCENT, marginRight: 16 }, children: "$" } }, COMMAND],
 );
 
 const tree = h(
@@ -79,4 +80,4 @@ const tree = h(
 
 const svg = await satori(tree, { width: WIDTH, height: HEIGHT, fonts });
 const png = new Resvg(svg, { fitTo: { mode: "width", value: WIDTH } }).render().asPng();
-writeFileSync(root("public/og-image.png"), png);
+writeFileSync(root(`public${site.ogImage.path}`), png);

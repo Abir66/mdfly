@@ -1,10 +1,10 @@
 ---
 import Section from "../Section.astro";
 import CopyButton from "../CopyButton.astro";
-import { docUrl, rawUrl } from "../../config/site";
+import { docUrl, rawCurl } from "../../config/site";
 import { sampleDocMarkdown } from "../../config/sampleDoc";
 
-const curl = `curl -s ${rawUrl()}`;
+const curl = rawCurl();
 const preview = sampleDocMarkdown().split("\n").slice(0, 7).join("\n");
 const card = "overflow-hidden rounded-xl border border-term-line bg-term-bg text-term-fg";
 const bar = "border-b border-term-line bg-term-bar px-4 py-2.5 font-mono text-xs text-term-muted";

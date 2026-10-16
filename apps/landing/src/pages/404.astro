@@ -1,17 +1,15 @@
 ---
 import Base from "../layouts/Base.astro";
-import { site } from "../config/site";
-
-const docs = site.nav.find((n) => n.label === "Docs");
-const link = "inline-flex items-center gap-1 rounded-md text-fg underline decoration-line decoration-2 underline-offset-4 transition-colors hover:decoration-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent";
+import ArrowLink from "../components/ArrowLink.astro";
+import { site, docsHref } from "../config/site";
 ---
 <Base title="Not found" description="This link flew away. It may have expired or been deleted." path="/404" noindex>
   <section class="mx-auto flex w-full max-w-4xl flex-col items-center px-4 py-24 text-center sm:px-6 sm:py-32">
     <h1 class="font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-balance sm:text-7xl">This link flew away.</h1>
     <p class="mt-6 max-w-xl text-lg text-pretty text-muted">It may have expired or been deleted. mdFly links last {site.limits.lifetimeDays} days.</p>
     <div class="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm font-medium">
-      <a href="/" class:list={[link]}>Go home <span aria-hidden="true">→</span></a>
-      {docs && <a href={docs.href} class:list={[link]}>Read the docs <span aria-hidden="true">→</span></a>}
+      <ArrowLink href="/">Go home</ArrowLink>
+      <ArrowLink href={docsHref}>Read the docs</ArrowLink>
     </div>
   </section>
 </Base>

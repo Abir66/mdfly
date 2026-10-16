@@ -1,12 +1,14 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { site } from "../src/config/site.ts";
 
-const DIST = new URL("../dist/", import.meta.url).pathname;
+const DIST = fileURLToPath(new URL("../dist/", import.meta.url));
 const REQUIRED_FILES = ["sitemap-index.xml", "robots.txt", "favicon.svg", "og-image.png"];
 const REQUIRED_TAGS = [
   /<title>[^<]+<\/title>/,
   /<meta name="description" content="[^"]+"/,
-  /<link rel="canonical" href="https:\/\/mdfly\.dev[^"]*"/,
+  new RegExp(`<link rel="canonical" href="${site.url}[^"]*"`),
   /<meta property="og:image" content="[^"]+"/,
 ];
 const FORBIDDEN = [/\/llm\//];

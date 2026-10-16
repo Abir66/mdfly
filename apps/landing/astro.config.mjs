@@ -1,9 +1,10 @@
 import { defineConfig } from "astro/config";
 import tailwindcss from "@tailwindcss/vite";
 import sitemap from "@astrojs/sitemap";
+import { site } from "./src/config/site.ts";
 
 export default defineConfig({
-  site: "https://mdfly.dev",
+  site: site.url,
   trailingSlash: "never",
   build: { format: "file" },
   integrations: [sitemap({ filter: (p) => !p.endsWith("/404") })],

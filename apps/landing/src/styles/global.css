@@ -150,6 +150,4 @@ li > .docs-link[data-active] { border-left-color: var(--accent); }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .js .reveal { opacity: 1; transform: none; }
   .connector-line { stroke-dashoffset: 0; }
-  .blob-drift { animation: none; }
-  .term-caret { animation: none; }
 }

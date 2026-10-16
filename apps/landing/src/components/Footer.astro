@@ -6,7 +6,7 @@ const { lifetimeDays, bundleMB, files } = site.limits;
 const links = [
   ...site.nav,
   { label: "GitHub", href: site.githubUrl },
-  { label: "License", href: `${site.githubUrl}/blob/main/LICENSE` },
+  { label: site.license, href: site.licenseUrl },
 ];
 ---
 <footer class="border-t border-line bg-surface">

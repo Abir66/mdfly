@@ -2,7 +2,7 @@
 import Section from "../Section.astro";
 import { docUrl } from "../../config/site";
 import { TERMINAL_CWD, TERMINAL_SCRIPT } from "../../config/terminalDemo";
-import { SAMPLE_DOC } from "../../config/sampleDoc";
+import SampleDocBody from "./SampleDocBody.astro";
 
 const url = docUrl();
 const lines = TERMINAL_SCRIPT.map((l) => ({ ...l, text: l.kind === "url" ? url : l.text }));
@@ -47,24 +47,7 @@ const lines = TERMINAL_SCRIPT.map((l) => ({ ...l, text: l.kind === "url" ? url :
       </div>
 
       <div class="px-6 py-6 sm:px-8">
-        <h3 class="font-display text-2xl font-extrabold tracking-tight">{SAMPLE_DOC.title}</h3>
-        <p class="mt-2 text-sm text-muted">{SAMPLE_DOC.intro}</p>
-        <ul class="mt-4 space-y-1.5 text-sm">
-          {SAMPLE_DOC.notes.map((n) => (
-            <li class="flex gap-2"><span class="mt-2 size-1 shrink-0 rounded-full bg-accent" aria-hidden="true"></span>{n}</li>
-          ))}
-        </ul>
-        <div class="mt-5 rounded-lg border border-line bg-surface p-4">
-          <svg class="h-16 w-full text-accent" viewBox="0 0 240 64" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <rect x="4" y="18" width="56" height="28" rx="6" fill="var(--accent-soft)" />
-            <rect x="92" y="18" width="56" height="28" rx="6" />
-            <rect x="180" y="18" width="56" height="28" rx="6" fill="var(--accent-soft)" />
-            <path d="M60 32h28m-5-4 5 4-5 4M148 32h28m-5-4 5 4-5 4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          <p class="mt-2 text-center font-mono text-[11px] text-muted">{SAMPLE_DOC.image}</p>
-        </div>
-        <pre class="mt-5 overflow-x-auto rounded-lg bg-term-bg px-4 py-3 font-mono text-xs leading-5 text-term-fg"><code><span class="text-term-accent">{SAMPLE_DOC.codeKey}</span>:
-{SAMPLE_DOC.codeBody.join("\n")}</code></pre>
+        <SampleDocBody />
       </div>
     </figure>
   </div>
@@ -114,6 +97,12 @@ const lines = TERMINAL_SCRIPT.map((l) => ({ ...l, text: l.kind === "url" ? url :
     return el;
   };
 
+  const prompt = () => {
+    const el = span("term-prompt", "$ ");
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  };
+
   const caret = () => {
     const el = span("term-caret");
     el.setAttribute("aria-hidden", "true");
@@ -121,11 +110,9 @@ const lines = TERMINAL_SCRIPT.map((l) => ({ ...l, text: l.kind === "url" ? url :
   };
 
   async function typeLine(run: Run, li: HTMLElement, text: string) {
-    const prompt = span("term-prompt", "$ ");
-    prompt.setAttribute("aria-hidden", "true");
     const typed = span();
     const cursor = caret();
-    li.append(prompt, typed, cursor);
+    li.append(prompt(), typed, cursor);
     for (const ch of text) {
       if (!run.alive) return;
       typed.textContent += ch;
@@ -156,7 +143,7 @@ const lines = TERMINAL_SCRIPT.map((l) => ({ ...l, text: l.kind === "url" ? url :
     if (!run.alive) return;
     const idle = document.createElement("li");
     idle.dataset.kind = "cmd";
-    idle.append(span("term-prompt", "$ "), caret());
+    idle.append(prompt(), caret());
     run.term.append(idle);
   }
 
