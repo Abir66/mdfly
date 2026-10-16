@@ -8,8 +8,9 @@ import Speed from "../components/home/Speed.astro";
 import ForAgents from "../components/home/ForAgents.astro";
 import Cta from "../components/home/Cta.astro";
 import { site } from "../config/site";
+import { homeJsonLd } from "../config/jsonLd";
 ---
-<Base title={site.name} description={site.description} path="/">
+<Base title={site.name} description={site.description} path="/" jsonLd={homeJsonLd}>
   <Hero />
   <TerminalDemo />
   <TwoViews />

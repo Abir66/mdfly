@@ -6,7 +6,7 @@ export default defineConfig({
   site: "https://mdfly.dev",
   trailingSlash: "never",
   build: { format: "file" },
-  integrations: [sitemap()],
+  integrations: [sitemap({ filter: (p) => !p.endsWith("/404") })],
   markdown: { shikiConfig: { themes: { light: "github-light", dark: "github-dark" } } },
   vite: { plugins: [tailwindcss()] },
 });
