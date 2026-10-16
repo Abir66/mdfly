@@ -4,7 +4,7 @@ export const docsHref = "/docs";
 export const site = {
   name: "mdFly",
   url: "https://mdfly.dev",
-  tagline: "From terminal to link, for anyone or anything reading.",
+  tagline: "From terminal to link, for anyone or anything.",
   taglineHighlight: "anyone or anything",
   description:
     "Publish markdown and its images in one command. A rendered page for people, plain text for agents.",
