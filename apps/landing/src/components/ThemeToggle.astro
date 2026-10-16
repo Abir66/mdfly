@@ -1,7 +1,8 @@
 <button
   type="button"
   data-theme-toggle
-  aria-label="Toggle dark mode"
+  aria-label="Dark mode"
+  aria-pressed="false"
   class="inline-flex size-9 items-center justify-center rounded-md text-muted transition-colors hover:text-fg hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-accent"
 >
   <svg class="size-[18px] dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -14,11 +15,15 @@
 </button>
 
 <script>
-  document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]").forEach((btn) =>
+  const isDark = () => document.documentElement.dataset.theme === "dark";
+
+  document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]").forEach((btn) => {
+    btn.setAttribute("aria-pressed", String(isDark()));
     btn.addEventListener("click", () => {
-      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      const next = isDark() ? "light" : "dark";
       document.documentElement.dataset.theme = next;
+      btn.setAttribute("aria-pressed", String(next === "dark"));
       try { localStorage.setItem("theme", next); } catch {}
-    }),
-  );
+    });
+  });
 </script>

@@ -10,7 +10,7 @@ const card = "overflow-hidden rounded-xl border border-term-line bg-term-bg text
 const bar = "border-b border-term-line bg-term-bar px-4 py-2.5 font-mono text-xs text-term-muted";
 ---
 <Section id="for-agents" class="reveal">
-  <div class="grid items-start gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
+  <div class="grid grid-cols-[minmax(0,1fr)] items-start gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
     <div>
       <h2 class="font-display text-4xl font-extrabold leading-[0.95] tracking-tight text-balance sm:text-5xl">Built for agents, too.</h2>
       <p class="mt-5 text-lg text-pretty text-muted">An agent can publish its own report and share the link. Any other agent reads the raw view with a plain HTTP GET.</p>
@@ -28,7 +28,7 @@ const bar = "border-b border-term-line bg-term-bar px-4 py-2.5 font-mono text-xs
       <figure class={card}>
         <figcaption class={`${bar} flex items-center justify-between gap-2`}>
           <code class="min-w-0 truncate text-term-accent"><span class="text-term-muted" aria-hidden="true">$ </span>{curl}</code>
-          <CopyButton text={curl} label="Copy curl command" />
+          <CopyButton text={curl} label="Copy agent curl command" />
         </figcaption>
         <pre class="whitespace-pre-wrap break-words px-5 py-5 font-mono text-xs leading-6 sm:text-sm"><code>{preview}</code></pre>
       </figure>

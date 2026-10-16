@@ -32,10 +32,11 @@
   --accent: #7c3aed;
   --accent-soft: rgb(124 58 237 / 0.12);
   --grid: rgb(15 15 30 / 0.05);
+  --code-comment: #6a737d;
   --term-bg: #0d0c17;
   --term-bar: #15141f;
   --term-fg: #e8e6f3;
-  --term-muted: #7d7a93;
+  --term-muted: #8f8ca6;
   --term-line: #26243a;
   --term-accent: #b79dfc;
   color-scheme: light;
@@ -50,6 +51,7 @@
   --accent: #a78bfa;
   --accent-soft: rgb(167 139 250 / 0.14);
   --grid: rgb(255 255 255 / 0.05);
+  --code-comment: #8b949e;
   color-scheme: dark;
 }
 
@@ -133,6 +135,7 @@ li > .docs-link[data-active] { border-left-color: var(--accent); }
 }
 .docs-prose pre code { background: none; border: 0; padding: 0; }
 [data-theme="dark"] .astro-code, [data-theme="dark"] .astro-code span { color: var(--shiki-dark) !important; }
+[data-theme="dark"] .astro-code span[style*="--shiki-dark:#6A737D"] { color: var(--code-comment) !important; }
 .docs-prose table {
   display: block;
   overflow-x: auto;
