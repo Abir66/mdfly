@@ -1,0 +1,78 @@
+---
+import Section from "../Section.astro";
+import { site } from "../../config/site";
+
+const features = [
+  {
+    title: "Images and linked files",
+    body: "Relative images and attachments are found and uploaded with the page.",
+    code: "![diagram](./diagram.png)",
+    span: "lg:col-span-2",
+    icon: "M4 5h16v14H4zM4 15l4-4 4 4 3-3 5 5M15 9h.01",
+  },
+  {
+    title: "Whole folders",
+    body: "Follow links to other pages and folders with `-r`.",
+    code: "mdfly publish docs/index.md -r",
+    span: "",
+    icon: "M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z",
+  },
+  {
+    title: "Edit in place",
+    body: "Push changes to the same URL.",
+    code: "mdfly update notes.md",
+    span: "",
+    icon: "M4 20h4L19 9l-4-4L4 16zM13 7l4 4",
+  },
+  {
+    title: "Take it down",
+    body: "Delete any time. The link then returns 410 Gone.",
+    code: `mdfly delete ${site.exampleSlug}`,
+    span: "",
+    icon: "M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13",
+  },
+  {
+    title: "Renders properly",
+    body: "GitHub-flavored markdown, syntax highlighting, Mermaid diagrams and math.",
+    code: "",
+    span: "lg:col-span-2",
+    icon: "M8 7 3 12l5 5M16 7l5 5-5 5M14 5l-4 14",
+  },
+  {
+    title: "Scriptable",
+    body: "URL-only stdout, clear exit codes, and `--json` for tools.",
+    code: "mdfly publish notes.md --json",
+    span: "",
+    icon: "M4 6h16v12H4zM8 10l3 2-3 2M13 14h3",
+  },
+  {
+    title: "No account",
+    body: "Install and publish. Nothing to sign up for.",
+    code: "",
+    span: "sm:col-span-2 lg:col-span-4",
+    icon: "M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM5 21a7 7 0 0 1 14 0M4 4l16 16",
+  },
+];
+
+const parts = (text: string) => text.split(/(`[^`]+`)/).filter(Boolean);
+---
+<Section id="features" class="reveal">
+  <h2 class="max-w-2xl font-display text-4xl font-extrabold leading-[0.95] tracking-tight text-balance sm:text-5xl">Everything the file links to comes along.</h2>
+
+  <ul class="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:mt-16 lg:grid-cols-4">
+    {features.map((f) => (
+      <li class:list={["flex flex-col rounded-xl border border-line bg-surface p-6 transition-colors hover:border-accent", f.span]}>
+        <span class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent">
+          <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={f.icon} /></svg>
+        </span>
+        <h3 class="mt-5 font-display text-xl font-extrabold tracking-tight">{f.title}</h3>
+        <p class="mt-2 text-pretty text-muted">
+          {parts(f.body).map((p) => p.startsWith("`") ? <code class="font-mono text-sm text-fg">{p.slice(1, -1)}</code> : p)}
+        </p>
+        {f.code && (
+          <code class="mt-5 block whitespace-pre-wrap break-words rounded-lg bg-term-bg px-3 py-2 font-mono text-xs text-term-fg">{f.code}</code>
+        )}
+      </li>
+    ))}
+  </ul>
+</Section>

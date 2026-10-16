@@ -1,0 +1,37 @@
+---
+import Section from "../Section.astro";
+import CopyButton from "../CopyButton.astro";
+import { docUrl, rawUrl } from "../../config/site";
+import { sampleDocMarkdown } from "../../config/sampleDoc";
+
+const curl = `curl -s ${rawUrl()}`;
+const preview = sampleDocMarkdown().split("\n").slice(0, 7).join("\n");
+const card = "overflow-hidden rounded-xl border border-term-line bg-term-bg text-term-fg";
+const bar = "border-b border-term-line bg-term-bar px-4 py-2.5 font-mono text-xs text-term-muted";
+---
+<Section id="for-agents" class="reveal">
+  <div class="grid items-start gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
+    <div>
+      <h2 class="font-display text-4xl font-extrabold leading-[0.95] tracking-tight text-balance sm:text-5xl">Built for agents, too.</h2>
+      <p class="mt-5 text-lg text-pretty text-muted">An agent can publish its own report and share the link. Any other agent reads the raw view with a plain HTTP GET.</p>
+    </div>
+
+    <div class="space-y-4">
+      <figure class={card}>
+        <figcaption class={bar}>agent session</figcaption>
+        <pre class="overflow-x-auto px-5 py-5 font-mono text-xs leading-6 sm:text-sm"><code><span class="text-term-muted">agent › </span>Wrote the report to report.md. Publishing…
+<span class="text-term-muted">$ </span><span class="text-term-accent">mdfly publish report.md</span>
+{docUrl()}
+<span class="text-term-muted">agent › </span>Shared: {docUrl()}</code></pre>
+      </figure>
+
+      <figure class={card}>
+        <figcaption class={`${bar} flex items-center justify-between gap-2`}>
+          <code class="min-w-0 truncate text-term-accent"><span class="text-term-muted" aria-hidden="true">$ </span>{curl}</code>
+          <CopyButton text={curl} label="Copy curl command" />
+        </figcaption>
+        <pre class="whitespace-pre-wrap break-words px-5 py-5 font-mono text-xs leading-6 sm:text-sm"><code>{preview}</code></pre>
+      </figure>
+    </div>
+  </div>
+</Section>

@@ -1,0 +1,21 @@
+---
+import Section from "../Section.astro";
+import InstallTabs from "../InstallTabs.astro";
+import { site } from "../../config/site";
+
+const docs = site.nav.find((n) => n.label === "Docs");
+---
+<div class="relative isolate overflow-hidden">
+  <div aria-hidden="true" class="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-[28rem] w-[min(48rem,100%)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-soft blur-3xl"></div>
+  <Section id="get-started" class="reveal flex flex-col items-center text-center">
+    <h2 class="font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-balance sm:text-7xl">Publish your first link.</h2>
+    <div class="mt-10 w-full max-w-xl">
+      <InstallTabs />
+    </div>
+    {docs && (
+      <a href={docs.href} class="group mt-8 inline-flex items-center gap-1 rounded-md text-sm font-medium text-fg underline decoration-line decoration-2 underline-offset-4 transition-colors hover:decoration-accent focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent">
+        Read the docs <span class="transition-transform group-hover:translate-x-0.5" aria-hidden="true">→</span>
+      </a>
+    )}
+  </Section>
+</div>
